@@ -151,6 +151,9 @@ func (c *Core) decideProposal(ctx context.Context, w *Worker, ob OnBehalf, req D
 		if err := c.moveProposal(ctx, tx, now, p, state, reason); err != nil {
 			return err
 		}
+		if err := decisionPoints(ctx, tx, now, p, req.Decision, asString(decision["reason_code"])); err != nil {
+			return err
+		}
 		if state == "realizing" {
 			if err := c.parkConflicts(ctx, tx, now, p); err != nil {
 				return err

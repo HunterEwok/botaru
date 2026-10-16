@@ -377,6 +377,7 @@ func TestCommissionReviewReserve(t *testing.T) {
 	}
 	b.loop(t, "proposal")
 	// The finished reviews cost nothing: the p90 of the types is 0 from now on.
+	b.asOtherAuthor(t)
 	if _, err := b.analysis(t, "2", false, map[string]any{"proposals": []any{noneBody("queue_full", 1)}}); err != nil {
 		t.Fatal(err)
 	}

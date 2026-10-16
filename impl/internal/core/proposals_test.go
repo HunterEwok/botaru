@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/HunterEwok/botaru/impl/internal/ids"
 	"github.com/HunterEwok/botaru/impl/internal/mcp"
 )
 
@@ -94,6 +95,27 @@ func (b *bench) analysisAttempt(t *testing.T, key string) (string, *WorkItem) {
 		t.Fatal("no analysis attempt")
 	}
 	return task, att
+}
+
+// asOtherAuthor gives each proposal so far another author bot, so the next analysis of the
+// bench worker is not held by the one open proposal of its own bot (PRP-16).
+func (b *bench) asOtherAuthor(t *testing.T) {
+	t.Helper()
+	ctx := context.Background()
+	rows, err := b.c.st.Pool.Query(ctx, `SELECT id FROM proposals WHERE record->'origin'->>'acting_bot' IS NOT NULL`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	list, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range list {
+		if _, err := b.c.st.Pool.Exec(ctx, `UPDATE proposals SET record = jsonb_set(record, '{origin,acting_bot}', to_jsonb($2::text)) WHERE id = $1`,
+			id, ids.New(ids.Bot)); err != nil {
+			t.Fatal(err)
+		}
+	}
 }
 
 func evidence(value any) []any {
@@ -362,7 +384,11 @@ func TestProposalMerge(t *testing.T) {
 	b := newInsightBench(t, nil)
 	b.helloDone(t, "1", "", "hi")
 	b.loop(t, "observe")
-	if _, err := b.analysis(t, "1", false, map[string]any{"proposals": []any{changeBody("queue_long", limitsChange(10)), noneBody("seen", 1)}}); err != nil {
+	if _, err := b.analysis(t, "1", false, map[string]any{"proposals": []any{changeBody("queue_long", limitsChange(10))}}); err != nil {
+		t.Fatal(err)
+	}
+	b.asOtherAuthor(t)
+	if _, err := b.analysis(t, "1b", false, map[string]any{"proposals": []any{noneBody("seen", 1)}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE proposals SET record = jsonb_set(record, '{data_mark}', '"summary"')`); err != nil {
