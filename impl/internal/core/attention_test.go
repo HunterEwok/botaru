@@ -558,3 +558,47 @@ func TestFairnessWeights(t *testing.T) {
 		t.Fatalf("order %v, want [_ %s %s %s]", got, other, a2, idle)
 	}
 }
+
+// Dead work comes in groups by (tenant, type, reason); a redrive of a task whose body its
+// period deleted answers gone; three slots of a schedule in a row out of attempts stop the
+// schedule with a hold, and the next slot is skipped as held (CAP-4).
+func TestDeadGroupsScheduleAutoStop(t *testing.T) {
+	ctx := context.Background()
+	b := newScheduleBench(t, "30 2 * * *", nil)
+	t1, t2 := b.hello(t, "g1"), b.hello(t, "g2")
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE tasks SET state = 'failed', reason = 'attempts_exhausted' WHERE id = ANY($1)`, []string{t1, t2}); err != nil {
+		t.Fatal(err)
+	}
+	list, err := b.c.DeadletterList(ctx, b.op, TenantRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	validOut(t, b.bench, "p2-deadletter-list-response", list)
+	if len(list.Groups) != 1 || list.Groups[0].Count != 2 || list.Groups[0].Type != "hello.greet.v1" || list.Groups[0].Reason != "attempts_exhausted" {
+		t.Fatalf("groups %+v", list.Groups)
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE tasks SET body = NULL WHERE id = $1`, t1); err != nil {
+		t.Fatal(err)
+	}
+	_, err = b.c.Redrive(ctx, b.op, RedriveRequest{Op: "task.redrive", ID: t1})
+	wantReason(t, err, "gone")
+
+	b.at(t, "2027-03-27T12:00:00Z")
+	b.tick(t, "schedule") // the first sight writes the schedule's state
+	rec := []byte(`{"enqueued_by": "schedule:morning"}`)
+	for i, reason := range []string{"attempts_exhausted", "completed", "runs_exhausted", "attempts_exhausted", "attempts_exhausted"} {
+		b.alarmTx(t, func(tx pgx.Tx, now time.Time) error {
+			return b.c.scheduleSlotEnded(ctx, tx, now, "demo", fmt.Sprintf("t_slot%d", i), rec, reason)
+		})
+	}
+	var n int
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM holds WHERE scope_kind = 'schedule' AND scope_name = 'morning' AND reason = 'schedule_failing'
+		AND state = 'active' AND until IS NULL AND 'no_enqueue' = ANY(effects)`).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("auto-stop holds %d %v", n, err)
+	}
+	b.at(t, "2027-03-29T00:31:00Z")
+	b.tick(t, "schedule")
+	if s := b.skips(t); len(s) == 0 || !strings.HasSuffix(s[len(s)-1], " held") {
+		t.Fatalf("skips %v", s)
+	}
+}
