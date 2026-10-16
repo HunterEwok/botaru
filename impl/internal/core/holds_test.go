@@ -243,7 +243,7 @@ func TestHoldWhoSetsAndReleases(t *testing.T) {
 	other := HoldSetRequest{Scope: HoldScope{Kind: "tenant", Tenant: "demo2"}, Effects: []string{"no_enqueue"}, Reason: "manual"}
 	_, err = b.c.HoldSet(ctx, op, other)
 	wantReason(t, err, "tenant_mismatch")
-	later := HoldSetRequest{Scope: HoldScope{Kind: "schedule", Tenant: "demo", Name: "daily"}, Effects: []string{"no_enqueue"}, Reason: "manual"}
+	later := HoldSetRequest{Scope: HoldScope{Kind: "governance", Tenant: "demo", Name: "case-1"}, Effects: []string{"no_enqueue"}, Reason: "manual"}
 	_, err = b.c.HoldSet(ctx, op, later)
 	wantReason(t, err, "input_schema_invalid")
 	_, err = b.c.HoldSet(ctx, HoldActor{Principal: "bot:ops-reader", Rank: "bot", Tenant: "demo"}, farm)

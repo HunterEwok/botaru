@@ -120,6 +120,10 @@ func (s HoldScope) key() scopeRef {
 	return scopeRef{kind: s.Kind, tenant: s.Tenant, name: name}
 }
 
+// aheadHolds are the scopes and effects of a later version that this build implements: the
+// pause of approvals set by a person (HLD-8) and the scope of one schedule (CAP-4).
+var aheadHolds = map[string]bool{"pause_action": true, "schedule": true}
+
 // scopeRef is one scope a check point asks about.
 type scopeRef struct{ kind, tenant, name string }
 
@@ -135,7 +139,7 @@ func (c *Core) checkHoldRequest(now time.Time, req HoldSetRequest) (*time.Time, 
 		if !ok || e["kind"] != kind {
 			return refuse("input_schema_invalid", "unknown hold %s %s", kind, id)
 		}
-		if since, _ := e["since"].(string); since != "" && spec.VersionLater(since, spec.Version) {
+		if since, _ := e["since"].(string); since != "" && spec.VersionLater(since, spec.Version) && !aheadHolds[id] {
 			return refuse("input_schema_invalid", "the hold %s %s is of %s; this core claims %s", kind, id, since, spec.Version)
 		}
 		return nil
@@ -168,6 +172,10 @@ func (c *Core) checkHoldRequest(now time.Time, req HoldSetRequest) (*time.Time, 
 	for _, e := range req.Effects {
 		if err := known(e, "effect"); err != nil {
 			return nil, err
+		}
+		// pause_action goes on a scope that holds approvals (HLD-8).
+		if e == "pause_action" && !pauseScopes[s.Kind] {
+			return nil, refuse("input_schema_invalid", "pause_action is set on a scope that holds approvals, not on %s", s.Kind)
 		}
 	}
 	reasons, err := c.spec.Registry("spec/model/reasons.yaml")

@@ -22,7 +22,11 @@ var Profiles = []string{"core"}
 // index or a map key). apply accepts such a field although the claimed version is earlier; the
 // rest of that version stays refused (MAN-11). Kinds of a later version are listed under the
 // kind with the pointer "/kind". The list shrinks when the claimed version reaches them.
-var Ahead = map[string][]string{}
+var Ahead = map[string][]string{
+	"Tenant":   {"/spec/attention/noncritical_per_day", "/spec/locale", "/spec/dispatch/fairness"},
+	"Schedule": {"/spec/locale"},
+	"Catalog":  {"/spec/hosts/*/maintenance_hold"},
+}
 
 // ahead says whether the field at ptr of a manifest of kind is in Ahead.
 func ahead(kind, ptr string) bool {

@@ -100,6 +100,9 @@ func (c *Core) decideProposal(ctx context.Context, w *Worker, ob OnBehalf, req D
 			}
 			return &committed{p: refuse("expired", "the card has expired")}
 		}
+		if err := c.requireDetails(ctx, tx, now, p.Tenant, "proposal", p.ID, proposalCard, req.Decision, press.principal); err != nil {
+			return err
+		}
 		var views int
 		if err := tx.QueryRow(ctx, `SELECT count(*) FROM card_views WHERE subject_kind = 'proposal' AND subject_id = $1 AND principal = $2`, p.ID, press.principal).Scan(&views); err != nil {
 			return err
