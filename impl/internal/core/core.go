@@ -229,15 +229,26 @@ func signWith(key []byte, b []byte) string {
 	return base64.RawURLEncoding.EncodeToString(m.Sum(nil))
 }
 
-// tx runs fn in a store transaction and gives it the store clock.
+// tx runs fn in a store transaction and gives it the store clock. A committed refusal of fn
+// commits its writes and is returned as its problem.
 func (c *Core) tx(ctx context.Context, fn func(tx pgx.Tx, now time.Time) error) error {
-	return c.st.Tx(ctx, func(tx pgx.Tx) error {
+	var cm *committed
+	err := c.st.Tx(ctx, func(tx pgx.Tx) error {
+		cm = nil
 		now, err := store.Now(ctx, tx)
 		if err != nil {
 			return err
 		}
-		return fn(tx, now)
+		err = fn(tx, now)
+		if errors.As(err, &cm) {
+			return nil
+		}
+		return err
 	})
+	if err == nil && cm != nil {
+		return cm.p
+	}
+	return err
 }
 
 // fmtTime writes a UTC instant in the datetime form of the schemas.

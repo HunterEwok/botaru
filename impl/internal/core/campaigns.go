@@ -2444,6 +2444,11 @@ func (c *Core) campaignCommand(ctx context.Context, w *Worker, ob OnBehalf, id, 
 		if cmp.Nonce != nonce {
 			return refuse("forbidden", "the nonce is not the card's")
 		}
+		// The Continue button of a campaign that started without a card is on its progress
+		// card and resumes it (ORC-2).
+		if command == "approve" && cmp.State == "paused" && !cmp.Card {
+			command = "resume"
+		}
 		kinds := []string{campaignApprovalCard}
 		if command == "pause" || command == "cancel" || command == "retry_failed" || command == "resume" && !cmp.Card {
 			kinds = []string{campaignApprovalCard, campaignProgressCard, campaignSummaryKind}
@@ -2498,6 +2503,32 @@ func (c *Core) campaignCommand(ctx context.Context, w *Worker, ob OnBehalf, id, 
 				}
 				return &committed{p: refuse("expired", "the card has expired")}
 			}
+			// Holds and lost rights are checked before the decision is written, so a refused
+			// approval leaves no decided_by and no decision.made.
+			if command == "approve" {
+				if held, err := heldBy(ctx, tx, now, []string{"no_action"}, campaignScopes(cmp)...); err != nil {
+					return err
+				} else if held != "" && cmp.Rec.action() != "" {
+					if err := c.rejectCampaign(ctx, tx, now, cmp, "held"); err != nil {
+						return err
+					}
+					return &committed{p: refuse("held", "a hold cancels the campaign")}
+				}
+				// A pause_action hold keeps the card waiting: no decision while it holds (HLD-3).
+				if held, err := heldBy(ctx, tx, now, []string{"pause_action"}, campaignScopes(cmp)...); err != nil {
+					return err
+				} else if held != "" && cmp.Rec.action() != "" {
+					return deny("held", "a hold pauses the action")
+				}
+				if stop, err := c.campaignRights(ctx, tx, now, press.tv, cmp); err != nil {
+					return err
+				} else if stop != "" {
+					if err := c.rejectCampaign(ctx, tx, now, cmp, stop); err != nil {
+						return err
+					}
+					return &committed{p: refuse("forbidden", "the initiator no longer has the rights")}
+				}
+			}
 			if _, err := tx.Exec(ctx, `UPDATE campaigns SET decided_by = $2, updated_at = $3 WHERE id = $1`, cmp.ID, press.principal, now); err != nil {
 				return err
 			}
@@ -2515,28 +2546,6 @@ func (c *Core) campaignCommand(ctx context.Context, w *Worker, ob OnBehalf, id, 
 					return err
 				}
 				return ok("")
-			}
-			if held, err := heldBy(ctx, tx, now, []string{"no_action"}, campaignScopes(cmp)...); err != nil {
-				return err
-			} else if held != "" && cmp.Rec.action() != "" {
-				if err := c.rejectCampaign(ctx, tx, now, cmp, "held"); err != nil {
-					return err
-				}
-				return &committed{p: refuse("held", "a hold cancels the campaign")}
-			}
-			// A pause_action hold keeps the card waiting: no decision while it holds (HLD-3).
-			if held, err := heldBy(ctx, tx, now, []string{"pause_action"}, campaignScopes(cmp)...); err != nil {
-				return err
-			} else if held != "" && cmp.Rec.action() != "" {
-				return deny("held", "a hold pauses the action")
-			}
-			if stop, err := c.campaignRights(ctx, tx, now, press.tv, cmp); err != nil {
-				return err
-			} else if stop != "" {
-				if err := c.rejectCampaign(ctx, tx, now, cmp, stop); err != nil {
-					return err
-				}
-				return &committed{p: refuse("forbidden", "the initiator no longer has the rights")}
 			}
 			if err := c.startCampaign(ctx, tx, now, cat, press.tv, cmp); err != nil {
 				return err

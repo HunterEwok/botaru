@@ -209,6 +209,11 @@ func TestCampaignActionFlow(t *testing.T) {
 	retry := CampaignControlRequest{ID: cmp.ID, Command: "retry_failed", Nonce: cmp.Nonce}
 	_, err = b.c.CampaignControl(ctx, b.channel, press("telegram:1002", "direct:1002", card.external), retry)
 	wantReason(t, err, "forbidden")
+	// The refusal is in the audit: its transaction commits.
+	var refused int
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM audit WHERE record->'target'->>'id' = $1 AND record->>'ok' = 'false' AND record->>'reason' = 'forbidden'`, cmp.ID).Scan(&refused); err != nil || refused != 1 {
+		t.Fatalf("refused presses in the audit %d %v", refused, err)
+	}
 	again, err := b.c.CampaignControl(ctx, b.channel, press("telegram:1001", "direct:1001", summary.external), retry)
 	if err != nil || again.State != "proposed" || again.ID == cmp.ID {
 		t.Fatalf("retry %+v %v", again, err)
@@ -467,6 +472,43 @@ func TestCampaignReadFlow(t *testing.T) {
 	st, err := b.c.P3ToolsCall(ctx, h, mcp.CallParams{Name: campaignStatusName, Arguments: map[string]any{"campaign": cmp.ID}})
 	if err == nil {
 		t.Fatalf("a finished attempt's handle still works: %v", callText(st))
+	}
+}
+
+// A campaign that started without a card stops at its manual gate after the canary; the
+// initiator's Continue on the progress card resumes it (ORC-2).
+func TestCampaignCardlessGate(t *testing.T) {
+	ctx := context.Background()
+	b := newCampaignReadBench(t)
+	att, h := b.attemptTools(t, "1", false)
+	r := proposeCall(t, b, h, map[string]any{
+		"template": map[string]any{"kind": "task", "type": "hello.child.v1", "goal": "Check the machine."},
+		"items":    map[string]any{"resources": []any{"web1", "web2"}},
+		"rollout":  map[string]any{"canary": 1},
+	})
+	if r.State != "running" {
+		t.Fatalf("propose %+v", r)
+	}
+	cmp := b.campaign(t, r.Campaign)
+	if cmp.Card || cmp.Rec.Rollout.AfterCanary != "manual" {
+		t.Fatalf("campaign %+v", cmp.Rec.Rollout)
+	}
+	b.finish(t, att)
+	first := b.claim(t, b.agent, "attempt")
+	if _, err := b.c.Complete(ctx, b.agent, header(t, first), CompleteRequest{Result: map[string]any{"answer": "ok", "healthy": true}}); err != nil {
+		t.Fatal(err)
+	}
+	if cmp = b.campaign(t, cmp.ID); cmp.State != "paused" || cmp.PauseReason != "gate" {
+		t.Fatalf("after the canary %s %s", cmp.State, cmp.PauseReason)
+	}
+	progress := cardOf(t, b.drain(t), campaignProgressCard, "direct:1001")
+	res, err := b.c.Decide(ctx, b.channel, press("telegram:1001", "direct:1001", progress.external),
+		DecideRequest{SubjectKind: "campaign", ID: cmp.ID, Nonce: cmp.Nonce, Decision: "approve"})
+	if err != nil || res.State != "running" {
+		t.Fatalf("continue %+v %v", res, err)
+	}
+	if st := b.itemStates(t, cmp.ID); st != "ok,released" {
+		t.Fatalf("items %s", st)
 	}
 }
 

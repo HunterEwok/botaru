@@ -665,9 +665,9 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 		if len(in.Scope) > 0 {
 			record["scope"] = map[string]any{"resources": in.Scope}
 		}
-		if in.PaidByCard {
-			record["paid_by_card"] = true
-		}
+	}
+	if in.PaidByCard && (in.Campaign != "" || in.ContinuesCampaign != "") {
+		record["paid_by_card"] = true
 	}
 	if in.ContinuesCampaign != "" {
 		record["campaign_continuation"] = in.ContinuesCampaign
