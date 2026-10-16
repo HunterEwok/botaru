@@ -318,6 +318,9 @@ type exec struct {
 	granted map[string][]string
 	start   time.Time
 	now     time.Time
+	// types are example task types the seed applies besides the hello-bot set: a row of the
+	// permission table names them.
+	types []map[string]any
 }
 
 // outcome is what one action gave, in the terms of the expectations.
@@ -465,11 +468,15 @@ func (x *exec) seedBase(ctx context.Context) error {
 		return err
 	}
 	ms = append(ms, acts...)
+	ms = append(ms, x.types...)
 	o, err := x.apply(ctx, ms, false)
 	if err != nil {
 		return err
 	}
 	if o.Result != "ok" {
+		if len(x.types) > 0 {
+			return errUnchecked(fmt.Sprintf("given type %s: the seed does not apply it (%s %s)", metaNames(x.types), o.Error, o.Path))
+		}
 		return fmt.Errorf("the base set was not applied: %s %s", o.Error, o.Path)
 	}
 	// Only the people the case names are seeded: a grant of a privileged group needs the

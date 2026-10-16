@@ -95,6 +95,7 @@ func TestBenchAuthorizeEval(t *testing.T) {
 		{"other tenant", "", row(b.alice, "demo2", "task:hello.greet.v1", nil), "deny", "tenant_mismatch", "ban", ""},
 		{"action type", "", row(b.alice, "demo", "task:action.fix_web.v1", nil), "deny", "type_not_allowed", "ban", ""},
 		{"data class", "", row(b.alice, "demo", "data:raw_logs", nil), "deny", "no_data_class", "intersection", ""},
+		{"unknown principal of a capability", "", row(stranger, "demo", "data:raw_logs", nil), "deny", "person_inactive", "intersection", ""},
 		{"system has its group only", "", row("system", "demo", "task:hello.greet.v1", nil), "deny", "no_group_cap", "intersection", ""},
 		{"every initiator", "", row(b.alice, "demo", "task:hello.greet.v1", map[string]any{"context": map[string]any{
 			"task": map[string]any{"initiators": []any{b.alice, stranger}}}}), "deny", "no_group_cap", "intersection", ""},

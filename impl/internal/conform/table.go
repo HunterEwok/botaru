@@ -11,6 +11,10 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/HunterEwok/botaru/impl/internal/manifest"
+	"github.com/HunterEwok/botaru/impl/internal/spec"
+	"github.com/HunterEwok/botaru/impl/internal/testbench"
 )
 
 // Decision tables (conformance/runner.md, "Decision table"): a fixture that checks one function
@@ -198,6 +202,9 @@ func (r *Runner) runTable(ctx context.Context, row *tableRow) Result {
 	if row.info.function != "" {
 		return x.runFunction(ctx, row.info.function, res)
 	}
+	if x.types, err = exampleTypes(r.Root, r.spec, c); err != nil {
+		return res(Failed, "seed: %v", err)
+	}
 	for _, seed := range []func(context.Context) error{x.seedBase, x.seedPeople, x.seedHolds} {
 		if err := seed(ctx); err != nil {
 			if u, ok := err.(errUnchecked); ok {
@@ -362,4 +369,69 @@ func (x *exec) standMore(ctx context.Context, s map[string]any) (*outcome, error
 		return x.test(ctx, op, map[string]any{"process": map[string]any{"kind": "core"}, "mode": mode})
 	}
 	return nil, fmt.Errorf("stand %s", op)
+}
+
+// typeName is the form of a task type name (ops.investigate.v1).
+var typeName = regexp.MustCompile(`^[a-z][a-z0-9_]*(\.[a-z0-9_]+)*\.v[0-9]+$`)
+
+// exampleTypes reads the example task types a row's steps name, as task:<type> or as a bare
+// type name, without the fields this core refuses as later; the hello-bot seed has none of
+// them. An action type or a name with no example file is left to the core.
+func exampleTypes(root string, sp *spec.Spec, c *Case) ([]map[string]any, error) {
+	names := map[string]bool{}
+	var walk func(v any)
+	walk = func(v any) {
+		switch t := v.(type) {
+		case map[string]any:
+			for _, e := range t {
+				walk(e)
+			}
+		case []any:
+			for _, e := range t {
+				walk(e)
+			}
+		case string:
+			n := strings.TrimPrefix(t, "task:")
+			if typeName.MatchString(n) && !strings.HasPrefix(n, "action.") {
+				names[n] = true
+			}
+		}
+	}
+	for _, st := range c.Steps {
+		walk(map[string]any(st))
+	}
+	var paths []string
+	for n := range names {
+		p := filepath.Join(root, "examples/tasktypes", n+".yaml")
+		if _, err := os.Stat(p); err == nil {
+			paths = append(paths, p)
+		}
+	}
+	if len(paths) == 0 {
+		return nil, nil
+	}
+	sort.Strings(paths)
+	docs, err := manifest.ReadFiles(paths)
+	if err != nil {
+		return nil, err
+	}
+	var out []map[string]any
+	for _, d := range docs {
+		if d.Kind == "TaskType" {
+			out = append(out, d.Value)
+		}
+	}
+	if _, err := testbench.DropUnsupported(sp, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func metaNames(ms []map[string]any) string {
+	var out []string
+	for _, m := range ms {
+		md, _ := m["metadata"].(map[string]any)
+		out = append(out, fmt.Sprint(md["name"]))
+	}
+	return strings.Join(out, ", ")
 }

@@ -1,3 +1,4 @@
 # Behaviour cases that pass on the reference core (TestConformance); rewrite with -update.
 apr-self-03
+authz-24
 com-fx-10

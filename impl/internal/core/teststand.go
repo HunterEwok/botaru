@@ -328,6 +328,7 @@ func (c *Core) TestStoreRestore(ctx context.Context, label string) (*TestClock, 
 	// runs (RET-6 (d)). The load and RestoreBegin are one transaction, so a failure leaves the
 	// store as it was, and the mark of the store again decides readiness.
 	c.restoring.Store(true)
+	var epoch int64
 	err = c.st.Tx(ctx, func(tx pgx.Tx) error {
 		tables, err := benchTables(ctx, tx)
 		if err != nil {
@@ -375,13 +376,18 @@ func (c *Core) TestStoreRestore(ctx context.Context, label string) (*TestClock, 
 		if err != nil {
 			return err
 		}
-		_, err = c.restoreBegin(ctx, tx, now, log)
-		return err
+		if _, err := c.restoreBegin(ctx, tx, now, log); err != nil {
+			return err
+		}
+		return tx.QueryRow(ctx, `SELECT epoch FROM farm_meta WHERE id = 1`).Scan(&epoch)
 	})
 	if err != nil {
 		_ = c.loadRestoring(ctx)
 		return nil, err
 	}
+	// The new epoch fences the old tokens from the commit on, before the start of the core
+	// reloads the rest (FEN-1).
+	c.epoch.Store(epoch)
 	if err := c.benchRestart(ctx); err != nil {
 		return nil, err
 	}
@@ -594,7 +600,11 @@ func (c *Core) authorizeDecide(ctx context.Context, tx pgx.Tx, now time.Time, ca
 		if err != nil {
 			return nil, err
 		}
+		// The number of approvers is the action's, as insertApproval sets it (APR-16).
 		a := &approvalRow{Tenant: tv.Name, Action: name, Approvals: 1}
+		if act, ok := c.actionOf(cat, name); ok && act.Approvals == 2 {
+			a.Approvals = 2
+		}
 		if len(req.Context.Task.Initiators) > 0 {
 			a.Initiator = req.Context.Task.Initiators[0]
 		}
@@ -611,12 +621,15 @@ func (c *Core) authorizeDecide(ctx context.Context, tx pgx.Tx, now time.Time, ca
 		if err != nil {
 			return nil, err
 		}
-		if held, err := heldBy(ctx, tx, now, []string{"no_action"}, scopes...); err != nil {
-			return nil, err
-		} else if held != "" {
-			d := deny("hold", "held")
-			d.Hold = held
-			return d, nil
+		// In press order: no_action cancels, then pause_action pauses (HLD-8).
+		for _, effect := range []string{"no_action", "pause_action"} {
+			if held, err := heldBy(ctx, tx, now, []string{effect}, scopes...); err != nil {
+				return nil, err
+			} else if held != "" {
+				d := deny("hold", "held")
+				d.Hold = held
+				return d, nil
+			}
 		}
 	default:
 		// Any other capability: the principal's groups and those of every other initiator,
@@ -626,6 +639,16 @@ func (c *Core) authorizeDecide(ctx context.Context, tx pgx.Tx, now time.Time, ca
 			capName, mark = "", name
 		}
 		for _, id := range append([]string{req.Principal.ID}, others...) {
+			// An unknown or inactive person gets person_inactive, as at enqueue.
+			if id != "system" {
+				p, err := loadPrincipal(ctx, tx, now, tv.Name, id)
+				if errors.Is(err, pgx.ErrNoRows) || err == nil && p.State != "active" {
+					return deny("intersection", "person_inactive"), nil
+				}
+				if err != nil {
+					return nil, err
+				}
+			}
 			groups, err := principalGroups(ctx, tx, now, tv, id)
 			if err != nil {
 				return nil, err
