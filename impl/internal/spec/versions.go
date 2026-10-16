@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"github.com/HunterEwok/botaru/impl/internal/ijson"
 )
@@ -17,14 +18,33 @@ import (
 // of a feature profile outside this list is refused at apply (MAN-11).
 var Profiles = []string{"core"}
 
+// AheadField is a field of a later skeleton version that this build already implements: the
+// version that marks it and a JSON pointer into the manifest, where "*" stands for any one
+// segment (a list index or a map key).
+type AheadField struct {
+	Version, Ptr string
+}
+
+// fields lists the pointers of one version.
+func fields(version string, ptrs ...string) []AheadField {
+	out := make([]AheadField, len(ptrs))
+	for i, p := range ptrs {
+		out[i] = AheadField{Version: version, Ptr: p}
+	}
+	return out
+}
+
 // Ahead lists, by manifest kind, the fields of a later skeleton version that this build already
-// implements, as JSON pointers into the manifest where "*" stands for any one segment (a list
-// index or a map key). apply accepts such a field although the claimed version is earlier; the
-// rest of that version stays refused (MAN-11). Kinds of a later version are listed under the
-// kind with the pointer "/kind". The list shrinks when the claimed version reaches them.
-var Ahead = map[string][]string{
+// implements. apply accepts such a field although the claimed version is earlier; the rest of
+// that version stays refused (MAN-11). Kinds of a later version are listed under the kind with
+// the pointer "/kind". A v0.2 field is accepted at any claim, because its behaviour is not gated
+// by the version. A field of v0.3 or later is accepted only while the effective claim (Effective)
+// reaches its version, because its behaviour runs only under that claim (claimsV03 of the core):
+// accepting it earlier would apply a field that does nothing. The list shrinks when the claimed
+// version reaches them.
+var Ahead = map[string][]AheadField{
 	// The eval report index (TRN-6, MGR-23, MGR-17) and of the quality gate (PRV-3).
-	"EvalReports": {"/kind"},
+	"EvalReports": fields("v0.2", "/kind"),
 	// The tenant retention periods, which the retention loop applies in every copy (RET-9,
 	// RET-10); journals stays refused with the debug profile. The translator's eval gate of a
 	// tenant (TRN-6), the grant and takeover lines and the takeover list (MGR-17, MGR-21).
@@ -32,33 +52,64 @@ var Ahead = map[string][]string{
 	// (APR-15), the tenant locale (DLV-18) and the dispatch fairness (DSP-6). The widest machine
 	// selector the script run card does not mark (TRN-10). From v0.3 the takeover ceilings on the
 	// manager line and the manager's notices per person (MGR-48, MGR-52).
-	"Tenant": {"/spec/retention", "/spec/evals", "/spec/takeover", "/spec/budgets/lines/grant", "/spec/budgets/lines/takeover",
-		"/spec/limits/max_file_bytes", "/spec/limits/max_task_files_bytes", "/spec/privacy/export_sink",
-		"/spec/attention/noncritical_per_day", "/spec/locale", "/spec/dispatch/fairness", "/spec/scripts/unnamed_targets_max",
-		"/spec/takeover/manager_month_eur", "/spec/takeover/max_eur", "/spec/attention/manager_notices_per_person_day"},
+	"Tenant": append(fields("v0.2", "/spec/retention", "/spec/evals", "/spec/takeover", "/spec/budgets/lines/grant",
+		"/spec/budgets/lines/takeover", "/spec/limits/max_file_bytes", "/spec/limits/max_task_files_bytes",
+		"/spec/privacy/export_sink", "/spec/attention/noncritical_per_day", "/spec/locale", "/spec/dispatch/fairness",
+		"/spec/scripts/unnamed_targets_max"),
+		fields("v0.3", "/spec/takeover/manager_month_eur", "/spec/takeover/max_eur", "/spec/attention/manager_notices_per_person_day")...),
 	// The locale of a schedule's texts (DLV-18).
-	"Schedule": {"/spec/locale"},
+	"Schedule": fields("v0.2", "/spec/locale"),
 	// The grant ladder of a role and the grant signs of a type (MGR-17).
-	"Role":     {"/spec/model_grants"},
-	"TaskType": {"/spec/grant_eligible", "/spec/grant_eval_set", "/spec/grant"},
+	"Role":     fields("v0.2", "/spec/model_grants"),
+	"TaskType": fields("v0.2", "/spec/grant_eligible", "/spec/grant_eval_set", "/spec/grant"),
 	// The seat's grant ceilings (MGR-17, MGR-18). From v0.3 the accountability mode and its
 	// minimum of forecasts (GOV-36), the persona addenda (GOV-45), the manager's fallback
 	// profile (MGR-49) and the analysis after an incident (MGR-53); the reward fields of the
 	// deferred COM-18 stay refused.
-	"Governance": {"/spec/farm_manager/grant_limits", "/spec/commission/accountability", "/spec/commission/accountability_min_forecasts",
-		"/spec/positions/functional/addenda", "/spec/farm_manager/fallback_profile", "/spec/farm_manager/postmortem",
-		"/spec/farm_manager/postmortem_max_eur"},
+	"Governance": append(fields("v0.2", "/spec/farm_manager/grant_limits"),
+		fields("v0.3", "/spec/commission/accountability", "/spec/commission/accountability_min_forecasts",
+			"/spec/positions/functional/addenda", "/spec/farm_manager/fallback_profile", "/spec/farm_manager/postmortem",
+			"/spec/farm_manager/postmortem_max_eur")...),
 	// From v0.3 the class fields of the preventable incident, the answering lenses and the
 	// problem codes of a link (MGR-55, GOV-47, GOV-41, GOV-38).
-	"IncidentClass": {"/spec/manager_accountable", "/spec/area", "/spec/problem_codes"},
+	"IncidentClass": fields("v0.3", "/spec/manager_accountable", "/spec/area", "/spec/problem_codes"),
 	// The necessity lens thresholds (COM-13).
-	"Commission": {"/spec/escalation"},
+	"Commission": fields("v0.2", "/spec/escalation"),
 	// The one recipient of an export sink (SEC-10).
-	"Sink": {"/spec/export_only/recipient_ref"},
+	"Sink": fields("v0.2", "/spec/export_only/recipient_ref"),
 	// The tool output cache (PRM-12).
-	"ToolPlugin": {"/spec/tools/*/cache_s"},
+	"ToolPlugin": fields("v0.2", "/spec/tools/*/cache_s"),
 	// The model exposure of a dataset (PRV-4) and the maintenance hold of a host (MON-9).
-	"Catalog": {"/spec/resources/*/model_exposure", "/spec/resources/*/kind", "/spec/hosts/*/maintenance_hold"},
+	"Catalog": fields("v0.2", "/spec/resources/*/model_exposure", "/spec/resources/*/kind", "/spec/hosts/*/maintenance_hold"),
+}
+
+// claimOverride, when set, is the skeleton version the build behaves as in place of Version.
+// Only tests set it (SetClaimOverride), to run the paths of a later version before the claimed
+// version moves; the core reads the same value for claimsV03.
+var claimOverride atomic.Pointer[string]
+
+// SetClaimOverride makes Effective return version ("" follows Version again) and returns the
+// previous override.
+func SetClaimOverride(version string) string {
+	prev := claimOverride.Swap(&version)
+	if prev == nil {
+		return ""
+	}
+	return *prev
+}
+
+// Effective is the skeleton version the build behaves as: the test override, or Version.
+func Effective() string {
+	if v := claimOverride.Load(); v != nil && *v != "" {
+		return *v
+	}
+	return Version
+}
+
+// aheadAccepted says whether a field of Ahead of this version passes now: a v0.2 field always,
+// a later one only while the effective claim reaches it.
+func aheadAccepted(version string) bool {
+	return !VersionLater(version, "v0.2") || !VersionLater(version, Effective())
 }
 
 // ahead says whether the field at ptr of a manifest of kind is in Ahead.
@@ -68,8 +119,11 @@ func ahead(kind, ptr string) bool {
 		ptr = "/kind"
 	}
 	segs := strings.Split(ptr, "/")
-	for _, pat := range Ahead[kind] {
-		ps := strings.Split(pat, "/")
+	for _, f := range Ahead[kind] {
+		if !aheadAccepted(f.Version) {
+			continue
+		}
+		ps := strings.Split(f.Ptr, "/")
 		if len(ps) != len(segs) {
 			continue
 		}

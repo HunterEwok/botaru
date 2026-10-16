@@ -42,7 +42,7 @@ func TestApplyLaterVersion(t *testing.T) {
 	// only the tenant retention periods for the test (their journals stay refused).
 	saved := spec.Ahead
 	defer func() { spec.Ahead = saved }()
-	spec.Ahead = map[string][]string{"Tenant": {"/spec/retention"}}
+	spec.Ahead = map[string][]spec.AheadField{"Tenant": {{Version: "v0.2", Ptr: "/spec/retention"}}}
 	ms, at := helloSet(t)
 	tt := ms[at["TaskType"]]["spec"].(map[string]any)
 	tt["title"] = "Greeting, changed"

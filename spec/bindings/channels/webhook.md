@@ -21,15 +21,16 @@ The reference source channel from v0.2: an E1 driver `webhook` with `direction: 
 
 ## Receiving deliveries
 
-The driver listens on its own address, which the deployment sets; the path is `/hooks/<source>`, where `<source>` is the second segment of `ingress.event` and the name of the `service` principal `hook:<source>`. The driver checks a delivery in this order and stops at the first failure; a refused delivery gives no activity, no file and no event (ING-1), and the answer carries no detail beyond the status.
+The driver listens on its own address, which the deployment sets; the path is `/hooks/<source>`, where `<source>` is the second segment of `ingress.event` and the name of the `service` principal `hook:<source>`. The source is at most 32 characters, so `hook:<source>`, the chat id and the delivery key fit their limits (lint `ingress_source_too_long`); `monitor` is reserved for the monitoring adapter E5 (lint `ingress_reserved_source`, MON-5); and one source belongs to one channel of a tenant (lint `ingress_source_duplicate`). The driver checks a delivery in this order and stops at the first failure; a refused delivery gives no activity, no file and no event (ING-1), and the answer carries no detail beyond the status.
 
 | Step | Check | Refusal |
 |---|---|---|
 | 1. Method and path | `POST` to the path of a known source | `404` |
-| 2. Rate | at most `ingress.limits.per_minute` deliveries of this source in a sliding minute, counted before the body is read | `429` with `Retry-After` in seconds |
+| 2. Request rate | a ceiling on all requests to the path, authentic or not, set by the deployment for the listener (by default 10 times `ingress.limits.per_minute` in a sliding minute), counted before the body is read, so a flood of forged requests cannot use up the source's own limit | `429` with `Retry-After` in seconds |
 | 3. Size | `Content-Length` above `ingress.limits.max_body_bytes`, or more bytes arrive than that limit: the driver stops reading and refuses; it never truncates a body (ING-3) | `413` |
 | 4. Authenticity | by `ingress.auth`, table below | `401` |
-| 5. Body | `Content-Type` `application/json`, and the body is strict I-JSON (no repeated key) | `415` or `400` |
+| 5. Source rate | at most `ingress.limits.per_minute` authentic deliveries of this source in a sliding minute; only deliveries that passed step 4 count (ING-3) | `429` with `Retry-After` in seconds |
+| 6. Body | `Content-Type` `application/json`, and the body is strict I-JSON (no repeated key) | `415` or `400` |
 
 | `ingress.auth` | How the driver checks |
 |---|---|
@@ -40,7 +41,7 @@ The driver answers `2xx` only after the core answered `submit_activity`. On the 
 
 ## Delivery id and idempotency
 
-The delivery id is the id the external system sends: for Standard Webhooks the `webhook-id` header; a `tls_token` source without its own id header gets the lowercase hex SHA-256 of the body (ING-3). An id that does not fit `update_id` of `spec/model/activity.schema.json` (`[A-Za-z0-9_:.-]`, at most 128 characters) is replaced by the SHA-256 of the body as well. The core builds the key `system:ingress:<source>:<delivery id>` (IDM-2), so a repeated delivery gives one event and the driver answers it `2xx` again.
+The delivery id is the id the external system sends: for `auth: signature` the `webhook-id` header, which the signature covers. A `tls_token` source has no signed id, so its delivery id is always the lowercase hex SHA-256 of the body, and any id header it sends is ignored (ING-3). A `webhook-id` that does not fit `update_id` of `spec/model/activity.schema.json` (`[A-Za-z0-9_:.-]`, at most 128 characters) makes the delivery id the SHA-256 of the body as well. The core builds the key `system:ingress:<source>:<delivery id>` (IDM-2), so a repeated delivery gives one event and the driver answers it `2xx` again.
 
 ## Delivery -> `Activity`
 
@@ -57,11 +58,11 @@ The delivery id is the id the external system sends: for Standard Webhooks the `
 | `received_at` | the time the driver received the delivery |
 | `text`, `reply_to`, `forwarded`, `quoted` | absent: a source channel carries no text to the core |
 
-The core sets the `source` and `id` fields of the event; the event never becomes `alarm.*` (ING-4), and a farm alarm on it comes only from a `job` that rechecks the condition in code (INJ-7). A route from `ext.*` enqueues only types listed in `system-ops` (PRM-10).
+The core does not take the event type, the source or the key from the activity: it takes them from the manifest of the channel whose credential submitted the activity. It refuses with `input_schema_invalid`, and makes no event, a signal whose `event.type` differs from that channel's `ingress.event` or whose sender is not `hook:<source>` of that channel, so one source channel cannot submit the events of another source or of the monitoring adapter. The core sets the `source` and `id` fields of the event; the event never becomes `alarm.*` (ING-4), and a farm alarm on it comes only from a `job` that rechecks the condition in code (INJ-7). A route from `ext.*` enqueues only types listed in `system-ops` (PRM-10).
 
 ## Mapping -> `ext.<source>.<name>.vN`
 
-Each entry of `ingress.mapping` names a data field, a JSON pointer `from` into the body and a closed `schema` (an `enum`, a number with bounds, a string with `x-botaru-format` or a catalog id: the leaves of INJ-1). The driver reads each pointer and puts the value into `event.data` only when it passes its schema; a pointer that is absent or a value that fails gives no field, and the value stays only in the body file. The core checks the data again against the same schemas. Free text of the body never reaches `event.data`, a task `goal` or the audit; it reaches a task only as the attachment, which sets `untrusted_seen` (ING-2). Monitoring system names follow INJ-16.
+Each entry of `ingress.mapping` (at most 32, the most fields `event.data` of an activity holds) names a data field, a JSON pointer `from` into the body and a closed `schema` (an `enum`, a number with bounds, a string with `x-botaru-format` or a catalog id: the leaves of INJ-1). The driver reads each pointer and puts the value into `event.data` only when it passes its schema; a pointer that is absent or a value that fails gives no field, and the value stays only in the body file. The core checks the data again against the same schemas. Free text of the body never reaches `event.data`, a task `goal` or the audit; it reaches a task only as the attachment, which sets `untrusted_seen` (ING-2). Monitoring system names follow INJ-16.
 
 An example: a pipeline system signs with Standard Webhooks and sends
 

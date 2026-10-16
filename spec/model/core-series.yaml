@@ -101,9 +101,9 @@ entries:
     rules: [DIG-4]
   - id: farm.takeover.count
     since: v0.3
-    meaning: number of takeovers by the farm manager seat, by the functionary role and the task type of the original task; input for people and for the holder report, not a trial metric
+    meaning: number of takeovers by the farm manager seat, by the functionary role and the task type of the original task; input for people, not a trial metric
     catalog_kind: task_type
-    rules: [MGR-48, MGR-50]
+    rules: [MGR-48]
 target_guards:
   - target: schedule
     guards: [farm.schedule.slot, farm.attempt.duration]

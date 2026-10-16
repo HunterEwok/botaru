@@ -9,7 +9,11 @@
     "IDN-7",
     "MON-10",
     "MON-5",
-    "PRM-15"
+    "PRM-15",
+    "ING-1",
+    "ING-2",
+    "ING-3",
+    "ING-4"
   ],
   "type": "object",
   "additionalProperties": false,
@@ -22,7 +26,7 @@
   ],
   "properties": {
     "kind": {
-      "description": "message from a person through a channel; signal from the monitoring adapter with the identity hook:monitor (MON-5), its fields are set by the event schema.",
+      "description": "message from a person through a channel; signal of an external system: from the monitoring adapter with the identity hook:monitor (MON-5), or from v0.2 from a source channel with the identity hook:<source> (ING-1 to ING-4); the fields of a signal are set by its event schema.",
       "enum": [
         "message",
         "signal"
@@ -126,7 +130,7 @@
       "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
     },
     "event": {
-      "description": "Only kind signal: the external event of the monitoring adapter (MON-5, MON-10) or, from v0.2, of a source channel (ING-1..4, spec/bindings/channels/webhook.md), its type and its data by the event data schema. For the monitoring adapter the channel is the adapter target, the chat a direct chat with the external id monitor, the update id the idempotency part of the event; for a source channel the chat is a direct chat with the external id of the source and the update id the delivery id.",
+      "description": "Only kind signal: the external event of the monitoring adapter (MON-5, MON-10) or, from v0.2, of a source channel (ING-1..4, spec/bindings/channels/webhook.md), its type and its data by the event data schema. For the monitoring adapter the channel is the adapter target, the chat a direct chat with the external id monitor, the update id the idempotency part of the event; for a source channel the chat is a direct chat with the external id of the source and the update id the delivery id. The core does not trust the type and the sender of a source channel's signal: it takes the event type, the source and the delivery key from the manifest of the submitting channel, and refuses with input_schema_invalid a signal whose event.type differs from that channel's ingress.event or whose sender is not hook:<source> of it (ING-4).",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -135,7 +139,7 @@
       ],
       "properties": {
         "type": {
-          "description": "Event type: an event of the monitoring adapter, or from v0.2 the ingress.event of the source channel, always in ext.* (ING-4).",
+          "description": "Event type: an event of the monitoring adapter (the first two branches), or from v0.2 the ingress.event of the source channel, always in ext.* (ING-4).",
           "anyOf": [
             {
               "description": "Event type.",
@@ -143,6 +147,10 @@
                 "ext.monitor.problem.v1",
                 "ext.monitor.scripts.v1"
               ]
+            },
+            {
+              "const": "ext.monitor.maintenance.v1",
+              "description": "The maintenance event of the monitoring adapter (MON-9)."
             },
             {
               "type": "string",
@@ -155,7 +163,7 @@
         "data": {
           "description": "Event data, checked by the core against the data schema of the type.",
           "type": "object",
-          "maxProperties": 16,
+          "maxProperties": 32,
           "x-botaru-closed-by": "the data schema of the event type in spec/bindings/events/catalog.yaml, or for a source channel the closed schemas of its ingress.mapping"
         }
       }

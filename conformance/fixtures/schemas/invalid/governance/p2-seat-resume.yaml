@@ -1,9 +1,11 @@
 schema: spec/model/p2-seat-resume-request.schema.json
 rules: [GOV-22, GOV-47]
 description: 'seat.resume requests that the schema rejects: a commission seat (it has no incident hold), no seat, removal of other
-  reasons in the body, a tenant that is not a name.'
+  reasons in the body, a tenant that is not a name, neither or both of incident and tenant.'
 cases:
   - {seat: "commission:2", incident: inc_01JB8M00000000000000000318}
   - {tenant: demo}
+  - {seat: farm-manager}
+  - {seat: farm-manager, incident: inc_01JB8M00000000000000000318, tenant: demo}
   - {seat: farm-manager, incident: inc_01JB8M00000000000000000318, reasons: [human, no_control]}
   - {seat: farm-manager, tenant: 7}

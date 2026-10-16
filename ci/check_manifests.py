@@ -1190,10 +1190,27 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
             f.error('takeover_confirm_threshold', where,
                     f'takeover.confirm_above_eur {cab}: a takeover always needs the takeover_confirm card; the field is reserved and only 0 passes (MGR-21)')
     token_events = {}
+    sources = {}
     for tenant, name, where, cs in S.each('Channel'):
         ing = cs.get('ingress') or {}
         if not ing:
             continue
+        # The source of ext.<source>.<name>.vN names the service principal hook:<source>, the chat
+        # and the delivery key; monitor belongs to the E5 adapter (MON-5), and one source has one
+        # channel in a tenant, so the core can tie a signal to its channel (ING-3, ING-4).
+        parts = str(ing.get('event') or '').split('.')
+        source = parts[1] if len(parts) > 2 else ''
+        if source == 'monitor':
+            f.error('ingress_reserved_source', where,
+                    f'channel {name}: the source monitor is reserved for the monitoring adapter E5 (MON-5, ING-4)')
+        elif len(source) > 32:
+            f.error('ingress_source_too_long', where,
+                    f'channel {name}: source {source!r} is longer than 32 characters, so hook:<source> and the delivery key would not fit (ING-3)')
+        if source:
+            other = sources.setdefault((tenant, source), name)
+            if other != name:
+                f.error('ingress_source_duplicate', where,
+                        f'channel {name}: source {source} is already the source of channel {other} in tenant {tenant} (ING-3, ING-4)')
         if ing.get('auth') == 'signature':
             tol = seconds(ing.get('tolerance'))
             if tol is None or tol > 300:

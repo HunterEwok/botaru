@@ -12,7 +12,7 @@ spec:
   stops_manager: true
   manager_accountable: true
   area: operational
-  problem_codes: [disk_growth, tmp_cleanup_missing]
+  problem_codes: [disk_growth_unbounded, retention_too_long, quota_missing, alarm_threshold_late]   # spec/model/incident-classes.yaml
   inspect: true
   detect:
     alarm: alarm.disk.free.low.v1

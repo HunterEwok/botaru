@@ -21,6 +21,9 @@ import (
 // records governance_v03_since (GOV-36).
 func v03Bench(t *testing.T) *bench {
 	t.Helper()
+	// The bench set carries the v0.3 problem_codes, which apply accepts only under the v0.3
+	// claim (MAN-11).
+	setClaimsV03(t, true)
 	b := newCommissionBenchWith(t, true, []map[string]any{{
 		"apiVersion": "botaru/v1alpha1", "kind": "Group", "metadata": map[string]any{"name": "governors", "tenant": "demo"},
 		"spec": map[string]any{"caps": []any{"governance.confirm:commission", "governance.attribute"}, "data": []any{"summary", "internal"}},
@@ -30,7 +33,6 @@ func v03Bench(t *testing.T) *bench {
 			"detect": map[string]any{"alarm": "alarm.disk.free.low.v1"}, "subject": map[string]any{"kind": "tenant"}},
 	}, storeLowManifest()}, presentEdit)
 	b.exec(t, `INSERT INTO memberships (tenant, principal, grp, state, created_at) VALUES ('demo', $1, 'governors', 'active', now())`, b.alice)
-	setClaimsV03(t, true)
 	b.charter(t, 1, nil)
 	return b
 }

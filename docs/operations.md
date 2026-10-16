@@ -269,7 +269,7 @@ The core never releases a hold by itself: not on closing an incident, clearing a
 | the last 3 slots of a schedule ended `attempts_exhausted` or `runs_exhausted` (v0.2) | `schedule`, `no_enqueue`, reason `schedule_failing` | [CAP-4](../conformance/rules.md#CAP-4) |
 | 3 confirmed incident links to one role's work in 90 days (v0.3) | `role`, `no_action`, reason `role_incidents` | [HLD-9](../conformance/rules.md#HLD-9) |
 
-The threshold of the role hold is the same for every role; a tenant may only make it stricter in its catalog with `role_incident_hold: {links: 2, window: 180d}` (at most 3 links, a window of at least 90 days, HLD-9). The schema refuses a looser value, and a field left out keeps the default.
+The threshold of the role hold is the same for every role; a tenant may only make it stricter in its catalog with `role_incident_hold: {links: 2, window: 180d}` (at most 3 links, a window in days only, from `90d` to `365d`, HLD-9). The schema refuses a looser value, and a field left out keeps the default.
 
 A series of requests with a foreign tenant or foreign handles from one credential is not a hold but a move of the worker to `blocked` (TEN-2).
 
