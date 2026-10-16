@@ -102,24 +102,23 @@ func artifactsOf(ctx context.Context, tx pgx.Tx, tenant, task string) ([]string,
 	return out, rows.Err()
 }
 
-// mayReadTask applies PRM-9: the initiator, or an active principal of the tenant with
+// mayReadTask applies PRM-9: an active principal of the tenant that is the initiator, or has
 // task.read:<type> and data:<mark>.
 func (c *Core) mayReadTask(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, principal string, t *taskRow) (bool, error) {
-	if t.initiator == principal {
-		return true, nil
-	}
-	p, err := loadPrincipal(ctx, tx, now, tv.Name, principal)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return false, nil
-	}
+	v, err := c.p2viewer(ctx, tx, now, nil, tv, principal)
 	if err != nil {
 		return false, err
 	}
-	if p.State != "active" {
-		return false, nil
+	return v.mayReadTask(t), nil
+}
+
+// mayReadTask: the person is active and the initiator, or holds task.read:<type> and the
+// task's data mark (PRM-9).
+func (v *p2viewer) mayReadTask(t *taskRow) bool {
+	if !v.active {
+		return false
 	}
-	groups := groupClosure(tv, p.Groups)
-	return hasCap(tv, groups, "task.read:"+t.typ) && hasData(tv, groups, t.mark()), nil
+	return t.initiator == v.principal || hasCap(v.tv, v.groups, "task.read:"+t.typ) && hasData(v.tv, v.groups, t.mark())
 }
 
 // readTask reads a task for a principal and writes the read to the audit (PRM-9, AUD-1).
@@ -250,24 +249,35 @@ func (c *Core) TaskShow(ctx context.Context, op Operator, req P2TaskRequest) (*T
 	return c.readTask(ctx, op.Tenant, op.Principal, req.Task, "task.show", Actor{Principal: op.Principal, Via: "farmctl"})
 }
 
-// TaskCancel is P2 task.cancel: the initiator cancels with the outcome canceled(initiator); an
-// operator of the tenant cancels another's task with canceled(admin) (APR-6). A task of another
-// tenant is not_found.
+// TaskCancel is P2 task.cancel by the person of the credential: the active initiator cancels
+// with the outcome canceled(initiator), a person with admin:people another's task with
+// canceled(admin) (APR-6). A task the person may not read, of another tenant or missing is the
+// same not_found (PRM-9); a reader who may not cancel gets forbidden with an audit record.
 func (c *Core) TaskCancel(ctx context.Context, op Operator, req P2TaskRequest) (*Done, error) {
+	tv, _, err := c.requireTenant(ctx, op.Tenant)
+	if err != nil {
+		return nil, err
+	}
 	var out *Done
-	err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+	err = c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
 		t, err := loadTaskRow(ctx, tx, op.Tenant, req.Task, true)
 		if err != nil {
 			return err
 		}
-		if t == nil || strings.HasPrefix(t.typ, "action.") {
+		v, err := c.p2viewer(ctx, tx, now, nil, tv, op.Principal)
+		if err != nil {
+			return err
+		}
+		if t == nil || strings.HasPrefix(t.typ, "action.") || !v.mayReadTask(t) && !v.can("admin:people") {
 			return refuse("not_found", "no such task")
 		}
 		reason := "admin"
 		if t.initiator == op.Principal {
 			reason = "initiator"
+		} else if !v.can("admin:people") {
+			return c.p2Refusal(ctx, tx, now, tv.Name, v, "task.cancel", &Target{Kind: "task", ID: t.id}, nil, "forbidden", "only the initiator or an admin cancels a task")
 		}
-		r, err := c.cancelTask(ctx, tx, now, t, reason, Actor{Principal: op.Principal, Via: "farmctl"}, "task.cancel")
+		r, err := c.cancelTask(ctx, tx, now, t, reason, v.actor(), "task.cancel")
 		if err != nil {
 			return err
 		}
@@ -347,9 +357,11 @@ func (c *Core) TaskList(ctx context.Context, op Operator, req TaskListRequest) (
 			return err
 		}
 		var groups []string
-		if p != nil && p.State == "active" {
-			groups = groupClosure(tv, p.Groups)
+		if p == nil || p.State != "active" {
+			// An unknown or inactive person sees no tasks (PRM-9).
+			return nil
 		}
+		groups = groupClosure(tv, p.Groups)
 		where, args := `t.initiator = $2 AND coalesce(t.record->>'root', t.id) = t.id`, []any{tv.Name, op.Principal}
 		if req.Op == "team.tasks" {
 			group := req.Group
