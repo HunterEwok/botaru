@@ -195,7 +195,7 @@ func (c *Core) createAttribution(ctx context.Context, tx pgx.Tx, now time.Time, 
 	}); err != nil {
 		return err
 	}
-	_, err = c.planGovCards(ctx, tx, now, tv, "attribution", id, attributionCard, "governance.attribute", nil)
+	_, err = c.planGovCards(ctx, tx, now, tv, "attribution", id, attributionCard, "governance.attribute", proposalMark(ctx, tx, proposal), nil)
 	return err
 }
 
@@ -299,10 +299,16 @@ func (c *Core) dismissedAttributions(ctx context.Context, tx pgx.Tx, now time.Ti
 // attributionCanceled: when no confirmed attribution is left on the change, a track row that
 // lost its trigger to an attribution is dropped, so the governance loop evaluates the change
 // again under the common conditions; the trigger time is then that pass, not earlier than the
-// cancellation, and a removed entry comes back (GOV-14).
+// cancellation, and a removed entry comes back (GOV-14). A change that is no longer realized
+// keeps its row, with the reason attribution_canceled, since it cannot be evaluated again.
 func attributionCanceled(ctx context.Context, tx pgx.Tx, a *attributionRow) error {
-	_, err := tx.Exec(ctx, `DELETE FROM promotion_track WHERE proposal = $1 AND NOT trigger AND reason = 'attribution'
-		AND NOT EXISTS (SELECT 1 FROM attributions WHERE proposal = $1 AND state = 'confirmed')`, a.Proposal)
+	const lost = `proposal = $1 AND NOT trigger AND reason = 'attribution'
+		AND NOT EXISTS (SELECT 1 FROM attributions WHERE proposal = $1 AND state = 'confirmed')`
+	if _, err := tx.Exec(ctx, `DELETE FROM promotion_track WHERE `+lost+`
+		AND EXISTS (SELECT 1 FROM proposals WHERE id = $1 AND state = 'realized')`, a.Proposal); err != nil {
+		return err
+	}
+	_, err := tx.Exec(ctx, `UPDATE promotion_track SET reason = 'attribution_canceled' WHERE `+lost, a.Proposal)
 	return err
 }
 
@@ -344,7 +350,7 @@ func (c *Core) remindAttributions(ctx context.Context, tx pgx.Tx, now time.Time,
 		if _, err := tx.Exec(ctx, `UPDATE attributions SET record = $2, reminded_at = $3, updated_at = $3 WHERE id = $1`, a.ID, raw, now); err != nil {
 			return err
 		}
-		if _, err := c.planGovCards(ctx, tx, now, tv, "attribution", a.ID, attributionCard, "governance.attribute", map[string]any{"reminder": true}); err != nil {
+		if _, err := c.planGovCards(ctx, tx, now, tv, "attribution", a.ID, attributionCard, "governance.attribute", proposalMark(ctx, tx, a.Proposal), map[string]any{"reminder": true}); err != nil {
 			return err
 		}
 	}
@@ -493,4 +499,14 @@ func (c *Core) decideAttribution(ctx context.Context, w *Worker, ob OnBehalf, re
 		return nil, err
 	}
 	return out, nil
+}
+
+// proposalMark is the data mark of a proposal, for the ceiling of the attribution card (DIG-2);
+// "restricted" when it cannot be read, so the card goes only to the people who see everything.
+func proposalMark(ctx context.Context, tx pgx.Tx, proposal string) string {
+	var mark string
+	if err := tx.QueryRow(ctx, `SELECT coalesce(record->>'data_mark', '') FROM proposals WHERE id = $1`, proposal).Scan(&mark); err != nil || mark == "" {
+		return "restricted"
+	}
+	return mark
 }

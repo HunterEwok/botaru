@@ -276,6 +276,9 @@ func (c *Core) countSelfMeasured(ctx context.Context, tx pgx.Tx, now time.Time, 
 	if !hasCap(press.tv, press.groups, "governance.confirm:commission") {
 		return "", deny("forbidden", "the person has no governance.confirm:commission")
 	}
+	if p.State != "realized" || mmapAny(p.Rec["trial"])["self_measured"] != true {
+		return "", refuse("expired", "the change is not a realized self-measured one")
+	}
 	if p.Rec["self_measured_count"] != nil {
 		return p.State, nil
 	}
@@ -370,8 +373,10 @@ func (c *Core) attributionConfirmed(ctx context.Context, tx pgx.Tx, now time.Tim
 	if err != nil {
 		return err
 	}
-	_, err = tx.Exec(ctx, `UPDATE promotion_entries SET trigger_proposal = $3, trigger_at = $4, updated_at = $5 WHERE tenant = $1 AND bot = $2`, a.Tenant, bot, next, nextAt, now)
-	return err
+	if _, err = tx.Exec(ctx, `UPDATE promotion_entries SET trigger_proposal = $3, trigger_at = $4, updated_at = $5 WHERE tenant = $1 AND bot = $2`, a.Tenant, bot, next, nextAt, now); err != nil {
+		return err
+	}
+	return c.govAudit(ctx, tx, now, a.Tenant, "governance.entry.queued", "bot", bot, "", map[string]any{"trigger_proposal": next, "trigger_at": fmtTime(nextAt)})
 }
 
 // eligible checks the candidate at opening and before "Confirm" (GOV-14): the identity is
@@ -506,26 +511,8 @@ func (c *Core) caseStep(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cata
 		if err != nil || k == nil {
 			return err
 		}
-		if held != (k.Rec["hold"] == true) {
-			// A hold pauses the case: the expiry moves on by the time it was held (GOV-14).
-			k.Rec["hold"] = held
-			switch {
-			case held:
-				k.HeldSince = &now
-			case k.HeldSince != nil && k.ExpiresAt != nil:
-				e := k.ExpiresAt.Add(now.Sub(*k.HeldSince))
-				k.ExpiresAt, k.HeldSince = &e, nil
-			default:
-				k.HeldSince = nil
-			}
-			raw, err := json.Marshal(caseView(k))
-			if err != nil {
-				return err
-			}
-			if _, err := tx.Exec(ctx, `UPDATE governance_cases SET record = $2, held_since = $3, expires_at = $4, updated_at = $5 WHERE id = $1`,
-				k.ID, raw, k.HeldSince, k.ExpiresAt, now); err != nil {
-				return err
-			}
+		if err := applyHold(ctx, tx, now, k, held); err != nil {
+			return err
 		}
 		_, err = c.checkCase(ctx, tx, now, cat, k)
 		return err
@@ -541,6 +528,33 @@ func (c *Core) caseStep(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cata
 		return nil
 	}
 	return c.openCase(ctx, tx, now, cat, tv, swapAfter)
+}
+
+// applyHold writes a change of the hold to the case: a hold pauses the case, and on release the
+// expiry moves on by the time it was held (GOV-14).
+func applyHold(ctx context.Context, tx pgx.Tx, now time.Time, k *caseRow, held bool) error {
+	if held == (k.Rec["hold"] == true) && (held || k.HeldSince == nil) {
+		return nil
+	}
+	k.Rec["hold"] = held
+	switch {
+	case held:
+		if k.HeldSince == nil {
+			k.HeldSince = &now
+		}
+	case k.HeldSince != nil && k.ExpiresAt != nil:
+		e := k.ExpiresAt.Add(now.Sub(*k.HeldSince))
+		k.ExpiresAt, k.HeldSince = &e, nil
+	default:
+		k.HeldSince = nil
+	}
+	raw, err := json.Marshal(caseView(k))
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, `UPDATE governance_cases SET record = $2, held_since = $3, expires_at = $4, updated_at = $5 WHERE id = $1`,
+		k.ID, raw, k.HeldSince, k.ExpiresAt, now)
+	return err
 }
 
 // checkCase ends an open case that can no longer go on: expired after confirmation.ttl,
@@ -743,7 +757,7 @@ func (c *Core) openCase(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cata
 	if err != nil {
 		return err
 	}
-	if _, err := c.planGovCards(ctx, tx, now, tv, "governance_case", id, promotionCard, "governance.confirm:commission", nil); err != nil {
+	if _, err := c.planGovCards(ctx, tx, now, tv, "governance_case", id, promotionCard, "governance.confirm:commission", "", nil); err != nil {
 		return err
 	}
 	// The card is sent in the same transaction; the opening audit record covers both steps.
@@ -804,13 +818,15 @@ func (c *Core) caseSeats(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 
 // seatFigures are the symmetric figures of a holder over 180 days (GOV-12): recommendations
 // (a review with score 3 or more and no veto) and vetoes; confirmed are recommendations with
-// the trial outcome better and vetoes people upheld (an audit sample item that ended in
-// sample_closed without lifting the veto); refuted are recommendations with the outcome worse or a confirmed
+// the trial outcome better and vetoes people upheld (an audit sample item answered
+// would_not_accept or decided reject; silence, expiry and an accept that then expired do not
+// count); refuted are recommendations with the outcome worse or a confirmed
 // attribution, and vetoes lifted after which the outcome is not worse and there is no
 // attribution. It also returns the upheld vetoes, for the flag evicts_upheld_veto (GOV-19).
 func seatFigures(ctx context.Context, tx pgx.Tx, now time.Time, tenant, holder string) (map[string]any, int, error) {
 	rows, err := tx.Query(ctx, `SELECT (r->'result'->>'score')::int, coalesce((r->'result'->>'veto')::bool, false), coalesce(p.record->'trial'->>'outcome', ''),
-			coalesce((p.record->>'veto_overridden')::bool, false), p.state = 'sample_closed',
+			coalesce((p.record->>'veto_overridden')::bool, false),
+			coalesce(p.record->'sample_answer'->>'answer' = 'would_not_accept' OR p.record ? 'sample' AND p.record->'decision'->>'decision' = 'reject', false),
 			EXISTS (SELECT 1 FROM attributions a WHERE a.proposal = p.id AND a.state = 'confirmed')
 		FROM proposals p, jsonb_array_elements(coalesce(p.record->'reviews', '[]')) r
 		WHERE p.tenant = $1 AND r->>'state' = 'done' AND r->>'executor' = 'seat' AND (p.record->'verdict'->>'computed_at')::timestamptz >= $2
@@ -970,6 +986,8 @@ func (c *Core) decideCase(ctx context.Context, w *Worker, ob OnBehalf, req Decid
 			return err
 		} else if held {
 			return deny("held", "the cases of the tenant are paused")
+		} else if err := applyHold(ctx, tx, now, k, false); err != nil {
+			return err
 		}
 		if still, err := c.checkCase(ctx, tx, now, cat, k); err != nil {
 			return err

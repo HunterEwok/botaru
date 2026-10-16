@@ -312,12 +312,14 @@ func (c *Core) decideSample(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 	var state string
 	switch req.Decision {
 	case "reject":
-		if req.ReasonCode != "" {
-			if !c.declineReason(req.ReasonCode) {
-				return "", refuse("input_schema_invalid", "the reason is not in decline-reasons.yaml")
-			}
-			decision["reason_code"] = req.ReasonCode
+		code := req.ReasonCode
+		if code == "" {
+			code = "other"
 		}
+		if !c.declineReason(code) {
+			return "", refuse("input_schema_invalid", "the reason is not in decline-reasons.yaml")
+		}
+		decision["reason_code"] = code
 		state = "sample_closed"
 	case "accept", "override_veto":
 		if veto != (req.Decision == "override_veto") {

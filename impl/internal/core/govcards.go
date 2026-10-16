@@ -36,11 +36,16 @@ func (c *Core) withinCeiling(ctx context.Context, tx pgx.Tx, now time.Time, tv *
 }
 
 // planGovCards plans a card of a governance subject to the direct chat of every person with
-// cap; it returns how many were planned.
-func (c *Core) planGovCards(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, subjectKind, id, kind, cap string, extra map[string]any) (int, error) {
+// cap (and, when mark is set, whose data ceiling covers it); it returns how many were planned.
+func (c *Core) planGovCards(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, subjectKind, id, kind, cap, mark string, extra map[string]any) (int, error) {
 	people, err := peopleWithCap(ctx, tx, now, tv, cap)
 	if err != nil {
 		return 0, err
+	}
+	if mark != "" {
+		if people, err = c.withinCeiling(ctx, tx, now, tv, people, mark); err != nil {
+			return 0, err
+		}
 	}
 	n := 0
 	for _, person := range people {
