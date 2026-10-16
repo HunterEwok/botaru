@@ -376,7 +376,9 @@ func (c *Core) openApproval(ctx context.Context, tx pgx.Tx, now time.Time, tv *T
 		return "", "", err
 	}
 	var existing string
-	err := tx.QueryRow(ctx, `SELECT id FROM approvals WHERE tenant = $1 AND action = $2 AND args_hash = $3 AND state = 'pending'
+	// A waiting approval of the same write counts as the same request (APR-2, ORC-12).
+	err := tx.QueryRow(ctx, `SELECT id FROM approvals WHERE tenant = $1 AND action = $2 AND args_hash = $3
+		AND (state = 'pending' OR state = 'approved' AND reason = 'resource_busy')
 		AND initiator = $4 AND coalesce(source_task, '') = $5`, a.Tenant, a.Action, a.ArgsHash, a.Initiator, a.SourceTask).Scan(&existing)
 	if err == nil {
 		return existing, "pending", nil
@@ -717,6 +719,10 @@ func (c *Core) approvalLoop(ctx context.Context) error {
 	if err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error { return c.expireMemory(ctx, tx, now) }); err != nil {
 		return err
 	}
+	// The approvals that wait for a busy resource run once it is free (ORC-12).
+	if err := c.releaseWaitingApprovals(ctx, cat); err != nil {
+		return err
+	}
 	var list []struct{ id, tenant string }
 	err = c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
 		list = list[:0]
@@ -790,7 +796,11 @@ func (c *Core) approvalLoop(ctx context.Context) error {
 			}
 			return nil
 		}); err != nil {
-			return err
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			// One bad row does not stop the expiry and reminders of the others.
+			c.log.Error("an approval pass failed", "tenant", x.tenant, "approval", x.id, "error", err)
 		}
 	}
 	return nil
@@ -878,7 +888,7 @@ func (c *Core) closeApproval(ctx context.Context, tx pgx.Tx, now time.Time, a *a
 // cancelApprovalsOf cancels the pending approvals of an initiator, as P2 principal.off or a
 // lost right does (APR-6).
 func (c *Core) cancelApprovalsOf(ctx context.Context, tx pgx.Tx, now time.Time, tenant, initiator, reason string) error {
-	rows, err := tx.Query(ctx, `SELECT `+approvalColumns+` FROM approvals WHERE tenant = $1 AND initiator = $2 AND state = 'pending' ORDER BY id FOR UPDATE`, tenant, initiator)
+	rows, err := tx.Query(ctx, `SELECT `+approvalColumns+` FROM approvals WHERE tenant = $1 AND initiator = $2 AND state IN ('pending', 'approved') ORDER BY id FOR UPDATE`, tenant, initiator)
 	if err != nil {
 		return err
 	}
@@ -907,7 +917,7 @@ func (c *Core) cancelApprovalsOf(ctx context.Context, tx pgx.Tx, now time.Time, 
 // (person_inactive) or lost action.request for the action (rights_revoked), in the
 // transaction of the change (APR-6).
 func (c *Core) recheckApprovalsOf(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, principal string) error {
-	rows, err := tx.Query(ctx, `SELECT `+approvalColumns+` FROM approvals WHERE tenant = $1 AND initiator = $2 AND state = 'pending' ORDER BY id FOR UPDATE`, tv.Name, principal)
+	rows, err := tx.Query(ctx, `SELECT `+approvalColumns+` FROM approvals WHERE tenant = $1 AND initiator = $2 AND state IN ('pending', 'approved') ORDER BY id FOR UPDATE`, tv.Name, principal)
 	if err != nil {
 		return err
 	}
@@ -1313,6 +1323,10 @@ func (c *Core) executeApproval(ctx context.Context, tx pgx.Tx, now time.Time, ca
 	if c.rs.validate(schema, a.Args) != nil {
 		return c.closeApproval(ctx, tx, now, a, "canceled", "ref_invalid")
 	}
+	// A busy resource of an exclusive action makes the approval wait, not fail (ORC-12).
+	if wait, err := c.approvalWaits(ctx, tx, now, cat, a, act); err != nil || wait {
+		return err
+	}
 	taskID, err := c.insertActionTask(ctx, tx, now, actionTaskInput{
 		Tenant: a.Tenant, Action: a.Action, Args: a.Args, Initiator: a.Initiator, SourceTask: a.SourceTask, Mark: mark, ApprovalID: a.ID,
 	})
@@ -1325,7 +1339,7 @@ func (c *Core) executeApproval(ctx context.Context, tx pgx.Tx, now time.Time, ca
 	if err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE approvals SET state = 'executing', action_task = $2, toolcall = $3, updated_at = $4 WHERE id = $1 AND state = 'pending'`,
+	if _, err := tx.Exec(ctx, `UPDATE approvals SET state = 'executing', reason = NULL, action_task = $2, toolcall = $3, updated_at = $4 WHERE id = $1 AND state IN ('pending', 'approved')`,
 		a.ID, taskID, callID, now); err != nil {
 		return err
 	}

@@ -499,8 +499,10 @@ func (c *Core) FileGet(ctx context.Context, w *Worker, lease string, req FileGet
 }
 
 // mediaAllowed checks a file a delivery hands out to a person or a sink (ART-5): an export
-// delivery hands out only the export file, any other only a result file of its own task whose
-// sniffed type the task type lists in result_media_types and that is not an active format.
+// delivery hands out only the export file, any other only a result file of its own task or of
+// a task of its chain (an ancestor, a finished descendant, an earlier task of the tree with the
+// same initiator) whose sniffed type the producing task's type lists in
+// result_media_types and that is not an active format.
 // Another file is refused with media_type_not_allowed; the task outcome does not change.
 func (c *Core) mediaAllowed(ctx context.Context, tx pgx.Tx, cat *Catalog, kind, task string, f *fileRow) error {
 	if kind == "export" || f.Origin == "export" {
@@ -509,11 +511,31 @@ func (c *Core) mediaAllowed(ctx context.Context, tx pgx.Tx, cat *Catalog, kind, 
 		}
 		return refuse("media_type_not_allowed", "an export file goes only with its export delivery")
 	}
-	if task == "" || f.Producer != task || activeMediaType(f.MediaType) {
+	if task == "" || f.Origin != "produced" || activeMediaType(f.MediaType) {
 		return refuse("media_type_not_allowed", "the file type %s is not handed out", f.MediaType)
 	}
+	// A result file of the delivery's own task, or of a task of its chain with the same
+	// initiator or a co-initiator: one of its ancestors, a finished descendant, or an earlier task
+	// of its tree, such as a chain's child whose outcome a continuation reports; the producer's
+	// type lists it. A task another principal started is not handed out.
 	var typ string
-	if err := tx.QueryRow(ctx, `SELECT type FROM tasks WHERE id = $1`, task).Scan(&typ); err != nil {
+	err := tx.QueryRow(ctx, `WITH RECURSIVE up(id, n) AS (
+			SELECT record->>'parent', 1 FROM tasks WHERE id = $2
+			UNION ALL SELECT t.record->>'parent', up.n + 1 FROM tasks t JOIN up ON t.id = up.id WHERE up.n < 16),
+		pup(id, n) AS (
+			SELECT record->>'parent', 1 FROM tasks WHERE id = $1
+			UNION ALL SELECT t.record->>'parent', pup.n + 1 FROM tasks t JOIN pup ON t.id = pup.id WHERE pup.n < 16)
+		SELECT p.type FROM tasks p JOIN tasks d ON d.id = $2 AND d.tenant = p.tenant
+		WHERE p.id = $1 AND (p.id = d.id
+			OR (p.initiator = d.initiator OR coalesce(d.record->'co_initiators', '[]') ? p.initiator OR coalesce(p.record->'co_initiators', '[]') ? d.initiator)
+			AND (p.id IN (SELECT id FROM up WHERE id IS NOT NULL)
+				OR d.id IN (SELECT id FROM pup WHERE id IS NOT NULL) AND p.state IN ('completed', 'failed', 'canceled')
+				OR coalesce(p.record->>'root', p.id) = coalesce(d.record->>'root', d.id) AND p.created_at <= d.created_at))`,
+		f.Producer, task).Scan(&typ)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return refuse("media_type_not_allowed", "the file is not a result of this task's chain")
+	}
+	if err != nil {
 		return err
 	}
 	if !slices.Contains(cat.TaskTypes[typ].ResultMediaTypes, f.MediaType) {

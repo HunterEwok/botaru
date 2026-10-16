@@ -316,11 +316,11 @@ func preventableRepeats(since, now time.Time) int {
 	return n
 }
 
-// repeatPreventable repeats the notice of every restriction still in place; a repeat the loop
-// missed is not sent twice (GOV-47).
+// repeatPreventable repeats the notice of every restriction still in place that no operator
+// marked read; a repeat the loop missed is not sent twice (GOV-47).
 func (c *Core) repeatPreventable(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog) error {
 	rows, err := tx.Query(ctx, `SELECT r.tenant, r.incident, coalesce(i.class, ''), r.since, r.repeats FROM manager_restrictions r
-		LEFT JOIN incidents i ON i.id = r.incident WHERE r.until IS NULL ORDER BY r.tenant FOR UPDATE OF r`)
+		LEFT JOIN incidents i ON i.id = r.incident WHERE r.until IS NULL AND r.read_at IS NULL ORDER BY r.tenant FOR UPDATE OF r`)
 	if err != nil {
 		return err
 	}

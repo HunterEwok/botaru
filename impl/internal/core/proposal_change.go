@@ -40,9 +40,9 @@ func (c *Core) checkChange(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 		return c.checkHumanChange(cat, a, ch)
 	case "manifest_change":
 		return c.checkManifestChange(now, cat, a, ch)
+	case "script":
+		return c.checkScriptChange(cat, a, ch)
 	}
-	// A script draft needs the scripts section of the author role with propose: in_proposal
-	// and the SCR-5 acceptance, which this build does not serve.
 	return changeCheck{}, rejection("forbidden_change")
 }
 

@@ -192,7 +192,7 @@ func (c *Core) cancelTask(ctx context.Context, tx pgx.Tx, now time.Time, t *task
 		return &CancelResult{Task: t.id, State: "canceled", Reason: t.reason}, nil
 	default:
 		var waiting bool
-		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM approvals WHERE tenant = $1 AND state = 'pending' AND source_task IN
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM approvals WHERE tenant = $1 AND state IN ('pending', 'approved') AND source_task IN
 			(SELECT id FROM tasks WHERE tenant = $1 AND (id = $2 OR record->>'root' = $2)))
 			OR EXISTS (SELECT 1 FROM script_runs WHERE tenant = $1 AND state = ANY($3) AND anchor_task IN
 			(SELECT id FROM tasks WHERE tenant = $1 AND (id = $2 OR record->>'root' = $2)))`, t.tenant, t.id, scriptLive).Scan(&waiting); err != nil {
