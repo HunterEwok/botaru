@@ -31,7 +31,9 @@ CREATE TABLE forecasts (
     score       int,
     veto        boolean NOT NULL DEFAULT false,
     disagrees   boolean NOT NULL DEFAULT false,
-    written_at  timestamptz NOT NULL
+    written_at  timestamptz NOT NULL,
+    -- The last pass of the scoring that looked at the forecast.
+    checked_at  timestamptz
 );
 CREATE INDEX forecasts_proposal ON forecasts (proposal);
 CREATE INDEX forecasts_tenant ON forecasts (tenant, written_at);

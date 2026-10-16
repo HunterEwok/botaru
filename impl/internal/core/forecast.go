@@ -225,22 +225,60 @@ type outcomeOf struct {
 // scoreStep scores the kept forecasts of a tenant whose outcome became known (COM-16): every
 // forecast row of the last year, by each source that has an outcome for its lens; a score is
 // written once per source into forecast_scores and into the review in the proposal record. A
-// score from an attribution that was canceled since leaves, so the case is scored again.
+// score from an attribution that was canceled since leaves both, so the case is scored again.
+// A forecast is looked at again only when its proposal, an attribution of it or a resubmission of
+// it changed since the last look, or once a day for outcomes that come with time (an attribution
+// window that closes); the proposal is read without a lock and locked only to add a score.
 func (c *Core) scoreStep(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tv *TenantView) error {
 	if !c.claimsV03() {
 		return nil
 	}
-	if _, err := tx.Exec(ctx, `DELETE FROM forecast_scores s USING attributions a WHERE s.tenant = $1 AND a.id = s.attribution AND a.state = 'canceled'`, tv.Name); err != nil {
+	rows, err := tx.Query(ctx, `DELETE FROM forecast_scores s USING attributions a WHERE s.tenant = $1 AND a.id = s.attribution AND a.state = 'canceled'
+		RETURNING s.task, s.proposal, s.ref`, tv.Name)
+	if err != nil {
 		return err
 	}
-	rows, err := tx.Query(ctx, `SELECT task, proposal, lens, state, coalesce(forecast, '{}'), disagrees FROM forecasts WHERE tenant = $1 AND written_at >= $2 ORDER BY proposal, task`,
-		tv.Name, now.Add(-forecastLookback))
+	type dropped struct{ Task, Proposal, Ref string }
+	gone, err := pgx.CollectRows(rows, pgx.RowToStructByPos[dropped])
+	if err != nil {
+		return err
+	}
+	for _, d := range gone {
+		p, err := loadProposal(ctx, tx, d.Proposal)
+		if errors.Is(err, pgx.ErrNoRows) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		for _, r := range asList(p.Rec["reviews"]) {
+			rm := mmapAny(r)
+			if rm["task"] != d.Task {
+				continue
+			}
+			kept := []any{}
+			for _, sc := range asList(rm["scores"]) {
+				if sm := mmapAny(sc); sm["source"] != "attribution" || sm["ref"] != d.Ref {
+					kept = append(kept, sc)
+				}
+			}
+			rm["scores"] = kept
+		}
+		if err := c.saveProposal(ctx, tx, now, p); err != nil {
+			return err
+		}
+	}
+	rows, err = tx.Query(ctx, `SELECT f.task, f.proposal, f.lens, f.state, coalesce(f.forecast, '{}'), f.disagrees FROM forecasts f JOIN proposals p ON p.id = f.proposal
+		WHERE f.tenant = $1 AND f.written_at >= $2 AND (f.checked_at IS NULL OR f.checked_at < $3 OR p.updated_at > f.checked_at
+			OR EXISTS (SELECT 1 FROM attributions a WHERE a.proposal = f.proposal AND a.updated_at > f.checked_at)
+			OR EXISTS (SELECT 1 FROM proposals r WHERE r.tenant = $1 AND r.record->'resubmission'->>'of' = f.proposal AND r.updated_at > f.checked_at))
+		ORDER BY f.proposal, f.task`, tv.Name, now.Add(-forecastLookback), now.Add(-24*time.Hour))
 	if err != nil {
 		return err
 	}
 	defs := c.lensDefs()
 	byProposal := map[string][]forecastRow{}
-	var order []string
+	var order, tasks []string
 	for rows.Next() {
 		var f forecastRow
 		var raw []byte
@@ -259,20 +297,25 @@ func (c *Core) scoreStep(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 			order = append(order, f.Proposal)
 		}
 		byProposal[f.Proposal] = append(byProposal[f.Proposal], f)
+		tasks = append(tasks, f.Task)
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
 		return err
 	}
 	for _, pid := range order {
-		p, err := loadProposal(ctx, tx, pid)
+		p, err := readProposal(ctx, tx, pid)
 		if errors.Is(err, pgx.ErrNoRows) {
 			continue
 		}
 		if err != nil {
 			return err
 		}
-		changed := false
+		type added struct {
+			task  string
+			entry map[string]any
+		}
+		var adds []added
 		for _, f := range byProposal[pid] {
 			outs, err := c.lensOutcomes(ctx, tx, now, cat, p, f.Lens, f.Veto)
 			if err != nil {
@@ -289,22 +332,32 @@ func (c *Core) scoreStep(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 				if err != nil {
 					return err
 				}
-				if tag.RowsAffected() == 0 {
-					continue
-				}
-				// The score goes into the review of the record, for people (COM-16).
-				for _, r := range asList(p.Rec["reviews"]) {
-					if rm := mmapAny(r); rm["task"] == f.Task {
-						rm["scores"] = append(asList(rm["scores"]), map[string]any{"source": o.Source, "outcome": o.Class, "brier": b, "weight": o.Weight, "at": fmtTime(now)})
-						changed = true
-					}
+				if tag.RowsAffected() > 0 {
+					adds = append(adds, added{f.Task, map[string]any{"source": o.Source, "ref": o.Ref, "outcome": o.Class, "brier": b, "weight": o.Weight, "at": fmtTime(now)}})
 				}
 			}
 		}
-		if changed {
-			if err := c.saveProposal(ctx, tx, now, p); err != nil {
-				return err
+		if len(adds) == 0 {
+			continue
+		}
+		// The scores go into the reviews of the record, for people (COM-16).
+		if p, err = loadProposal(ctx, tx, pid); err != nil {
+			return err
+		}
+		for _, a := range adds {
+			for _, r := range asList(p.Rec["reviews"]) {
+				if rm := mmapAny(r); rm["task"] == a.task {
+					rm["scores"] = append(asList(rm["scores"]), a.entry)
+				}
 			}
+		}
+		if err := c.saveProposal(ctx, tx, now, p); err != nil {
+			return err
+		}
+	}
+	if len(tasks) > 0 {
+		if _, err := tx.Exec(ctx, `UPDATE forecasts SET checked_at = $2 WHERE task = ANY($1)`, tasks, now); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -418,9 +471,10 @@ func reviewCostEUR(body map[string]any) float64 {
 	return one + month*float64(trialDays)/30
 }
 
-// costOverrun says whether the spend of the task types of the trial subjects of q over its
-// window grew by more than the cost_eur of p's review input against the same length before
-// (COM-16); not ok while the window has not ended.
+// costOverrun says whether the spend of the change subjects over the trial window of q exceeds
+// the cost_eur of p's review input (COM-16): the spend of the tasks of the task_type subjects of
+// the trial and of the problem. Without a task_type subject the spend is not measured and the
+// lens gets no score (undetermined).
 func costOverrun(ctx context.Context, tx pgx.Tx, p, q *proposalRow) (bool, bool, error) {
 	t := mmapAny(q.Rec["trial"])
 	start := parseTime(asString(mmapAny(t["window"])["starts_at"]))
@@ -429,19 +483,21 @@ func costOverrun(ctx context.Context, tx pgx.Tx, p, q *proposalRow) (bool, bool,
 	}
 	end := start.AddDate(0, 0, trialDays)
 	var types []string
-	for _, s := range asList(t["subjects"]) {
-		if k, id, ok := cutSubject(asString(s)); ok && k == "task_type" {
+	for _, s := range append(asList(t["subjects"]), asList(mmapAny(mmapAny(q.Rec["body"])["problem"])["subjects"])...) {
+		if k, id, ok := cutSubject(asString(s)); ok && k == "task_type" && !slices.Contains(types, id) {
 			types = append(types, id)
 		}
 	}
-	var after, before int64
-	if err := tx.QueryRow(ctx, `SELECT coalesce(sum(s.eur_micros) FILTER (WHERE s.time >= $3 AND s.time < $4), 0)::bigint,
-			coalesce(sum(s.eur_micros) FILTER (WHERE s.time >= $5 AND s.time < $3), 0)::bigint
-		FROM spend s JOIN tasks k ON k.id = s.task WHERE s.tenant = $1 AND k.type = ANY($2) AND s.state <> 'reserved'`,
-		q.Tenant, types, start, end, start.AddDate(0, 0, -trialDays)).Scan(&after, &before); err != nil {
+	if len(types) == 0 {
+		return false, false, nil
+	}
+	var spent int64
+	if err := tx.QueryRow(ctx, `SELECT coalesce(sum(s.eur_micros), 0)::bigint FROM spend s JOIN tasks k ON k.id = s.task
+		WHERE s.tenant = $1 AND k.type = ANY($2) AND s.state <> 'reserved' AND s.time >= $3 AND s.time < $4`,
+		q.Tenant, types, start, end).Scan(&spent); err != nil {
 		return false, false, err
 	}
-	return after-before > money.FromEUR(reviewCostEUR(mmapAny(p.Rec["body"]))), true, nil
+	return spent > money.FromEUR(reviewCostEUR(mmapAny(p.Rec["body"]))), true, nil
 }
 
 // cutSubject splits a subject kind:id.

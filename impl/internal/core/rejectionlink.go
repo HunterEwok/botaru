@@ -126,7 +126,7 @@ func (c *Core) createRejectionLinks(ctx context.Context, tx pgx.Tx, now time.Tim
 			if hasCase || roleCases >= linksPerRoleCases {
 				continue
 			}
-			share, err := authorAlarmShare(ctx, tx, tv.Name, subject, i.at, asString(origin["worker"]), p.Role)
+			share, err := authorAlarmShare(ctx, tx, tv.Name, subject, mstr(mmap(classByName(cat, i.class), "detect"), "alarm"), i.at, asString(origin["worker"]), p.Role)
 			if err != nil {
 				return err
 			}
@@ -141,16 +141,35 @@ func (c *Core) createRejectionLinks(ctx context.Context, tx pgx.Tx, now time.Tim
 	return nil
 }
 
-// authorAlarmShare is the share of the points on the incident subject in the 7 days before the
-// incident that the author's worker or its role wrote: the series the alarm is built from.
-func authorAlarmShare(ctx context.Context, tx pgx.Tx, tenant, subject string, at time.Time, worker, role string) (float64, error) {
+// authorAlarmShare is the share of the points of the alarm series of the incident class on the
+// incident subject in the 7 days before the incident that the author's worker or its role wrote
+// (GOV-38, as PRP-22). The events catalog does not say which series an alarm is built from, so the
+// alarm series is the series named like the alarm, alarm.<name>.vN giving <name>; an alarm of the
+// monitoring system has no such series and gives 0.
+func authorAlarmShare(ctx context.Context, tx pgx.Tx, tenant, subject, alarm string, at time.Time, worker, role string) (float64, error) {
+	series := alarmSeriesName(alarm)
+	if series == "" {
+		return 0, nil
+	}
 	var total, own int
 	err := tx.QueryRow(ctx, `SELECT count(*), count(*) FILTER (WHERE worker = $5 OR role = $6) FROM obs_points
-		WHERE tenant = $1 AND subject = $2 AND at >= $3 AND at < $4`, tenant, subject, at.AddDate(0, 0, -selfAlarmDays), at, worker, role).Scan(&total, &own)
+		WHERE tenant = $1 AND subject = $2 AND at >= $3 AND at < $4 AND series = $7`, tenant, subject, at.AddDate(0, 0, -selfAlarmDays), at, worker, role, series).Scan(&total, &own)
 	if err != nil || total == 0 {
 		return 0, err
 	}
 	return float64(own) / float64(total), nil
+}
+
+// alarmSeriesName is the series named like an alarm: alarm.<name>.vN gives <name>.
+func alarmSeriesName(alarm string) string {
+	name, ok := strings.CutPrefix(alarm, "alarm.")
+	if !ok {
+		return ""
+	}
+	if i := strings.LastIndex(name, ".v"); i > 0 && strings.Trim(name[i+2:], "0123456789") == "" && len(name) > i+2 {
+		name = name[:i]
+	}
+	return name
 }
 
 // answerer is a seat holder's review of a linked proposal as GOV-41 reads it.
@@ -303,8 +322,32 @@ func (c *Core) linkConfirmed(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 // lens never leaves this way, and the others wait in order and are shown to people.
 func (c *Core) departureStep(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tenant string) error {
 	on, err := c.accountabilityOn(ctx, tx, cat, tenant)
-	if err != nil || on == nil {
+	if err != nil {
 		return err
+	}
+	if on == nil {
+		// The mode left on: nobody leaves for a link any more, so the waiting departures end
+		// (GOV-36, GOV-42), each with its audit record.
+		if !c.claimsV03() {
+			return nil
+		}
+		rows, err := tx.Query(ctx, `UPDATE link_departures SET state = 'canceled', reason = 'accountability_shadow', updated_at = $2
+			WHERE tenant = $1 AND state = 'waiting' RETURNING bot, seat, attribution`, tenant, now)
+		if err != nil {
+			return err
+		}
+		type gone struct{ Bot, Seat, Attribution string }
+		list, err := pgx.CollectRows(rows, pgx.RowToStructByPos[gone])
+		if err != nil {
+			return err
+		}
+		for _, g := range list {
+			if err := c.govAudit(ctx, tx, now, tenant, "governance.seat.parked", "bot", g.Bot, "", map[string]any{
+				"seat": g.Seat, "attribution": g.Attribution, "state": "canceled", "reason": "accountability_shadow"}); err != nil {
+				return err
+			}
+		}
+		return nil
 	}
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(7300108, hashtext($1))`, tenant); err != nil {
 		return err
@@ -314,18 +357,20 @@ func (c *Core) departureStep(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 		tenant, now.Add(-departurePace)).Scan(&recent); err != nil || recent {
 		return err
 	}
-	rows, err := tx.Query(ctx, `SELECT id, attribution, seat, bot FROM link_departures WHERE tenant = $1 AND state = 'waiting' ORDER BY created_at, id FOR UPDATE`, tenant)
+	// The link must still be confirmed: a disputed one waits, a canceled or rejected one drops.
+	rows, err := tx.Query(ctx, `SELECT d.id, d.attribution, d.seat, d.bot, coalesce(a.state, 'canceled') FROM link_departures d LEFT JOIN attributions a ON a.id = d.attribution
+		WHERE d.tenant = $1 AND d.state = 'waiting' ORDER BY d.created_at, d.id FOR UPDATE OF d`, tenant)
 	if err != nil {
 		return err
 	}
 	type dep struct {
-		id                     int64
-		attribution, seat, bot string
+		id                            int64
+		attribution, seat, bot, state string
 	}
 	var deps []dep
 	for rows.Next() {
 		var d dep
-		if err := rows.Scan(&d.id, &d.attribution, &d.seat, &d.bot); err != nil {
+		if err := rows.Scan(&d.id, &d.attribution, &d.seat, &d.bot, &d.state); err != nil {
 			rows.Close()
 			return err
 		}
@@ -342,6 +387,16 @@ func (c *Core) departureStep(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 	}
 	defs := c.lensDefs()
 	for _, d := range deps {
+		switch d.state {
+		case "confirmed":
+		case "disputed":
+			continue
+		default:
+			if err := end(d, "canceled", "link_canceled"); err != nil {
+				return err
+			}
+			continue
+		}
 		s, err := loadSeat(ctx, tx, tenant, d.seat, true)
 		if err != nil {
 			return err
@@ -508,7 +563,7 @@ func (c *Core) rejectionLinkCardFields(ctx context.Context, tx pgx.Tx, cat *Cata
 	}
 	b := p.body()
 	ic := classByName(cat, class)
-	share, err := authorAlarmShare(ctx, tx, a.Tenant, kind+":"+subject, opened, asString(mmapAny(p.Rec["origin"])["worker"]), p.Role)
+	share, err := authorAlarmShare(ctx, tx, a.Tenant, kind+":"+subject, mstr(mmap(ic, "detect"), "alarm"), opened, asString(mmapAny(p.Rec["origin"])["worker"]), p.Role)
 	if err != nil {
 		return nil, err
 	}

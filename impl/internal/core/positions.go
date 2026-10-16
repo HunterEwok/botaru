@@ -114,8 +114,9 @@ func personaOf(m map[string]any) personaRef {
 }
 
 // charterPersonas are the persona references of a charter spec by their path in it: the
-// persona of each position and the addendum of each lens.
-func charterPersonas(gov map[string]any) map[string]personaRef {
+// persona of each position and the addendum of each lens, and from v0.3 the addenda of the
+// positions by role profile.
+func charterPersonas(gov map[string]any, v03 bool) map[string]personaRef {
 	out := map[string]personaRef{}
 	for pos, v := range mmap(gov, "positions") {
 		if p, ok := v.(map[string]any); ok {
@@ -127,9 +128,10 @@ func charterPersonas(gov map[string]any) map[string]personaRef {
 	if pr := personaOf(mmap(mmap(gov, "farm_manager"), "persona")); pr.Ref != "" {
 		out["/farm_manager/persona"] = pr
 	}
-	// From v0.3 a position may have addenda per role profile (GOV-45).
+	// From v0.3 a position may have addenda per role profile (GOV-45); a core before it neither
+	// checks nor keeps them.
 	for pos, v := range mmap(gov, "positions") {
-		if p, ok := v.(map[string]any); ok {
+		if p, ok := v.(map[string]any); ok && v03 {
 			for prof, a := range mmap(p, "addenda") {
 				if am, ok := a.(map[string]any); ok {
 					if pr := personaOf(am); pr.Ref != "" {

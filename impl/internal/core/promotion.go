@@ -1318,7 +1318,7 @@ type leaverProposal struct {
 // proposeLeaver proposes the holder of L with the worst accuracy in its lens (GOV-43, COM-17),
 // only with commission.accountability on: a holder with fewer scored forecasts than
 // accountability_min_forecasts counts with the median of its lens, or as the worst once it has
-// held the seat for more than min_tenure plus 90 days; with no holder of L scored enough, or the
+// held the seat for more than min_tenure plus 90 days by its last seat.assigned.v1 event; with no holder of L scored enough, or the
 // two worst tied, code proposes nobody (and with a tie the person chooses among the tied seats).
 // The reward protection of COM-18 is not built, so nobody is protected. The flag
 // evicts_only_scored_veto marks a proposed holder that is the only holder of a veto lens with
@@ -1385,7 +1385,9 @@ func (c *Core) proposeLeaver(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 				tenant, s.id, s.holder).Scan(&since); err != nil {
 				return out, err
 			}
-			if since == nil || now.Sub(*since) > long {
+			// A holder whose assignment event is gone (pruned) has no known tenure and counts
+			// with the median, not as the worst.
+			if since != nil && now.Sub(*since) > long {
 				a = accuracy{Lens: a.Lens, N: a.N, Value: -2, OK: true}
 			} else {
 				a = accuracy{Lens: a.Lens, N: a.N, Value: median(byLens[lenses[s.id]]), OK: true}

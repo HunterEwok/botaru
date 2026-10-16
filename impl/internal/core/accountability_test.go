@@ -51,7 +51,8 @@ func (b *bench) charter(t *testing.T, n int, edit func(com map[string]any)) *App
 	return res
 }
 
-// The Brier score, the checks of a forecast and the tie (COM-16, COM-17).
+// The Brier score, the checks of a forecast and the tie (COM-16, COM-17); the alarm series of
+// the author's share (GOV-38).
 func TestForecastRules(t *testing.T) {
 	f := map[string]float64{"bad": 0.2, "ok": 0.8}
 	if b := brierOf(lensClasses("security", true), f, "bad"); math.Abs(b-1.28) > 1e-9 {
@@ -78,6 +79,10 @@ func TestForecastRules(t *testing.T) {
 	}
 	if !tied(accuracy{Value: 0.5, SE: 0.1}, accuracy{Value: 0.4, SE: 0.1}) || tied(accuracy{Value: 0.5}, accuracy{Value: 0.4}) {
 		t.Fatal("tie")
+	}
+	// GOV-38: the author's share is read on the series named like the alarm.
+	if alarmSeriesName("alarm.disk.free.low.v1") != "disk.free.low" || alarmSeriesName("farm.task.outcome") != "" {
+		t.Fatal("alarm series")
 	}
 }
 
@@ -348,6 +353,14 @@ func TestAccountabilityOn(t *testing.T) {
 	st, err := b.c.CommissionStatus(ctx, Operator{Tenant: "demo"}, TenantRequest{Tenant: "demo"})
 	if acc := mmapAny(st["accountability"]); err != nil || acc["mode"] != "on" || acc["departures_done"] != 1 || acc["departures_waiting"] != 1 || st["governance_v03_since"] == nil {
 		t.Fatalf("status %v %v", st, err)
+	}
+	// Back to shadow the waiting departure ends (GOV-36, GOV-42).
+	if res := b.charter(t, 5, func(com map[string]any) { com["accountability_min_forecasts"] = 8 }); res == nil || !res.Applied {
+		t.Fatalf("apply shadow: %+v", res)
+	}
+	b.loop(t, "governance")
+	if n := b.count(t, `SELECT count(*) FROM link_departures WHERE seat = 'commission:4' AND state = 'canceled' AND reason = 'accountability_shadow'`); n != 1 {
+		t.Fatalf("waiting departure in shadow %d", n)
 	}
 	if err := b.c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
 		at, err := unseatedRecently(ctx, tx, now, holders["commission:3"])
