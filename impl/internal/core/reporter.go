@@ -140,8 +140,13 @@ func (c *Core) reportAudience(ctx context.Context, tx pgx.Tx, now time.Time, cat
 		addPrincipals([]string{in.Initiator})
 	case in.Origin != nil:
 		addPrincipals([]string{in.Initiator})
-	case in.Source == "schedule":
-		sc := tv.Schedules[in.SourceID]
+	case in.Source == "schedule" || strings.HasPrefix(in.EnqueuedBy, "schedule:"):
+		// A redrive keeps the schedule only in enqueued_by.
+		name := in.SourceID
+		if in.Source != "schedule" {
+			name = strings.TrimPrefix(in.EnqueuedBy, "schedule:")
+		}
+		sc := tv.Schedules[name]
 		for _, x := range sc.DeliverTo {
 			addr, _ := x.(string)
 			kind, name, _ := strings.Cut(addr, ":")
@@ -275,6 +280,9 @@ func reportWindow(ctx context.Context, tx pgx.Tx, now time.Time, tenant, task, t
 	return now.Add(-24 * time.Hour), "24h", nil
 }
 
+// maxDigestRows is the most rows of a digest table (spec/model/work-item.schema.json).
+const maxDigestRows = 200
+
 // viewSnapshot is the snapshot of the views of a reporter task: taken once, at the first read
 // or at the end of the task, so the model and the digest table see the same numbers (REP-2).
 type viewSnapshot struct {
@@ -382,6 +390,11 @@ func (c *Core) snapshotOf(ctx context.Context, tx pgx.Tx, now time.Time, cat *Ca
 		if title == "" {
 			title = k[0]
 		}
+		// The digest table has at most maxDigestRows rows; the rest count as more.
+		if len(snap.Counts) >= maxDigestRows {
+			snap.TasksMore += counts[k]
+			continue
+		}
 		snap.Counts = append(snap.Counts, map[string]any{"type": k[0], "title": title, "state": k[1], "count": counts[k]})
 	}
 	// The proposals from recommended on, never an audit sample item (REP-8, DIG-6).
@@ -488,8 +501,8 @@ func (c *Core) statusToolCall(ctx context.Context, tx pgx.Tx, now time.Time, cat
 }
 
 // paragraphBad is what code does not let through in a model paragraph of a digest: links,
-// mentions, markup, channel commands and object ids (holds, approvals and the rest) (REP-2).
-var paragraphBad = regexp.MustCompile(`(?i)https?://|www\.|@\w|[*_` + "`" + `\[\]<>|~#]|(^|\s)/[a-z]|\b[a-z]{1,8}_[0-9a-hjkmnp-tv-z]{26}\b`)
+// bare domains a channel would turn into links, mentions, markup, channel commands and object ids (holds, approvals and the rest) (REP-2).
+var paragraphBad = regexp.MustCompile(`(?i)https?://|www\.|\b[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}\b|@\w|[*_` + "`" + `\[\]<>|~#]|(^|\s)/[a-z]|\b[a-z]{1,8}_[0-9a-hjkmnp-tv-z]{26}\b`)
 
 // digestParagraph is the model paragraph of a result as code lets it through, or "".
 func digestParagraph(result map[string]any) string {
@@ -517,10 +530,11 @@ func (c *Core) deliverDigest(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 	}
 	var r struct {
 		treeRecord
-		DataMark        string   `json:"data_mark"`
-		UntrustedSource string   `json:"untrusted_source"`
-		UntrustedOf     []string `json:"untrusted_sources"`
-		Initiator       string   `json:"-"`
+		DataMark        string    `json:"data_mark"`
+		UntrustedSource string    `json:"untrusted_source"`
+		UntrustedOf     []string  `json:"untrusted_sources"`
+		Initiator       string    `json:"-"`
+		Audience        *audience `json:"audience"`
 	}
 	if err := json.Unmarshal(rec, &r); err != nil {
 		return err
@@ -590,6 +604,11 @@ func (c *Core) deliverDigest(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 				}
 				seen := map[string]bool{}
 				for _, ch := range chats {
+					// Only the members the views were filtered for: one who joined since gets
+					// the next digest (REP-7).
+					if r.Audience == nil || !slices.Contains(r.Audience.Principals, ch.Principal) {
+						continue
+					}
 					to := Chat{Kind: "direct", ExternalID: ch.ExternalID}
 					if seen[ch.Channel+"/"+to.ID()] {
 						continue
