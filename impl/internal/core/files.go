@@ -194,6 +194,21 @@ func (c *Core) FilePut(ctx context.Context, w *Worker, lease string, ob *OnBehal
 				return refuse("not_ready", "send hello first")
 			}
 			ch, ok := tv.Channels[w.Target]
+			if ok && ch.Direction == "in" {
+				// A source channel puts the body of a delivery on behalf of its hook:<source>
+				// (ING-2); the file is untrusted as every file (ART-2).
+				hook, err := c.sourceFilePut(ctx, tx, now, w.Tenant, ch, ob, len(content))
+				if err != nil {
+					return err
+				}
+				origin, producer, mark = "upload", hook, c.higherMark(defaultAttachmentClass, req.DataMark)
+				// The hook is a service principal: its uploads are declared personal as any
+				// service's (ART-6).
+				if personal, err = servicePersonal(ctx, tx, tv, hook); err != nil {
+					return err
+				}
+				break
+			}
 			if !ok || ch.IdentityKind == "" || !strings.HasPrefix(ob.Identity, ch.IdentityKind+":") {
 				return refuse("forbidden", "the identity kind does not match the channel driver")
 			}
@@ -217,12 +232,10 @@ func (c *Core) FilePut(ctx context.Context, w *Worker, lease string, ob *OnBehal
 				return refuse("data_class_exceeded", "the file mark is above what the person may see")
 			}
 			origin, producer = "upload", principal
-			var declared *bool
-			if err := tx.QueryRow(ctx, `SELECT uploads_personal FROM principals WHERE tenant = $1 AND id = $2`, w.Tenant, principal).Scan(&declared); err != nil {
-				return err
-			}
-			if p.Kind == "service" && ((declared != nil && *declared) || (declared == nil && tv.Spec.Kind == "production")) {
-				personal = "declared"
+			if p.Kind == "service" {
+				if personal, err = servicePersonal(ctx, tx, tv, principal); err != nil {
+					return err
+				}
 			}
 		case lease != "":
 			l, _, err := c.heldLease(ctx, tx, w, lease, "file.put", nil)
@@ -580,4 +593,17 @@ func (c *Core) taintByFile(ctx context.Context, tx pgx.Tx, now time.Time, tv *Te
 	_, err := tx.Exec(ctx, `UPDATE tasks SET record = record || jsonb_build_object('untrusted_seen', true, 'untrusted_source', coalesce(record->>'untrusted_source', 'file'), 'data_mark', $2::text), updated_at = $3 WHERE id = $1`,
 		task, newMark, now)
 	return err
+}
+
+// servicePersonal is the personal_seen value of an upload by a service principal: declared when
+// the principal says its uploads are personal, or says nothing in a production tenant (ART-6).
+func servicePersonal(ctx context.Context, tx pgx.Tx, tv *TenantView, principal string) (string, error) {
+	var declared *bool
+	if err := tx.QueryRow(ctx, `SELECT uploads_personal FROM principals WHERE tenant = $1 AND id = $2`, tv.Name, principal).Scan(&declared); err != nil {
+		return "", err
+	}
+	if (declared != nil && *declared) || (declared == nil && tv.Spec.Kind == "production") {
+		return "declared", nil
+	}
+	return "", nil
 }

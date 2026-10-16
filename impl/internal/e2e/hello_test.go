@@ -94,6 +94,7 @@ func (f *fakeBotAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 type rig struct {
 	c       *core.Core
+	st      *store.Store
 	p1, p2  *httptest.Server
 	mock    *mockprovider.Server
 	bot     *fakeBotAPI
@@ -138,7 +139,7 @@ func newRig(t *testing.T) *rig {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := &rig{c: c, mock: mockprovider.New(sc), bot: &fakeBotAPI{}, root: root}
+	r := &rig{c: c, st: st, mock: mockprovider.New(sc), bot: &fakeBotAPI{}, root: root}
 	mockSrv := httptest.NewServer(r.mock)
 	t.Cleanup(mockSrv.Close)
 	gw, err := gateway.New(c, gateway.Config{TestBench: true, Providers: map[string]gateway.Provider{
