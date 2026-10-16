@@ -365,6 +365,12 @@ func (c *Core) completeAttempt(ctx context.Context, tx pgx.Tx, now time.Time, w 
 			return refuse("output_schema_invalid", "the result is not a review-result of the task's lens")
 		}
 	}
+	// A translator hands in only the closed translation-result (TRN-3).
+	if tt.Purpose == "translate" {
+		if err := c.checkTranslation(ctx, tx, w.Tenant, l.WorkID, result); err != nil {
+			return err
+		}
+	}
 	raw, err := json.Marshal(result)
 	if err != nil {
 		return err
@@ -418,6 +424,9 @@ func (c *Core) completeAttempt(ctx context.Context, tx pgx.Tx, now time.Time, w 
 	if err := c.campaignItemEnded(ctx, tx, now, l.WorkID, "completed", ""); err != nil {
 		return err
 	}
+	if err := c.scriptTaskEnded(ctx, tx, now, l.WorkID, "completed", ""); err != nil {
+		return err
+	}
 	// The answer goes to the task origin; the address comes from the record, never from the
 	// result (DLV-6). A child answers its parent, not the person.
 	var record struct {
@@ -453,6 +462,14 @@ func (c *Core) completeAttempt(ctx context.Context, tx pgx.Tx, now time.Time, w 
 		}
 	}
 	text, fields := resultText(result, tt.SummaryFields)
+	dataOrigin := "model"
+	// The answer to a translator task is a code text, not model output (TRN-5).
+	if tt.Purpose == "translate" {
+		if text, err = c.translatorAnswer(ctx, tx, now, cat, w.Tenant, w.Role, initiator, result); err != nil {
+			return err
+		}
+		fields, dataOrigin = nil, "code"
+	}
 	if window > 0 {
 		// The code text under the bot's question says the answer can simply be written (CNT-5).
 		var locale *string
@@ -474,7 +491,7 @@ func (c *Core) completeAttempt(ctx context.Context, tx pgx.Tx, now time.Time, w 
 	_, err = c.planDelivery(ctx, tx, now, plannedDelivery{
 		Tenant: w.Tenant, Task: l.WorkID, Kind: "task_result", Addr: "origin", TargetKind: "chat", TargetID: record.Origin.Chat.ID(),
 		ExecKind: "channel", ExecName: record.Origin.Channel, Recipient: initiator, Body: body,
-		DataMark: record.DataMark, DataOrigin: "model",
+		DataMark: record.DataMark, DataOrigin: dataOrigin,
 	})
 	return err
 }
@@ -806,6 +823,13 @@ func (c *Core) failTask(ctx context.Context, tx pgx.Tx, now time.Time, tenant, i
 		return err
 	}
 	if err := c.campaignItemEnded(ctx, tx, now, id, "failed", reason); err != nil {
+		return err
+	}
+	if err := c.scriptTaskEnded(ctx, tx, now, id, "failed", reason); err != nil {
+		return err
+	}
+	// A draft of a translator that failed afterwards is not started any more.
+	if err := c.cancelRunsOf(ctx, tx, now, tenant, id, "expired"); err != nil {
 		return err
 	}
 	var record treeRecord

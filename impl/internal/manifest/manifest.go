@@ -181,6 +181,12 @@ type Tenant struct {
 		} `json:"confirm_read_over"`
 		QueueMax int `json:"queue_max"`
 	} `json:"campaigns"`
+	// Scripts holds the script ceilings of the tenant, which only lower the farm's (SCR-5).
+	Scripts struct {
+		MaxSteps       int    `json:"max_steps"`
+		MaxActionSteps *int   `json:"max_action_steps"`
+		RunDeadline    string `json:"run_deadline"`
+	} `json:"scripts"`
 	// Messaging holds the wake-up ceilings of the tenant (MSG-11).
 	Messaging struct {
 		WakeDayEUR  *float64 `json:"wake_day_eur"`
@@ -373,9 +379,25 @@ type Role struct {
 	Campaigns *RoleCampaigns `json:"campaigns"`
 	// MayTargetGroups are the bot groups the role may address work to (DSP-4).
 	MayTargetGroups []string `json:"may_target_groups"`
-	Runtime         struct {
+	// Scripts is the vocabulary of a script author (SCR-5, TRN-2).
+	Scripts *RoleScripts `json:"scripts"`
+	Runtime struct {
 		Driver string `json:"driver"`
 	} `json:"runtime"`
+}
+
+// GoalTemplate is one goal template of a task type for script steps.
+type GoalTemplate struct {
+	Name string `json:"name"`
+	Goal string `json:"goal"`
+}
+
+// RoleScripts is the scripts block of a role: propose is none, draft or in_proposal.
+type RoleScripts struct {
+	Propose   string   `json:"propose"`
+	StepTypes []string `json:"step_types"`
+	Actions   []string `json:"actions"`
+	MaxSteps  int      `json:"max_steps"`
 }
 
 // RoleCampaigns is the campaigns block of a role: propose is none, read or action.
@@ -495,6 +517,10 @@ type Action struct {
 	Exclusive string `json:"exclusive"`
 	// Campaign holds the ceilings of a campaign with the action (ORC-5).
 	Campaign *ActionCampaign `json:"campaign"`
+	// Script says whether the action may be a script step (SCR-2).
+	Script *struct {
+		Allowed bool `json:"allowed"`
+	} `json:"script"`
 }
 
 // ActionCampaign is the campaign section of an action (ORC-5).
@@ -532,6 +558,8 @@ type TaskType struct {
 	ResultTTL string `json:"result_ttl"`
 	// SummaryForManagers is the description of the type that a manager sees (ORC-13).
 	SummaryForManagers string `json:"summary_for_managers"`
+	// GoalTemplates are the goals a script step of the type may name (SCR-4).
+	GoalTemplates []GoalTemplate `json:"goal_templates"`
 	// MaxChildren limits the direct children of a task; 10 when absent (PRM-6).
 	MaxChildren *int `json:"max_children"`
 	// Continuation is the reply continuation of the type's children (CNT-1).

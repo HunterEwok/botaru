@@ -149,7 +149,9 @@ func (c *Core) statusCommand(ctx context.Context, tx pgx.Tx, now time.Time, pc p
 	if t.state != "submitted" && t.state != "working" {
 		var waiting bool
 		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM approvals WHERE tenant = $1 AND state = 'pending' AND source_task IN
-			(SELECT id FROM tasks WHERE tenant = $1 AND (id = $2 OR record->>'root' = $2)))`, pc.tv.Name, t.id).Scan(&waiting); err != nil {
+			(SELECT id FROM tasks WHERE tenant = $1 AND (id = $2 OR record->>'root' = $2)))
+			OR EXISTS (SELECT 1 FROM script_runs WHERE tenant = $1 AND state = ANY($3) AND anchor_task IN
+			(SELECT id FROM tasks WHERE tenant = $1 AND (id = $2 OR record->>'root' = $2)))`, pc.tv.Name, t.id, scriptLive).Scan(&waiting); err != nil {
 			return nil, err
 		}
 		if !waiting {
@@ -175,6 +177,11 @@ func (c *Core) statusCommand(ctx context.Context, tx pgx.Tx, now time.Time, pc p
 // cancelTree cancels a task with its tree and the pending approvals the tree asked for; an
 // action task and a released write call are not revoked (APR-6, APR-7).
 func (c *Core) cancelTree(ctx context.Context, tx pgx.Tx, now time.Time, tenant, root, reason string) error {
+	// A run anchored anywhere in the tree stops first, so the steps it ends below release
+	// nothing more; its anchor is usually finished by now (SCR-11).
+	if err := c.cancelRunsOfTree(ctx, tx, now, tenant, root, reason); err != nil {
+		return err
+	}
 	rows, err := tx.Query(ctx, `SELECT id FROM tasks WHERE tenant = $1 AND (id = $2 OR record->>'root' = $2) AND state IN ('submitted', 'working')
 		AND type NOT LIKE 'action.%' ORDER BY id FOR UPDATE`, tenant, root)
 	if err != nil {
@@ -428,7 +435,13 @@ func (c *Core) cancelTaskIDs(ctx context.Context, tx pgx.Tx, now time.Time, tena
 		if err := c.campaignItemEnded(ctx, tx, now, id, "canceled", reason); err != nil {
 			return err
 		}
+		if err := c.scriptTaskEnded(ctx, tx, now, id, "canceled", reason); err != nil {
+			return err
+		}
 		if err := c.cancelCampaignsOf(ctx, tx, now, tenant, id); err != nil {
+			return err
+		}
+		if err := c.cancelRunsOf(ctx, tx, now, tenant, id, reason); err != nil {
 			return err
 		}
 	}
