@@ -76,6 +76,13 @@ func (x evalIndex) roleTier(role map[string]any) int {
 // from the parts in the set, computed by the one function TRN-6 uses as well; ok is false when
 // the set has no such role.
 func (x evalIndex) staticFingerprint(role, tenant string) (string, bool, error) {
+	return x.fingerprintOn(role, tenant, "", "")
+}
+
+// fingerprintOn is the static fingerprint of a role in a tenant with the profile of one model
+// slot (base or analysis) taken as the named one, as for a fallback profile (GW-5); an empty
+// slot keeps the role's own profiles.
+func (x evalIndex) fingerprintOn(role, tenant, slot, profile string) (string, bool, error) {
 	d, ok := x[manifest.Key{Kind: "Role", Name: role}]
 	if !ok {
 		return "", false, nil
@@ -101,7 +108,14 @@ func (x evalIndex) staticFingerprint(role, tenant string) (string, bool, error) 
 		ref = x.positionPersona(tenant, role, pos)
 	}
 	models := mmap(rs, "models")
-	fp, err := staticFingerprint(roleHash, types, ref.SHA256, mstr(models, "base"), mstr(models, "analysis"), mstr(mmap(rs, "runtime"), "driver"))
+	base, analysis := mstr(models, "base"), mstr(models, "analysis")
+	switch slot {
+	case "base":
+		base = profile
+	case "analysis":
+		analysis = profile
+	}
+	fp, err := staticFingerprint(roleHash, types, ref.SHA256, base, analysis, mstr(mmap(rs, "runtime"), "driver"), skillRefsOf(rs))
 	return fp, true, err
 }
 
@@ -195,7 +209,8 @@ func (c *Core) evalGate(after []manifest.Doc, index []int, before []manifest.Doc
 					continue
 				}
 			}
-			if cur.reported(role, fp) {
+			// From v0.3 a commission role also needs the unawareness set (GOV-46).
+			if cur.reported(role, fp) && cur.unawareReported(role, fp) {
 				continue
 			}
 			e := ApplyError{Kind: "Role", Name: role, Code: "eval_report_missing", Path: "/store/spec"}
@@ -252,7 +267,7 @@ func (c *Core) doctorEvals(ctx context.Context, tx pgx.Tx, tenant string, add fu
 		if err != nil {
 			return err
 		}
-		if !x.reported(k.Name, fp) {
+		if !x.reported(k.Name, fp) || !x.unawareReported(k.Name, fp) {
 			stale = append(stale, k.Name)
 		}
 	}
@@ -266,4 +281,15 @@ func (c *Core) doctorEvals(ctx context.Context, tx pgx.Tx, tenant string, add fu
 	}
 	add(ch)
 	return nil
+}
+
+// StaticFingerprint is the static fingerprint of a role in a tenant over the stored manifests
+// (spec/hashing.md, PRV-3), the value an EvalReports entry of the role carries; ok is false
+// when no such role is stored. The eval runner reads it for the index entries of its run.
+func (c *Core) StaticFingerprint(ctx context.Context, tenant, role string) (fp string, ok bool, err error) {
+	docs, _, err := loadManifests(ctx, c.st.Pool)
+	if err != nil {
+		return "", false, err
+	}
+	return newEvalIndex(docs).staticFingerprint(role, tenant)
 }

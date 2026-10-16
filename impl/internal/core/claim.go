@@ -333,6 +333,16 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 	if own != nil && own.State != "active" {
 		return nil, nil
 	}
+	// A runtime with model_attribution per_profile has capacity 1: while it holds an active
+	// attempt lease, an expired one too until the reaper ends it, it gets no second attempt, so
+	// the profile's handle and its usage belong to that one lease (RT-3).
+	if perProfile(w) {
+		var busy bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM leases WHERE worker_id = $1 AND kind = 'attempt' AND state = 'active')`,
+			w.ID).Scan(&busy); err != nil || busy {
+			return nil, err
+		}
+	}
 	scopes := workerScopes(w)
 	if own != nil {
 		scopes = append(scopes, scopeRef{kind: "bot", tenant: w.Tenant, name: own.ID})
@@ -367,6 +377,12 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		return nil, err
 	} else if wait != "" {
 		return nil, markWaiting(ctx, tx, now, w.Tenant, claims, nil, wait)
+	}
+	// A role with skills runs only on a runtime that declared runtime.skills: runtime_files
+	// at its last hello; another gets no attempt, and the tasks wait (SKL-2).
+	withSkills := knowledgeOn() && len(role.Skills) > 0
+	if withSkills && w.Kind == "agent" && (w.Hello == nil || w.Hello.Runtime == nil || w.Hello.Runtime.Skills != "runtime_files") {
+		return nil, markWaiting(ctx, tx, now, w.Tenant, claims, nil, "no_member_ready")
 	}
 	quotas := tv != nil && hasRunningCeiling(tv.Spec.Dispatch)
 	if quotas {
@@ -525,6 +541,23 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		}
 		picked = true
 	}
+	// A run gets a role's skills only from the core copy whose tree hash equals its skill-ref;
+	// while one is missing the task gets no attempt and waits with skill_missing (SKL-2).
+	var skillRefs []any
+	var skillFiles map[string]map[string]string
+	if withSkills {
+		var err error
+		skillRefs, skillFiles, err = roleSkills(ctx, tx, role)
+		if errors.Is(err, errSkillMissing) {
+			if skillWarnDue(w.Tenant, w.Role, role.Skills, time.Now()) {
+				c.log.Warn("a pinned skill has no core copy of its hash; the role's tasks wait", "tenant", w.Tenant, "role", w.Role)
+			}
+			return nil, markWaiting(ctx, tx, now, w.Tenant, claims, nil, "skill_missing")
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
 	tt := cat.TaskTypes[typ]
 	leaseS := c.cfg.LeaseS
 	if d, ok := parseDuration(tt.Timeouts.Lease); ok {
@@ -676,6 +709,18 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 			return nil, err
 		}
 		payload["my_outcomes"] = mo
+	}
+	// The skills as references, and their files as the extension field skill_files, which a
+	// runtime of runtime.skills: runtime_files writes into its own skill directory (SKL-2, MAN-3).
+	if len(skillRefs) > 0 {
+		payload["skills"] = skillRefs
+		payload["skill_files"] = skillFiles
+	}
+	// An ingest job gets the document it cuts (extension field kb_document, KNW-5).
+	if kd, err := kbDocumentPayload(ctx, tx, id, typ); err != nil {
+		return nil, err
+	} else if kd != nil {
+		payload["kb_document"] = kd
 	}
 	item.Payload = payload
 	if err := c.appendEvent(ctx, tx, now, w.Tenant, Event{Type: "task.working", Subject: id, Data: map[string]any{"task": id, "lease_no": leaseNo, "fingerprint": att.Fingerprint}}); err != nil {

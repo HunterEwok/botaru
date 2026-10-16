@@ -826,11 +826,9 @@ func (c *Core) erasureOverdue(ctx context.Context) error {
 // or agent runtime (RET-4, RET-11): the work item carries the scope and, until the request
 // closes, the needles. An agent worker's step is its runtime's purge (E4), by its worker id.
 func (c *Core) claimErasure(ctx context.Context, tx pgx.Tx, now time.Time, w *Worker) (*WorkItem, error) {
-	// A match of a person's request comes first: its card waits for it (SEC-11).
-	if w.Kind != "agent" {
-		if item, err := c.claimMatch(ctx, tx, now, w); err != nil || item != nil {
-			return item, err
-		}
+	// A match of a person's request comes first: its card waits for it (SEC-11, RT-5).
+	if item, err := c.claimMatch(ctx, tx, now, w); err != nil || item != nil {
+		return item, err
 	}
 	kind, target := w.Kind, w.Target
 	if w.Kind == "agent" {

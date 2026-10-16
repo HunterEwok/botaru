@@ -147,6 +147,11 @@ func (c *Core) Heartbeat(ctx context.Context, w *Worker, header string, req Hear
 				return nil, err
 			}
 		}
+		if w.Kind == "channel" {
+			if err := channelUpstream(ctx, tx, w, req.Health); err != nil {
+				return nil, err
+			}
+		}
 		leaseS := c.cfg.LeaseS
 		cancel := false
 		if l.Kind == "attempt" {
@@ -455,6 +460,10 @@ func (c *Core) completeAttempt(ctx context.Context, tx pgx.Tx, now time.Time, w 
 	data := map[string]any{"task": l.WorkID}
 	if att.Fingerprint != "" {
 		data["fingerprint"], data["fingerprint_parts"] = att.Fingerprint, att.Parts
+	}
+	// An ingest that completed without its index leaves its document failed (KNW-5).
+	if err := kbIngestEnded(ctx, tx, now, l.WorkID, "runtime_error"); err != nil {
+		return err
 	}
 	if err := c.appendEvent(ctx, tx, now, w.Tenant, Event{Type: "task.completed", Subject: l.WorkID, Data: data}); err != nil {
 		return err
@@ -869,6 +878,9 @@ func (c *Core) failTask(ctx context.Context, tx pgx.Tx, now time.Time, tenant, i
 	}
 	if json.Unmarshal(rec, &last) == nil && last.Provider != "" && reason == "deadline_exceeded" {
 		data["provider_reason"] = last.Provider
+	}
+	if err := kbIngestEnded(ctx, tx, now, id, reason); err != nil {
+		return err
 	}
 	if err := c.appendEvent(ctx, tx, now, tenant, Event{Type: "task.failed", Subject: id, Data: data}); err != nil {
 		return err

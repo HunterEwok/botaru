@@ -60,7 +60,8 @@ func LeaseHeader(token json.RawMessage) string {
 	return base64.RawURLEncoding.EncodeToString(buf.Bytes())
 }
 
-// Call posts a request to /v1/p1/<op> and decodes the answer into out.
+// Call posts a request to /v1/p1/<op> and decodes the answer into out; a *[]byte out takes the
+// body as it is.
 func (c *Client) Call(ctx context.Context, op, lease string, req, out any) error {
 	return c.post(ctx, "/v1/p1/"+op, lease, nil, req, out)
 }
@@ -113,6 +114,11 @@ func (c *Client) post(ctx context.Context, path, lease string, headers map[strin
 		return e
 	}
 	if out == nil {
+		return nil
+	}
+	if raw, ok := out.(*[]byte); ok {
+		// An answer that is not JSON, such as the bytes of file.get.
+		*raw = b
 		return nil
 	}
 	return json.Unmarshal(b, out)

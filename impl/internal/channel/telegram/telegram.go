@@ -44,7 +44,12 @@ type Channel struct {
 	cfg    Config
 	offset int64
 	log    *slog.Logger
+	// reported is when the channel last reported a successful poll to the core (OBS-10).
+	reported time.Time
 }
+
+// upstreamEvery is how often the channel reports the time of its last successful poll.
+const upstreamEvery = time.Minute
 
 // New returns a channel driver.
 func New(cfg Config) *Channel {
@@ -65,10 +70,34 @@ func New(cfg Config) *Channel {
 
 // Hello reports the channel and its declared capabilities to the core.
 func (c *Channel) Hello(ctx context.Context) error {
-	return c.cfg.Core.Call(ctx, "hello", "", map[string]any{
+	return c.hello(ctx, time.Time{})
+}
+
+// hello reports the channel; a non-zero polled is the time of the last successful getUpdates,
+// sent as the health report of the channel's upstream (OBS-10).
+func (c *Channel) hello(ctx context.Context, polled time.Time) error {
+	req := map[string]any{
 		"kind": "channel", "implementation": "botaru-telegram " + version.Version, "capacity": 1, "protocol_versions": []string{"v1"},
 		"driver": map[string]any{"ai_disclosure": "first_contact", "provenance": "visible_label", "stores_content": "none"},
-	}, nil)
+	}
+	if !polled.IsZero() {
+		req["health"] = []any{map[string]any{"component": "channel_upstream", "name": c.cfg.Channel, "state": "ok",
+			"time": polled.UTC().Format("2006-01-02T15:04:05.000Z")}}
+	}
+	return c.cfg.Core.Call(ctx, "hello", "", req, nil)
+}
+
+// reportPoll sends the time of a successful poll at most once a minute; a failed report is
+// logged and tried again after the next poll.
+func (c *Channel) reportPoll(ctx context.Context, polled time.Time) {
+	if !c.reported.IsZero() && polled.Sub(c.reported) < upstreamEvery {
+		return
+	}
+	if err := c.hello(ctx, polled); err != nil {
+		c.log.Warn("reporting the last poll failed", "err", err)
+		return
+	}
+	c.reported = polled
 }
 
 // Run says hello, then polls updates and serves deliveries until ctx ends.
@@ -93,6 +122,8 @@ func (c *Channel) Run(ctx context.Context) error {
 		if err := c.PollOnce(ctx); err != nil && ctx.Err() == nil {
 			c.log.Warn("polling updates", "err", err)
 			sleep(ctx, 3*time.Second)
+		} else if err == nil {
+			c.reportPoll(ctx, time.Now())
 		}
 	}
 	<-errc

@@ -487,13 +487,8 @@ func (c *Core) screenProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat
 // reviewsFit checks the review line for the sum of the review estimates and the author role's
 // share of the line this month (COM-6).
 func (c *Core) reviewsFit(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tv *TenantView, p *proposalRow, lenses []string, exec map[string]lensExecutor) *Problem {
-	sum := 0.0
-	for _, l := range lenses {
-		if e, ok := exec[l]; ok {
-			sum += cat.TaskTypes[e.Type].TreeBudgetEUR
-		}
-	}
-	if pr := c.checkBudget(ctx, tx, now, tv, budgetAsk{subject: "system", extra: money.FromEUR(sum), line: "review"}); pr != nil {
+	sum := reviewPrice(cat, lenses, exec)
+	if pr := c.checkBudget(ctx, tx, now, tv, budgetAsk{subject: "system", extra: sum, line: "review"}); pr != nil {
 		return pr
 	}
 	line := tv.Spec.Budgets.Lines["review"]
@@ -516,7 +511,7 @@ func (c *Core) reviewsFit(ctx context.Context, tx pgx.Tx, now time.Time, cat *Ca
 	if own, _ := toFloat(p.Rec["review_spent_eur"]); own > 0 && !p.since("review_started_at", time.Time{}).Before(start) {
 		used += own
 	}
-	if used+sum > roleReviewShare**line.MonthEUR+1e-9 {
+	if used+float64(sum)/1e6 > roleReviewShare**line.MonthEUR+1e-9 {
 		return refuse("budget_exhausted", "the author role's share of the review line is used up")
 	}
 	return nil
