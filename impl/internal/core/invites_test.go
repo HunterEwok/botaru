@@ -229,7 +229,8 @@ func TestPrivilegedGrantCode(t *testing.T) {
 	if !strings.Contains(me.Text, code) {
 		t.Fatalf("/me without the code: %s", me.Text)
 	}
-	if _, err := b.c.Grant(ctx, b.op, GrantRequest{Op: "grant", Subject: b.alice, Group: "staff", Code: "1" + code[1:]}); reasonOf(err) != "forbidden" {
+	wrong := string('0'+('1'-'0'+code[0]-'0')%10) + code[1:] // another first digit, never the code itself
+	if _, err := b.c.Grant(ctx, b.op, GrantRequest{Op: "grant", Subject: b.alice, Group: "staff", Code: wrong}); reasonOf(err) != "forbidden" {
 		t.Fatalf("a wrong code: %v", err)
 	}
 	if b.membership(t, b.alice, "staff") != "pending" {
