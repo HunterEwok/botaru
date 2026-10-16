@@ -65,6 +65,8 @@ type earlier struct {
 	// Tree is set when the earlier task is a child or a continuation: the new one joins its
 	// tree under the same parent, so the tree limits hold for it too (PRM-6).
 	Tree *treeRecord
+	// CoInitiators are the initiators of what the earlier task read (MSG-7).
+	CoInitiators []string
 }
 
 // continuesTo finds the task an activity continues (CNT-5, PRM-9): the task of the bot message
@@ -128,9 +130,13 @@ func (c *Core) continuesTo(ctx context.Context, tx pgx.Tx, now time.Time, tv *Te
 		}
 	}
 	out := &earlier{ID: id, Type: typ, Untrusted: r.UntrustedSeen, Mark: r.DataMark, Data: map[string]any{"task": id, "state": state}}
-	if tr, err := loadTree(ctx, tx, id); err != nil {
+	tr, err := loadTree(ctx, tx, id)
+	if err != nil {
 		return nil, err
-	} else if tr.Parent != "" {
+	}
+	// The new task read the earlier outcome: it is narrowed by whom that one read (MSG-7).
+	out.CoInitiators = tr.CoInitiators
+	if tr.Parent != "" {
 		out.Tree = &tr
 	}
 	if len(result) > 0 {

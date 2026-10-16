@@ -239,12 +239,14 @@ func (c *Core) SubmitActivity(ctx context.Context, w *Worker, a Activity) (*Acti
 			// The outcome of the earlier task is an attachment block of the new one (CNT-5).
 			body["attachments"] = append(attached, map[string]any{"data": prev.Data})
 			in.Continues, in.Untrusted, in.ContinuesMark = prev.ID, prev.Untrusted, prev.Mark
+			in.CoInitiators = prev.CoInitiators
 			// A follow-up in a tree is the next task of that tree, not a new root with a fresh
 			// depth and budget (PRM-6, CNT-5). The conversation comes from origin (PRM-9).
 			if t := prev.Tree; t != nil {
 				in.Chain = &chainLink{
-					Parent: t.Parent, Root: t.Root, Depth: t.Depth + 1, Mark: t.DataMark, MaxTier: t.MaxTier,
+					Parent: t.Parent, Root: t.Root, Depth: max(t.Depth, t.DepthFloor) + 1, Mark: t.DataMark, MaxTier: t.MaxTier,
 					Untrusted: t.UntrustedSeen, Trace: t.Trace, ParentPriority: priorityOf(ctx, tx, t.Parent),
+					CoInitiators: t.CoInitiators, WakeTask: t.WakeTask,
 				}
 			}
 		}

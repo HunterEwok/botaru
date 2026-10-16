@@ -458,11 +458,13 @@ type wakeInput struct {
 // principal's entries caused ("subject"): the usage lines of their whole subtrees this day, an
 // estimated line counting zero once reconciled or released as in windowUsed, and of their open
 // reserves the part not spent yet, a wake-up's own reserve being the estimate of its subtree.
-// The reserves of ownWake are left out: the caller's reserve is a draw on them (MSG-11).
+// The reserves of ownWake are left out: the caller's reserve is a draw on them, and so are
+// those of a task waiting for the provider, as in windowUsed (MSG-11).
 func wakeSum(ctx context.Context, tx pgx.Tx, tenant string, day time.Time, ownWake, by, val string) (int64, error) {
 	cond := `w.record->>'wake_inbox' = $3`
 	if by == "subject" {
-		cond = `w.record->'wake_subjects' ? $3`
+		// A person's day counts only the work line (BUD-1).
+		cond = `w.record->'wake_subjects' ? $3 AND s.line = 'work'`
 	}
 	var sum int64
 	err := tx.QueryRow(ctx, `SELECT coalesce((SELECT sum(CASE WHEN s.state = 'estimated' AND (s.reconciled_at IS NOT NULL OR s.released_at IS NOT NULL) THEN 0
@@ -472,7 +474,8 @@ func wakeSum(ctx context.Context, tx pgx.Tx, tenant string, day time.Time, ownWa
 		+ coalesce((SELECT sum(greatest(s.eur_micros - coalesce((SELECT sum(x.eur_micros) FROM spend x JOIN tasks xt ON xt.id = x.task
 				WHERE x.root = s.root AND x.unit <> 'task' AND (xt.id = s.task OR (s.task = w.id AND xt.record->>'wake_task' = w.id))), 0), 0))
 			FROM spend s JOIN tasks t ON t.id = s.task JOIN tasks w ON w.id = t.record->>'wake_task'
-			WHERE s.tenant = $1 AND s.unit = 'task' AND t.state IN ('submitted', 'working') AND w.id <> $4 AND `+cond+`), 0)`,
+			WHERE s.tenant = $1 AND s.unit = 'task' AND t.state IN ('submitted', 'working') AND w.id <> $4 AND `+cond+`
+			AND NOT (t.state = 'submitted' AND coalesce(t.reason, '') IN ('provider_unavailable', 'provider_quota'))), 0)`,
 		tenant, day, val, ownWake).Scan(&sum)
 	return sum, err
 }

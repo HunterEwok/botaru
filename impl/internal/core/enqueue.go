@@ -575,6 +575,10 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 		}
 		record["tree_budget_micros"] = taskTreeBudget(rootRec, cat.TaskTypes[rootType])
 	}
+	// The record keeps the initiators of what the tree read, from the chain or the caller (MSG-7).
+	if co := coInitiatorsOf(in); len(co) > 0 {
+		record["co_initiators"] = co
+	}
 	if w := in.Wake; w != nil {
 		record["wake_inbox"], record["depth"] = w.Inbox, w.Depth
 		// The wake-up heads a subtree of its own: the spend of its children counts in its
@@ -795,6 +799,14 @@ func (c *Core) wakeShare(ctx context.Context, tx pgx.Tx, now time.Time, tv *Tena
 	if personal == nil {
 		return nil, nil
 	}
+	limit := *personal
+	// After a restore without the provider report the personal day is halved, as in
+	// checkBudget (RET-6).
+	if halve, err := spendGapOpen(ctx, tx); err != nil {
+		return nil, err
+	} else if halve {
+		limit /= 2
+	}
 	day := tenantDay(tv, now)
 	own, err := windowUsed(ctx, tx, tv.Name, spendFilter{subject: sub, line: "work"}, day, "")
 	if err != nil {
@@ -804,7 +816,7 @@ func (c *Core) wakeShare(ctx context.Context, tx pgx.Tx, now time.Time, tv *Tena
 	if err != nil {
 		return nil, err
 	}
-	if own+wakes+estimate > money.FromEUR(*personal) {
+	if own+wakes+estimate > money.FromEUR(limit) {
 		return refuse("budget_exhausted", "the personal day limit is used up"), nil
 	}
 	return nil, nil

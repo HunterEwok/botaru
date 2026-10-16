@@ -389,7 +389,7 @@ func (c *Core) replyContinuation(ctx context.Context, tx pgx.Tx, now time.Time, 
 		Tenant: tenant, Type: cont.Type, Body: body, IdempotencyKey: "system:cont:reply:" + child, Initiator: initiator,
 		EnqueuedBy: "core", Origin: src.Origin, FairnessKey: fairnessOf(ctx, tx, child), Cause: child,
 		Chain: &chainLink{
-			Parent: src.Parent, Root: src.Root, Depth: src.Depth + 1, Mark: c.higherMark(parent.DataMark, src.DataMark),
+			Parent: src.Parent, Root: src.Root, Depth: max(src.Depth, src.DepthFloor, parent.DepthFloor) + 1, Mark: c.higherMark(parent.DataMark, src.DataMark),
 			MaxTier: parent.MaxTier, Untrusted: parent.UntrustedSeen || src.UntrustedSeen, Conversation: src.Conversation, Trace: src.Trace,
 			ParentPriority: priorityOf(ctx, tx, src.Parent), WakeTask: src.WakeTask,
 			// The continuation read what the child and the source read (MSG-7).
