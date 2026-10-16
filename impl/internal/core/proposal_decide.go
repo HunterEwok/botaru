@@ -133,6 +133,9 @@ func (c *Core) decideProposal(ctx context.Context, w *Worker, ob OnBehalf, req D
 			}
 			return &committed{p: refuse("expired", "the card has expired")}
 		}
+		if err := c.requireDetails(ctx, tx, now, p.Tenant, "proposal", p.ID, proposalCard, req.Decision, press.principal); err != nil {
+			return err
+		}
 		prev := mmapAny(p.Rec["decision"])
 		defers, _ := toFloat(prev["defer_count"])
 		decision := map[string]any{"decision": req.Decision, "reason_code": nil, "decided_by": press.principal, "at": fmtTime(now),

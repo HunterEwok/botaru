@@ -389,6 +389,9 @@ func (c *Core) completeAttempt(ctx context.Context, tx pgx.Tx, now time.Time, w 
 	if _, err := tx.Exec(ctx, `UPDATE tasks SET state = 'completed', result = $2, updated_at = $3 WHERE id = $1`, l.WorkID, raw, now); err != nil {
 		return err
 	}
+	if err := c.scheduleSlotEnded(ctx, tx, now, w.Tenant, l.WorkID, rec, "completed"); err != nil {
+		return err
+	}
 	// Proposals are born only here, in the transaction of a successful complete (INS-3).
 	if err := c.createProposals(ctx, tx, now, cat, w, l.WorkID, typ, rec, bodies); err != nil {
 		return err
@@ -855,6 +858,9 @@ func (c *Core) failTask(ctx context.Context, tx pgx.Tx, now time.Time, tenant, i
 		return err
 	}
 	if err := c.scriptTaskEnded(ctx, tx, now, id, "failed", reason); err != nil {
+		return err
+	}
+	if err := c.scheduleSlotEnded(ctx, tx, now, tenant, id, rec, reason); err != nil {
 		return err
 	}
 	// A draft of a translator that failed afterwards is not started any more.

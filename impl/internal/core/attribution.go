@@ -478,7 +478,7 @@ func (c *Core) decideAttribution(ctx context.Context, w *Worker, ob OnBehalf, re
 				return err
 			}
 		}
-		if req.Decision != "unknown" && !opened {
+		if c.missingDetails(attributionCard, req.Decision, opened) {
 			return deny("details_not_opened", `open "Details" first`)
 		}
 		state := map[string]string{"yes": "confirmed", "no": "rejected", "unknown": "unknown"}[req.Decision]

@@ -123,8 +123,8 @@ func (c *Core) SubmitActivity(ctx context.Context, w *Worker, a Activity) (*Acti
 		if err != nil {
 			return err
 		}
-		// The recipient's locale, then en (DLV-9); the tenant's locale is a field of v0.2.
-		locale := p.Locale
+		// The recipient's locale, the tenant's, then en (DLV-9, DLV-18).
+		locale := c.pickLocale(p.Locale, tv.Spec.Locale)
 		reply := func(key string) {
 			out = ActivityResult{Result: "reply", Text: c.texts.Render(locale, key, nil)}
 		}
@@ -143,9 +143,7 @@ func (c *Core) SubmitActivity(ctx context.Context, w *Worker, a Activity) (*Acti
 			if err := noteChatSeen(ctx, tx, now, w.Tenant, binding.Name, principal); err != nil {
 				return err
 			}
-			if binding.Locale != "" {
-				locale = binding.Locale
-			}
+			locale = c.pickLocale(binding.Locale, tv.Spec.Locale)
 			// In a group only /help and /about run; every other command is given in a private
 			// chat (PRM-15).
 			if word, ok := groupCommand(a); ok {

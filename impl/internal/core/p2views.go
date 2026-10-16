@@ -51,6 +51,8 @@ type DeadItem struct {
 type DeadList struct {
 	Items []DeadItem `json:"items"`
 	Next  string     `json:"next,omitempty"`
+	// Groups are the dead work by (tenant, type, reason), on the first page (CAP-4).
+	Groups []DeadGroup `json:"groups,omitempty"`
 }
 
 // DeadletterList lists the dead work of a tenant, oldest first: failed tasks with a reason of
@@ -99,7 +101,14 @@ func (c *Core) DeadletterList(ctx context.Context, op Operator, req TenantReques
 			it.Tenant, it.At = tenant, fmtTime(at)
 			out.Items = append(out.Items, it)
 		}
-		return rows.Err()
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		rows.Close()
+		if req.After == "" {
+			out.Groups, err = deadGroups(ctx, tx, tenant)
+		}
+		return err
 	})
 	if err != nil {
 		return nil, err
@@ -517,6 +526,9 @@ func (c *Core) Doctor(ctx context.Context, op Operator, req TenantRequest) (*Doc
 			return err
 		}
 		if err := c.doctorManager(ctx, tx, now, cat, tenant, add); err != nil {
+			return err
+		}
+		if err := c.doctorTwoApprovers(ctx, tx, now, cat, tenant, add); err != nil {
 			return err
 		}
 		if err := c.doctorEvals(ctx, tx, tenant, add); err != nil {

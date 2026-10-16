@@ -75,6 +75,8 @@ texts:
   cmd.profile.actions: "Actions you can request: {titles}."
   cmd.profile.data: "Your data classes: {classes}."
   cmd.lang.unknown: "Unknown language. Available: {locales}."
+  cmd.prefs.show: "Quiet hours: {quiet}. Daily digest: {digest}."
+  cmd.prefs.usage: "Usage in a private chat: /prefs, /prefs quiet HH:MM-HH:MM, /prefs quiet off, /prefs digest daily or /prefs digest off."
   cmd.forbidden.needs: This needs the group {group}; contact the tenant administrator.
   cmd.followup.hint: You can simply reply with a message within {minutes} minutes.
   # A person's data and memory (MEM-4, SEC-11)
@@ -166,6 +168,8 @@ texts:
   card.answer.expired: The card has expired.
   card.answer.already_decided: This card is already decided.
   card.answer.failed: The press could not be processed; try again later.
+  card.answer.details_first: Open "Details" first.
+  card.answer.held: Decisions on this card are paused by a hold; try again when it ends.
   card.details.header: "Details of \"{title}\":"
   card.details.row: "{field}: {value}"
   # Number words that a model paragraph to people may not hold (REP-4)

@@ -161,6 +161,8 @@ type Tenant struct {
 	Dispatcher       TenantDispatcher  `json:"dispatcher"`
 	Dispatch         TenantDispatch    `json:"dispatch"`
 	Attention        TenantAttention   `json:"attention"`
+	// Locale is the language of code texts for the tenant's people without their own (DLV-18).
+	Locale string `json:"locale"`
 	// Run holds the pipelines of the command /run <name> (APR-17).
 	Run map[string]RunEntry `json:"run"`
 	// Retention holds the tenant's periods: the file period (ART-1) and the periods of the
@@ -229,11 +231,19 @@ type RunEntry struct {
 type TenantAttention struct {
 	// CardsPerTenantHour is how many action approvals the core creates per hour; 20 when unset.
 	CardsPerTenantHour int `json:"cards_per_tenant_hour"`
+	// NoncriticalPerDay is how many cards of non-urgent decisions a person gets a day; nil
+	// means the default 10 (APR-15).
+	NoncriticalPerDay *int `json:"noncritical_per_day"`
 }
 
 // TenantDispatch holds the dispatch rules of the tenant policy (DSP-3, DSP-7).
 type TenantDispatch struct {
 	Rules []DispatchRule `json:"rules"`
+	// Fairness holds the weight of each kind of fairness key within a class (DSP-6); without
+	// it the order within a class is the enqueue time, as in v0.1.
+	Fairness *struct {
+		Weights map[string]int `json:"weights"`
+	} `json:"fairness"`
 }
 
 // DispatchRule matches tasks by type or type prefix and source kind; this build reads its
@@ -749,6 +759,8 @@ type Schedule struct {
 	SkipIfWaiting *bool `json:"skip_if_waiting"`
 	// Proposable false keeps the schedule out of proposals (PRP-10).
 	Proposable *bool `json:"proposable"`
+	// Locale is the language of code texts for the schedule's addresses (DLV-18).
+	Locale string `json:"locale"`
 }
 
 // RoleInsight is the insight section of a role: the analysis types, the series and tools it

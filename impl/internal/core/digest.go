@@ -558,6 +558,10 @@ func (c *Core) proposalCardFields(cat *Catalog, p *proposalRow, kind string, rem
 	if p.Rec["self_evidence"] == true {
 		ctxt["self_evidence"] = true
 	}
+	// The local times of a changed schedule that disappear or repeat (TIM-5).
+	for k, v := range mmapAny(p.Rec["schedule_times"]) {
+		ctxt[k] = v
+	}
 	us := mmapAny(p.Rec["untrusted_seen"])
 	card := map[string]any{
 		"card": kind, "subject_kind": "proposal", "id": p.ID, "nonce": p.Nonce, "title": cut(title, 200), "context": ctxt,

@@ -37,6 +37,7 @@ func main() {
 	certFile := flag.String("tls-cert", "", "the TLS certificate of the webhook")
 	keyFile := flag.String("tls-key", "", "the TLS key of the webhook")
 	webhookTokenFile := flag.String("webhook-token-file", "", "the file with the token the Zabbix media type sends")
+	maintenancePoll := flag.Int("maintenance-poll-s", 60, "maintenance_poll_s of the deployment binding: how often the maintenance status of the catalog nodes is read, at most 300 (MON-9)")
 	flag.Parse()
 	if *showVersion {
 		fmt.Println(version.String("botaru-zabbix"))
@@ -49,6 +50,9 @@ func main() {
 	}
 	if *tenant == "" || *api == "" {
 		fail("flags", errors.New("-tenant and -api are required"))
+	}
+	if *maintenancePoll < 1 || *maintenancePoll > 300 {
+		fail("flags", errors.New("-maintenance-poll-s is between 1 and 300"))
 	}
 	token, err := config.Secret(*tokenFile)
 	if err != nil {
@@ -78,7 +82,7 @@ func main() {
 	a := zabbix.New(zabbix.Config{
 		Core:   &p1client.Client{BaseURL: *coreURL, Token: token, HTTP: &http.Client{Timeout: 2 * time.Minute}},
 		Tenant: *tenant, Target: *target, API: *api, APIToken: apiToken, FarmHost: *farmHost, Hosts: hosts,
-		WebhookToken: webhookToken, Logger: log,
+		WebhookToken: webhookToken, Logger: log, MaintenanceEvery: time.Duration(*maintenancePoll) * time.Second,
 	})
 	if *listen != "" {
 		srv := &http.Server{Addr: *listen, Handler: a.Webhook(), ReadHeaderTimeout: 10 * time.Second}

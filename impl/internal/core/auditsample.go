@@ -328,13 +328,11 @@ func (c *Core) decideSample(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		if veto {
 			// APR-14: "Lift veto" only after this person opened "Details" of the judged card,
 			// the one with the scores and the veto; the P1 card.details record comes first.
-			// A reusable check of APR-14 replaces this local one when it arrives.
-			var opened bool
-			if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM card_views WHERE subject_kind = 'proposal' AND subject_id = $1 AND principal = $2 AND opened_at >= $3)`,
-				p.ID, press.principal, parseTime(asString(mmapAny(p.Rec["sample_answer"])["at"]))).Scan(&opened); err != nil {
+			opened, err := detailsOpened(ctx, tx, "proposal", p.ID, press.principal, parseTime(asString(mmapAny(p.Rec["sample_answer"])["at"])))
+			if err != nil {
 				return "", err
 			}
-			if !opened {
+			if c.missingDetails(proposalSampleCard, req.Decision, opened) {
 				return "", deny("details_not_opened", `open "Details" first`)
 			}
 		}

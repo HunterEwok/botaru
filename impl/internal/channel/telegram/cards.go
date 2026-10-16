@@ -139,6 +139,9 @@ func (c *Channel) renderCard(locale string, cd *card) string {
 	}
 	// A card still waiting for its person shows the deadline, a closed one its state.
 	switch {
+	case cd.State == "paused":
+		// A pending approval under a pause_action hold (HLD-8).
+		lines = append(lines, t.Render(locale, "card.paused", nil), t.Render(locale, "card.deadline", map[string]any{"deadline": cd.ExpiresAt}))
 	case cd.State != "" && !slices.Contains(openStates, cd.State):
 		lines = append(lines, t.Render(locale, "card.state", map[string]any{"state": cd.State}))
 	case cd.ExpiresAt != "":
@@ -287,7 +290,12 @@ func (c *Channel) press(ctx context.Context, q *callbackQuery) error {
 		answer("card.remind.rate_limited", map[string]any{"minutes": 5})
 	case r == "already_terminal":
 		answer("card.answer.already_decided", nil)
-	case r == "forbidden" || r == "not_found" || r == "held" || r == "estimate_exceeded":
+	case r == "details_not_opened":
+		// The decision needs "Details" opened first (APR-14).
+		answer("card.answer.details_first", nil)
+	case r == "held":
+		answer("card.answer.held", nil)
+	case r == "forbidden" || r == "not_found" || r == "estimate_exceeded":
 		answer("card.answer.forbidden", nil)
 	default:
 		var pe *p1client.Error

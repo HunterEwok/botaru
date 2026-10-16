@@ -199,7 +199,7 @@ func (c *Core) createProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat
 	if a.Untrusted && kind != "none" && kind != "manifest_change" {
 		return "", rejection("untrusted_direction")
 	}
-	chk, err := c.checkChange(ctx, tx, cat, a, b.Change)
+	chk, err := c.checkChange(ctx, tx, now, cat, a, b.Change)
 	if err != nil {
 		return "", err
 	}
@@ -294,6 +294,9 @@ func (c *Core) createProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat
 		"state": "screened", "state_reason": nil, "body": body, "reviews": []any{}, "verdict": nil, "decision": nil,
 		"realization": nil, "trial": nil,
 		"evidence_seen": seen, "guarded": chk.Guarded, "targets": chk.Targets, "created_at": fmtTime(now),
+	}
+	if chk.Times != nil {
+		record["schedule_times"] = chk.Times
 	}
 	recRaw, err := json.Marshal(record)
 	if err != nil {

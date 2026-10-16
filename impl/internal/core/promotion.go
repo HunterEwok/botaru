@@ -1010,7 +1010,7 @@ func (c *Core) decideCase(ctx context.Context, w *Worker, ob OnBehalf, req Decid
 		if req.Decision == "reject" {
 			return c.rejectCase(ctx, tx, now, cat, k, press, req, conf, deny, out)
 		}
-		if !opened {
+		if c.missingDetails(promotionCard, req.Decision, opened) {
 			return deny("details_not_opened", `open "Details" first`)
 		}
 		var pending bool

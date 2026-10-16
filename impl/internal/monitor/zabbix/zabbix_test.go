@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/HunterEwok/botaru/impl/internal/p1client"
 )
@@ -24,6 +25,8 @@ type fakeZabbix struct {
 	calls   []rpc
 	events  map[string]map[string]any
 	scripts []map[string]any
+	// maint is the maintenance id of web1 while it is in maintenance.
+	maint string
 }
 
 type rpc struct {
@@ -46,7 +49,11 @@ func (z *fakeZabbix) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "history.push":
 		result = map[string]any{"response": "success", "data": []any{map[string]any{"itemid": "1"}}}
 	case "host.get":
-		result = []any{map[string]any{"hostid": "10501", "host": "web1.example.org"}}
+		h := map[string]any{"hostid": "10501", "host": "web1.example.org", "maintenance_status": "0", "maintenanceid": "0"}
+		if z.maint != "" {
+			h["maintenance_status"], h["maintenanceid"] = "1", z.maint
+		}
+		result = []any{h}
 	case "script.getscriptsbyhosts":
 		// Zabbix 7.0 takes an array of host objects, each with a hostid.
 		var hosts []struct {
@@ -344,5 +351,57 @@ func TestErase(t *testing.T) {
 	c := core.ops("complete")
 	if len(c) != 2 || c[0].Body["erasure"].(map[string]any)["outcome"] != "not_applicable" || c[1].Body["erasure"].(map[string]any)["outcome"] != "failed" {
 		t.Fatalf("erasure %+v", c)
+	}
+}
+
+// The maintenance poll (MON-9): every poll that finds a node in maintenance sends an active
+// event with until two poll intervals ahead, the first poll that finds it out sends ended, and
+// a node out of maintenance before sends nothing; the adapter reads no time periods.
+func TestMaintenancePoll(t *testing.T) {
+	ctx := context.Background()
+	a, z, core, _ := setup(t)
+	if err := a.PollMaintenance(ctx); err != nil || len(core.ops("submit_activity")) != 0 {
+		t.Fatalf("no maintenance: %v %d", err, len(core.ops("submit_activity")))
+	}
+	z.mu.Lock()
+	z.maint = "77"
+	z.mu.Unlock()
+	for range 2 {
+		if err := a.PollMaintenance(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	z.mu.Lock()
+	z.maint = ""
+	z.mu.Unlock()
+	for range 2 {
+		if err := a.PollMaintenance(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	subs := core.ops("submit_activity")
+	if len(subs) != 3 {
+		t.Fatalf("events %d", len(subs))
+	}
+	var states []string
+	for _, s := range subs {
+		ev := s.Body["event"].(map[string]any)
+		d := ev["data"].(map[string]any)
+		if ev["type"] != "ext.monitor.maintenance.v1" || d["resource"] != "web1" || d["maintenanceid"] != "77" {
+			t.Fatalf("event %v", ev)
+		}
+		states = append(states, d["state"].(string))
+		if d["state"] == "active" {
+			u, err := time.Parse(time.RFC3339, d["until"].(string))
+			if err != nil || time.Until(u) < 110*time.Second || time.Until(u) > 121*time.Second {
+				t.Fatalf("until %v %v", d["until"], err)
+			}
+		}
+	}
+	if strings.Join(states, ",") != "active,active,ended" {
+		t.Fatalf("states %v", states)
+	}
+	for _, c := range z.called("timeperiod.get") {
+		t.Fatalf("the adapter read time periods: %s", c)
 	}
 }

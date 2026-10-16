@@ -289,9 +289,16 @@ func (c *Core) retentionLoop(ctx context.Context) error {
 		// is older than the tenant's content period, whichever comes first.
 		exec(`DELETE FROM tool_cache WHERE (tenant, key) IN (SELECT k.tenant, k.key FROM tool_cache k LEFT JOIN p ON p.tenant = k.tenant
 			WHERE k.expires_at <= $10 OR (k.created_at <= $9 AND k.created_at <= coalesce(p.content, $6)) LIMIT $8 FOR UPDATE OF k SKIP LOCKED)`, with(start)),
-		// C4 by the tenant's memory period: a person's records (RET-9).
-		exec(`DELETE FROM memory_items WHERE id IN (SELECT m.id FROM memory_items m JOIN p ON p.tenant = m.tenant
-			WHERE m.updated_at <= p.memory LIMIT $8 FOR UPDATE OF m SKIP LOCKED)`, base),
+		// C4 by the tenant's memory period: a person's records (RET-9), with the mark of the
+		// first delivery of their card (APR-15).
+		func(tx pgx.Tx, now time.Time) (int64, error) {
+			var n int64
+			err := tx.QueryRow(ctx, retentionCuts+`, d AS (DELETE FROM memory_items WHERE id IN (SELECT m.id FROM memory_items m JOIN p ON p.tenant = m.tenant
+				WHERE m.updated_at <= p.memory LIMIT $8 FOR UPDATE OF m SKIP LOCKED) RETURNING id),
+				f AS (DELETE FROM card_first_deliveries WHERE subject_kind = 'memory_record' AND subject_id IN (SELECT id FROM d))
+				SELECT count(*) FROM d`, base...).Scan(&n)
+			return n, err
+		},
 		// Facts by the memory period from their last verification (a memory record ages from its
 		// last change), a sealed fact of a retired identity too, before its seal
 		// ends (MEM-10); an open offer no longer lists a deleted fact, so the successor's recheck
@@ -448,6 +455,11 @@ func (c *Core) metadataRetention(ctx context.Context, cat *Catalog) error {
 				_, err := tx.Exec(ctx, `DELETE FROM spend_reconciliations WHERE tenant = $1`+fmt.Sprintf(in, "day", "day"), ts.name, ts.from, ts.to)
 				return 0, err
 			},
+			// The daily count of cards over the card limit, without names (APR-15).
+			func(tx pgx.Tx, now time.Time) (int64, error) {
+				_, err := tx.Exec(ctx, `DELETE FROM card_excess WHERE tenant = $1`+fmt.Sprintf(in, "day", "day"), ts.name, ts.from, ts.to)
+				return 0, err
+			},
 			func(tx pgx.Tx, now time.Time) (int64, error) {
 				tag, err := tx.Exec(ctx, `DELETE FROM events WHERE seq IN (SELECT seq FROM events WHERE tenant = $1`+fmt.Sprintf(in, "time", "time")+`
 					LIMIT $4 FOR UPDATE SKIP LOCKED)`, ts.name, ts.from, ts.to, retentionBatch)
@@ -517,8 +529,17 @@ func (c *Core) metadataRetention(ctx context.Context, cat *Catalog) error {
 					OR q.kind <> 'export' AND q.state = 'approved' AND (q.erasure IS NULL OR e.state = 'done' AND (q.kind = 'erase' OR e.found IS NOT NULL)))`+
 				fmt.Sprintf(in, "q.updated_at", "q.updated_at")+` LIMIT $4 FOR UPDATE OF q SKIP LOCKED),
 				m AS (DELETE FROM subject_match_steps WHERE request IN (SELECT id FROM c)),
+				f AS (DELETE FROM card_first_deliveries WHERE subject_kind = 'subject_request' AND subject_id IN (SELECT id FROM c)),
 				d AS (DELETE FROM subject_requests WHERE id IN (SELECT id FROM c) RETURNING id)
 				SELECT count(*) FROM d`),
+			// The mark of the first delivery of a card of a proposal, a promotion case or an
+			// attribution (APR-15) goes by the month of that delivery: by then the card's
+			// deadline is long past, and the mark holds only a subject id and a time.
+			meta(`WITH d AS (DELETE FROM card_first_deliveries WHERE (subject_kind, subject_id) IN (SELECT f.subject_kind, f.subject_id FROM card_first_deliveries f
+				WHERE (f.subject_kind IN ('proposal', 'self_measured_card') AND EXISTS (SELECT 1 FROM proposals x WHERE x.id = f.subject_id AND x.tenant = $1)
+					OR f.subject_kind = 'governance_case' AND EXISTS (SELECT 1 FROM governance_cases x WHERE x.id = f.subject_id AND x.tenant = $1)
+					OR f.subject_kind = 'attribution' AND EXISTS (SELECT 1 FROM attributions x WHERE x.id = f.subject_id AND x.tenant = $1))`+
+				fmt.Sprintf(in, "f.delivered_at", "f.delivered_at")+` LIMIT $4 FOR UPDATE OF f SKIP LOCKED) RETURNING 1) SELECT count(*) FROM d`),
 			// An export that is done or failed goes by the month it ended (LCY-2, SEC-10): its
 			// row holds ids, the sink, the recipient and the public key; its file stays a
 			// tombstone in files and goes by the file period. The row stays while its file still

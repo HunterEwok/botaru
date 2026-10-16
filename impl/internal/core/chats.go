@@ -30,6 +30,10 @@ type ChatBindRequest struct {
 	ModelText string `json:"model_text"`
 	// NoticeRepeat is how often code repeats the notices to a non-principal (MSG-17).
 	NoticeRepeat string `json:"notice_repeat"`
+	// Digest is the digest pace of the binding (REP-10).
+	Digest *struct {
+		MaxPerHour int `json:"max_per_hour"`
+	} `json:"digest"`
 }
 
 // chatBinding is a bound group chat (DLV-7).
@@ -131,6 +135,13 @@ func (c *Core) ChatBind(ctx context.Context, op Operator, req ChatBindRequest) (
 	if d, ok := parseDuration(req.NoticeRepeat); req.NoticeRepeat != "" && (!ok || d < 24*time.Hour || d > 366*24*time.Hour) {
 		return nil, refuse("input_schema_invalid", "notice_repeat is a duration from 1d to 366d")
 	}
+	var perHour *int
+	if req.Digest != nil && req.Digest.MaxPerHour != 0 {
+		if req.Digest.MaxPerHour < 1 || req.Digest.MaxPerHour > 60 {
+			return nil, refuse("input_schema_invalid", "digest.max_per_hour is from 1 to 60")
+		}
+		perHour = &req.Digest.MaxPerHour
+	}
 	chat := req.Chat.ID()
 	var out Done
 	err = c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
@@ -156,10 +167,11 @@ func (c *Core) ChatBind(ctx context.Context, op Operator, req ChatBindRequest) (
 		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM chat_bindings WHERE tenant = $1 AND name = $2)`, op.Tenant, name).Scan(&known); err != nil {
 			return err
 		}
-		if _, err := tx.Exec(ctx, `INSERT INTO chat_bindings (tenant, name, channel, chat, ceiling, locale, model_text, created_by, created_at, updated_at, notice_repeat)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9, $10)
-			ON CONFLICT (tenant, name) DO UPDATE SET ceiling = $5, locale = $6, model_text = $7, members_unknown = false, updated_at = $9, notice_repeat = $10`,
-			op.Tenant, name, req.Channel, chat, req.Ceiling, nullable(req.Locale), modelText, op.Principal, now, nullable(req.NoticeRepeat)); err != nil {
+		if _, err := tx.Exec(ctx, `INSERT INTO chat_bindings (tenant, name, channel, chat, ceiling, locale, model_text, created_by, created_at, updated_at, notice_repeat, digest_max_per_hour)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9, $10, $11)
+			ON CONFLICT (tenant, name) DO UPDATE SET ceiling = $5, locale = $6, model_text = $7, members_unknown = false, updated_at = $9, notice_repeat = $10,
+			digest_max_per_hour = $11`,
+			op.Tenant, name, req.Channel, chat, req.Ceiling, nullable(req.Locale), modelText, op.Principal, now, nullable(req.NoticeRepeat), perHour); err != nil {
 			return err
 		}
 		// Binding the chat again means the operator checked its members: the persons who left

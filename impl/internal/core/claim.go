@@ -378,13 +378,39 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		acting = actingOf{Bot: own.ID, BotEpoch: own.Epoch}
 	}
 	// A lens review goes only to its executor role and never to the author's worker (COM-2).
+	// Fairness within a class (DSP-6): the next task comes from the fairness key with the
+	// fewest running attempts per weight of its kind; a key of weight 0 only when no other key
+	// of the class waits; a tie goes to the key whose oldest waiting task came first, then to
+	// the smaller task id.
+	var weights map[string]int
+	if tv != nil && tv.Spec.Dispatch.Fairness != nil {
+		weights = tv.Spec.Dispatch.Fairness.Weights
+		if weights == nil {
+			weights = map[string]int{}
+		}
+	}
 	for picked := false; !picked; {
-		err := tx.QueryRow(ctx, `SELECT id, type, body, record, lease_no, initiator FROM tasks
-			WHERE tenant = $1 AND state = 'submitted' AND body IS NOT NULL AND type = ANY($2) AND (run_at IS NULL OR run_at <= $3) AND (deadline_at IS NULL OR deadline_at > $3)
+		const waiting = `tenant = $1 AND state = 'submitted' AND body IS NOT NULL AND type = ANY($2) AND (run_at IS NULL OR run_at <= $3) AND (deadline_at IS NULL OR deadline_at > $3)
 			AND NOT id = ANY($4)
-			AND (record->>'executor_role' IS NULL OR record->>'executor_role' = $5) AND (record->>'not_worker' IS NULL OR record->>'not_worker' <> $6)
+			AND (record->>'executor_role' IS NULL OR record->>'executor_role' = $5) AND (record->>'not_worker' IS NULL OR record->>'not_worker' <> $6)`
+		var err error
+		if weights == nil {
+			err = tx.QueryRow(ctx, `SELECT id, type, body, record, lease_no, initiator FROM tasks WHERE `+waiting+`
 			ORDER BY priority_class, created_at, id LIMIT 1 FOR UPDATE SKIP LOCKED`, w.Tenant, claims, now, skip, w.Role, w.ID).
-			Scan(&id, &typ, &body, &rec, &leaseNo, &initiator)
+				Scan(&id, &typ, &body, &rec, &leaseNo, &initiator)
+		} else {
+			err = tx.QueryRow(ctx, `WITH keys AS (
+				SELECT priority_class, coalesce(record->>'fairness_key', '') AS fk, min(created_at) AS oldest FROM tasks WHERE `+waiting+` GROUP BY 1, 2),
+			running AS (SELECT coalesce(record->>'fairness_key', '') AS fk, count(*) AS n FROM tasks WHERE tenant = $1 AND state = 'working' GROUP BY 1),
+			weighted AS (SELECT k.priority_class, k.fk, k.oldest, coalesce(r.n, 0) AS n,
+				coalesce(($7::jsonb ->> split_part(k.fk, ':', 1))::int, 1) AS weight FROM keys k LEFT JOIN running r ON r.fk = k.fk)
+			SELECT t.id, t.type, t.body, t.record, t.lease_no, t.initiator FROM tasks t
+			JOIN weighted k ON k.priority_class = t.priority_class AND k.fk = coalesce(t.record->>'fairness_key', '')
+			WHERE `+strings.ReplaceAll(waiting, "tenant = $1", "t.tenant = $1")+`
+			ORDER BY t.priority_class, k.weight = 0, CASE WHEN k.weight = 0 THEN 0 ELSE k.n::float8 / k.weight END, k.oldest, t.created_at, t.id
+			LIMIT 1 FOR UPDATE OF t SKIP LOCKED`, w.Tenant, claims, now, skip, w.Role, w.ID, weights).
+				Scan(&id, &typ, &body, &rec, &leaseNo, &initiator)
+		}
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
@@ -563,6 +589,17 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		"instruction": joinInstruction(persona, tt.Instruction),
 		"handles":     handles,
 	}
+	// The language of the answer by the locale order for the recipient of the result; the
+	// model does not choose it (DLV-18).
+	var tr treeRecord
+	if err := json.Unmarshal(rec, &tr); err != nil {
+		return nil, err
+	}
+	rl, err := c.replyLocale(ctx, tx, cat, w.Tenant, id, g.Initiator, tr)
+	if err != nil {
+		return nil, err
+	}
+	payload["reply_locale"] = rl
 	// Implementation extension (MAN-3): the result schema, so that the runtime can ask the
 	// model for a matching answer. The instruction itself stays the trusted text from git.
 	if tt.ResultSchema != nil {
@@ -634,6 +671,8 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 	}
 	var cardBody map[string]any
 	replacesID := ""
+	// skip are the deliveries this claim passed over: a deferred card behind an earlier one.
+	skip := []string{}
 	for picked := false; !picked; {
 		err := tx.QueryRow(ctx, `SELECT d.id, d.kind, d.addr, d.target_kind, d.target_id, d.recipient, d.data_mark, d.body, d.lease_no, d.task, d.dataorigin, d.subject_kind, d.subject_id FROM deliveries d
 		WHERE d.tenant = $1 AND d.exec_kind = $2 AND d.exec_name = $3 AND d.state = 'planned' AND (d.run_at IS NULL OR d.run_at <= $4)
@@ -646,7 +685,8 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 				AND p.kind = 'privacy_notice' AND p.state = 'delivered' AND p.notice_version IS NOT DISTINCT FROM nullif($5, ''))))
 		AND NOT (d.alarmkey IS NOT NULL AND EXISTS (SELECT 1 FROM deliveries o WHERE o.tenant = d.tenant AND o.alarmkey = d.alarmkey
 			AND o.recipient IS NOT DISTINCT FROM d.recipient AND o.seq < d.seq AND o.state IN ('planned', 'sending')))
-		ORDER BY d.seq LIMIT 1 FOR UPDATE SKIP LOCKED`, w.Tenant, w.Kind, w.Target, now, version).
+		AND NOT d.id = ANY($6)
+		ORDER BY d.seq LIMIT 1 FOR UPDATE SKIP LOCKED`, w.Tenant, w.Kind, w.Target, now, version, skip).
 			Scan(&id, &kind, &addr, &targetKind, &targetID, &recipient, &dataMark, &body, &leaseNo, &task, &origin, &subjectKind, &subjectID)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
@@ -802,6 +842,61 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 				continue
 			}
 		}
+		// The card limit per person per day: a non-urgent card over it waits until the next day
+		// (APR-15).
+		if recipient != nil && tv != nil && w.Kind == "channel" {
+			wait, err := c.cardLimit(ctx, tx, now, tv, id, kind, *recipient, deref(subjectKind), deref(subjectID), w.Target)
+			if err != nil {
+				return nil, err
+			}
+			if wait {
+				skip = append(skip, id)
+				continue
+			}
+		}
+		// The person's quiet hours and daily digest defer a deferrable delivery (DLV-10).
+		if recipient != nil && w.Kind == "channel" {
+			wait, err := c.prefsDefer(ctx, tx, now, cat, w.Tenant, id, kind, *recipient)
+			if err != nil {
+				return nil, err
+			}
+			if wait {
+				skip = append(skip, id)
+				continue
+			}
+		}
+		// The digest pace of the chat holds at hand-out too (REP-10).
+		if kind == "digest" && targetKind == "chat" && w.Kind == "channel" {
+			wait, err := c.digestHandout(ctx, tx, now, w.Tenant, id, w.Target, targetID)
+			if err != nil {
+				return nil, err
+			}
+			if wait {
+				skip = append(skip, id)
+				continue
+			}
+		}
+		// The first delivery of a limited card sets the expiry of its subject; it is undone
+		// when the card is withheld below, so it holds only for a card that goes to sending
+		// (APR-15). The card is drawn after it, so it shows the new deadline.
+		firstSet := false
+		if recipient != nil && tv != nil && w.Kind == "channel" && c.limitedCard(kind, deref(subjectID)) {
+			if _, err := tx.Exec(ctx, `SAVEPOINT card_first`); err != nil {
+				return nil, err
+			}
+			if err := c.firstCardDelivery(ctx, tx, now, kind, deref(subjectKind), deref(subjectID)); err != nil {
+				return nil, err
+			}
+			firstSet = true
+		}
+		undoFirst := func() error {
+			if !firstSet {
+				return nil
+			}
+			firstSet = false
+			_, err := tx.Exec(ctx, `ROLLBACK TO SAVEPOINT card_first`)
+			return err
+		}
 		if sk := deref(subjectKind); sk == "approval" || sk == "proposal" || sk == "control" || sk == "campaign" || sk == "script" || sk == "script_gate" || sk == "governance_case" || sk == "attribution" || sk == "takeover" {
 			// A card is drawn from the record now, so it shows the current state (APR-3). An
 			// update waits while the card it edits is being sent, and is dropped when that card
@@ -833,6 +928,9 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 				return nil, err
 			}
 			if drawn == nil && kind != cardUpdate {
+				if err := undoFirst(); err != nil {
+					return nil, err
+				}
 				if _, err := tx.Exec(ctx, `UPDATE deliveries SET state = 'withheld', reason = 'ref_invalid', updated_at = $2 WHERE id = $1`, id, now); err != nil {
 					return nil, err
 				}
@@ -840,11 +938,19 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 			}
 			if kind == cardUpdate && replaces == "" {
 				var sending bool
-				if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM deliveries WHERE id = $1 AND state IN ('planned', 'sending'))`, b["of"]).Scan(&sending); err != nil {
+				var cardAt *time.Time
+				err := tx.QueryRow(ctx, `SELECT true, run_at FROM deliveries WHERE id = $1 AND state IN ('planned', 'sending')`, b["of"]).Scan(&sending, &cardAt)
+				if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 					return nil, err
 				}
 				if sending {
-					if _, err := tx.Exec(ctx, `UPDATE deliveries SET run_at = $2 WHERE id = $1`, id, now.Add(5*time.Second)); err != nil {
+					// A card deferred by the card limit goes at its run_at; the update waits
+					// for it instead of asking again every few seconds (APR-15).
+					next := now.Add(5 * time.Second)
+					if cardAt != nil && cardAt.After(next) {
+						next = *cardAt
+					}
+					if _, err := tx.Exec(ctx, `UPDATE deliveries SET run_at = $2 WHERE id = $1`, id, next); err != nil {
 						return nil, err
 					}
 				} else if _, err := tx.Exec(ctx, `UPDATE deliveries SET state = 'withheld', reason = 'ref_invalid', updated_at = $2 WHERE id = $1`, id, now); err != nil {
@@ -865,6 +971,9 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 				return nil, err
 			}
 			if drawn == nil {
+				if err := undoFirst(); err != nil {
+					return nil, err
+				}
 				if _, err := tx.Exec(ctx, `UPDATE deliveries SET state = 'withheld', reason = 'ref_invalid', updated_at = $2 WHERE id = $1`, id, now); err != nil {
 					return nil, err
 				}
@@ -897,6 +1006,11 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 			}
 			cardBody, replacesID = drawn, replaces
 		}
+		if firstSet {
+			if _, err := tx.Exec(ctx, `RELEASE SAVEPOINT card_first`); err != nil {
+				return nil, err
+			}
+		}
 		picked = true
 	}
 	leaseNo++
@@ -909,7 +1023,8 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 	if err != nil {
 		return nil, err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE deliveries SET state = 'sending', lease_no = $2, attempts = attempts + 1, run_at = NULL, updated_at = $3 WHERE id = $1`,
+	if _, err := tx.Exec(ctx, `UPDATE deliveries SET state = 'sending', lease_no = $2, attempts = attempts + 1, run_at = NULL, updated_at = $3,
+		handed_at = coalesce(handed_at, $3) WHERE id = $1`,
 		id, leaseNo, now); err != nil {
 		return nil, err
 	}
@@ -932,15 +1047,12 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 		"target":   map[string]any{"kind": w.Kind, "name": w.Target},
 		"delivery": d,
 	}
-	// Implementation extension (MAN-3): the recipient's locale for code texts; without it the
-	// channel takes en (DLV-9).
-	if recipient != nil {
-		var locale *string
-		_ = tx.QueryRow(ctx, `SELECT locale FROM principals WHERE tenant = $1 AND id = $2`, w.Tenant, *recipient).Scan(&locale)
-		if locale != nil && *locale != "" {
-			payload["locale"] = *locale
-		}
+	// Implementation extension (MAN-3): the locale of the code texts by the order of DLV-18.
+	locale, err := c.deliveryLocale(ctx, tx, cat, w.Tenant, w.Target, targetKind, targetID, deref(recipient), deref(task), addr)
+	if err != nil {
+		return nil, err
 	}
+	payload["locale"] = locale
 	item.Payload = payload
 	return item, nil
 }
