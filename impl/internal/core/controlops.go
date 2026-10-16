@@ -993,11 +993,11 @@ func (c *Core) ControlRevert(ctx context.Context, op Operator, req ControlRevert
 			}
 		}
 		// A pending approval a seat task asked for would still run the reverted work (MGR-15).
-		aq := `SELECT ` + approvalColumns + ` FROM approvals a WHERE a.state = 'pending' AND a.created_at >= $1
+		aq := `SELECT ` + approvalColumns + ` FROM approvals a WHERE a.state IN ('pending', 'approved') AND a.created_at >= $1
 			AND EXISTS (SELECT 1 FROM tasks t WHERE t.id = a.source_task AND t.record->>'seat' = $2) ORDER BY a.id FOR UPDATE`
 		aargs := []any{since, managerSeatID}
 		if req.Incident != "" {
-			aq = `SELECT ` + approvalColumns + ` FROM approvals a WHERE a.state = 'pending' AND ($3 = 'farm' OR a.tenant = $3)
+			aq = `SELECT ` + approvalColumns + ` FROM approvals a WHERE a.state IN ('pending', 'approved') AND ($3 = 'farm' OR a.tenant = $3)
 				AND EXISTS (SELECT 1 FROM tasks t WHERE t.id = a.source_task AND t.record->>'seat' = $2 AND lower(t.record->>'incident') = lower($1)) ORDER BY a.id FOR UPDATE`
 			aargs = []any{req.Incident, managerSeatID, op.Tenant}
 		}

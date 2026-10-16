@@ -418,6 +418,8 @@ type proposalChange struct {
 		Direction string `json:"direction"`
 		Value     any    `json:"value"`
 	} `json:"human_change"`
+	// Script is a botaru.script/v1 draft of a script change (PRP-3).
+	Script map[string]any `json:"script"`
 }
 
 type manifestOp struct {

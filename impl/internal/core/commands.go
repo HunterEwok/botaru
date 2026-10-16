@@ -154,7 +154,7 @@ func (c *Core) statusCommand(ctx context.Context, tx pgx.Tx, now time.Time, pc p
 	// A finished tree can still have an approval waiting for a decision: /cancel withdraws it.
 	if t.state != "submitted" && t.state != "working" {
 		var waiting bool
-		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM approvals WHERE tenant = $1 AND state = 'pending' AND source_task IN
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM approvals WHERE tenant = $1 AND state IN ('pending', 'approved') AND source_task IN
 			(SELECT id FROM tasks WHERE tenant = $1 AND (id = $2 OR record->>'root' = $2)))
 			OR EXISTS (SELECT 1 FROM script_runs WHERE tenant = $1 AND state = ANY($3) AND anchor_task IN
 			(SELECT id FROM tasks WHERE tenant = $1 AND (id = $2 OR record->>'root' = $2)))`, pc.tv.Name, t.id, scriptLive).Scan(&waiting); err != nil {
@@ -208,7 +208,7 @@ func (c *Core) cancelTree(ctx context.Context, tx pgx.Tx, now time.Time, tenant,
 	}
 	// The approvals asked for by any task of the tree, finished or not: cards go out after the
 	// asking attempt ends, so its task is usually finished by then.
-	aps, err := tx.Query(ctx, `SELECT `+approvalColumns+` FROM approvals WHERE tenant = $1 AND state = 'pending' AND source_task IN
+	aps, err := tx.Query(ctx, `SELECT `+approvalColumns+` FROM approvals WHERE tenant = $1 AND state IN ('pending', 'approved') AND source_task IN
 		(SELECT id FROM tasks WHERE tenant = $1 AND (id = $2 OR record->>'root' = $2)) ORDER BY id FOR UPDATE`, tenant, root)
 	if err != nil {
 		return err
@@ -387,7 +387,7 @@ func (c *Core) teamCommand(ctx context.Context, tx pgx.Tx, now time.Time, pc per
 		lines = append(lines, c.texts.Render(pc.locale, "cmd.team.row", map[string]any{"title": tt.Title, "done": r.done, "failed": r.failed, "waiting": r.waiting}))
 	}
 	var pending int
-	if err := tx.QueryRow(ctx, `SELECT count(*) FROM approvals WHERE tenant = $1 AND state = 'pending' AND initiator IN
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM approvals WHERE tenant = $1 AND state IN ('pending', 'approved') AND initiator IN
 		(SELECT principal FROM memberships WHERE tenant = $1 AND grp = $2 AND state = 'active')`, pc.tv.Name, group).Scan(&pending); err != nil {
 		return nil, err
 	}

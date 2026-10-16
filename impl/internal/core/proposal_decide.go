@@ -316,6 +316,12 @@ func (c *Core) realize(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 			}
 		}
 		realization["realizer"], realization["object"] = principalObject(press.principal), id
+	case "script":
+		id, code, err := c.realizeScript(ctx, tx, now, cat, press, p)
+		if err != nil || code != "" {
+			return code, err
+		}
+		realization["realizer"], realization["object"] = principalObject(press.principal), id
 	case "manifest_change", "human_change":
 		realizer, err := c.realizer(ctx, tx, now, tv, press.principal, asString(p.Rec["data_mark"]))
 		if err != nil {
@@ -705,7 +711,26 @@ func (c *Core) realizingStep(ctx context.Context, tx pgx.Tx, now time.Time, tv *
 		}
 		return c.planProposalCardUpdates(ctx, tx, now, p)
 	}
-	if obj := asString(r["object"]); obj != "" {
+	if obj := asString(r["object"]); strings.HasPrefix(obj, "scr_") {
+		// A script change is realized by its run (PRP-3).
+		switch st, err := scriptRealized(ctx, tx, obj); {
+		case err != nil:
+			return err
+		case st == "failed":
+			return fail("object_failed")
+		case st == "realized":
+			r["link"], r["realized_at"] = "object", fmtTime(now)
+			if t := mmapAny(p.Rec["trial"]); t != nil {
+				t["state"] = "running"
+				mmapAny(t["window"])["starts_at"] = fmtTime(now)
+			}
+			if err := c.moveProposal(ctx, tx, now, p, "realized", ""); err != nil {
+				return err
+			}
+			return c.planProposalCardUpdates(ctx, tx, now, p)
+		}
+		return nil
+	} else if obj != "" {
 		var state string
 		var at time.Time
 		err := tx.QueryRow(ctx, `SELECT state, coalesce(decided_at, created_at) FROM approvals WHERE id = $1`, obj).Scan(&state, &at)

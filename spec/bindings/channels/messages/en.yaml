@@ -100,6 +100,7 @@ texts:
   cmd.profile.code: "Your verification code for the operator: {code}."
   cmd.lang.unknown: "Unknown language. Available: {locales}."
   cmd.prefs.show: "Quiet hours: {quiet}. Daily digest: {digest}."
+  cmd.prefs.show_monitor: "Quiet hours: {quiet}. Daily digest: {digest}. Alarms come from the monitoring system, which sets their silencing and quiet hours."
   cmd.prefs.usage: "Usage in a private chat: /prefs, /prefs quiet HH:MM-HH:MM, /prefs quiet off, /prefs digest daily or /prefs digest off."
   cmd.forbidden.needs: This needs the group {group}; contact the tenant administrator.
   cmd.followup.hint: You can simply reply with a message within {minutes} minutes.
@@ -181,6 +182,7 @@ texts:
   translator.none: "none"
   card.button.pause: Pause
   card.button.cancel: Cancel
+  card.button.full_list: Full list
   card.realization.title: "Change to carry out: {title}"
   card.rollback.title: "A change may need reverting: {title}"
   proposal.digest: "Recommended bot proposals ({count}); each has its card in your private chat:\n{items}"
@@ -206,6 +208,7 @@ texts:
   digest.empty: No tasks in the window.
   digest.hidden: "Hidden as above this chat's class: {count}."
   digest.sources: "[AI text; it read text from: {sources}]"
+  digest.labeled: "Bot text, check the numbers against the table."
   # Refusals and outcomes that the first bot shows (DLV-9, PRM-8)
   provenance.model: "[AI answer]"
   task.rejected: "The request was not accepted: {reason}."

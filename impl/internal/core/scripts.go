@@ -534,6 +534,8 @@ type acceptedScript struct {
 	steps    []scriptStep
 	rec      scriptRec
 	planHash string
+	// key is the idempotency key of the run when not that of a translator's draft.
+	key string
 }
 
 // acceptScript is the acceptance chain of SCR-5 in its order: the schema, the references
@@ -541,6 +543,12 @@ type acceptedScript struct {
 // initiator's rights for every step, the limits and TRN-4, then the estimate of all branches
 // and the tree size. The first refusal rejects the draft as a whole.
 func (c *Core) acceptScript(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, g *toolsGrant, args map[string]any) (*acceptedScript, *scriptProblem, error) {
+	return c.acceptScriptAs(ctx, tx, now, cat, g, args, false)
+}
+
+// acceptScriptAs is acceptScript; noAssignment takes no assignment from the anchor task, as
+// for the draft of a proposal, whose analysis goal is no person's assignment (PRP-3).
+func (c *Core) acceptScriptAs(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, g *toolsGrant, args map[string]any, noAssignment bool) (*acceptedScript, *scriptProblem, error) {
 	tv := cat.Tenants[g.Tenant]
 	if tv == nil {
 		return nil, &scriptProblem{Reason: "not_ready"}, nil
@@ -830,7 +838,9 @@ func (c *Core) acceptScript(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		Goal string `json:"goal"`
 	}
 	_ = json.Unmarshal(body, &b)
-	assignment = b.Goal
+	if !noAssignment {
+		assignment = b.Goal
+	}
 	rec.Assignment = assignment
 	for _, s := range steps {
 		var micros int64
@@ -1059,6 +1069,9 @@ func (c *Core) stepMarks(cat *Catalog, s scriptStep, assignment string) []string
 // the same plan from the same attempt is the same run; the empty id is an idempotency conflict.
 func (c *Core) insertRun(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, g *toolsGrant, acc *acceptedScript) (string, bool, error) {
 	key := "system:script:propose:" + g.Task + ":" + acc.planHash
+	if acc.key != "" {
+		key = acc.key
+	}
 	var id string
 	err := tx.QueryRow(ctx, `SELECT id FROM script_runs WHERE tenant = $1 AND idempotency_key = $2`, g.Tenant, key).Scan(&id)
 	if err == nil {
@@ -2273,7 +2286,8 @@ func (c *Core) cancelRun(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 				if err != nil {
 					return err
 				}
-				if a.State == "pending" {
+				// One that waits for its resource has not run yet either (ORC-12).
+				if a.State == "pending" || a.State == "approved" {
 					if err := c.closeApproval(ctx, tx, now, a, "canceled", reason); err != nil {
 						return err
 					}

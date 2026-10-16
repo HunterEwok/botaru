@@ -17,7 +17,12 @@ import (
 // allowed to read greetings and to hold internal.
 func newReporterBench(t *testing.T) *bench {
 	t.Helper()
-	return newBenchWith(t, func(_ string, ms []map[string]any) []map[string]any {
+	return newBenchWith(t, func(_ string, ms []map[string]any) []map[string]any { return reporterManifests(ms) })
+}
+
+// reporterManifests adds the reporter of newReporterBench to the hello set.
+func reporterManifests(ms []map[string]any) []map[string]any {
+	{
 		for _, m := range ms {
 			s := m["spec"].(map[string]any)
 			switch m["kind"] {
@@ -45,7 +50,7 @@ func newReporterBench(t *testing.T) *bench {
 						"properties": map[string]any{"text": map[string]any{"type": "string", "maxLength": 800}}},
 					"tree_budget_eur": 0.05, "proposable": false}},
 		)
-	})
+	}
 }
 
 // A reporter task asked in a direct chat reads its views from one snapshot filtered by the

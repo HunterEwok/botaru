@@ -137,7 +137,7 @@ func (c *Core) settleRestore(ctx context.Context) error {
 		if r, err := restoring(ctx, tx); err != nil || !r {
 			return err
 		}
-		rows, err := tx.Query(ctx, `SELECT `+approvalColumns+` FROM approvals WHERE state IN ('pending', 'executing') ORDER BY id FOR UPDATE`)
+		rows, err := tx.Query(ctx, `SELECT `+approvalColumns+` FROM approvals WHERE state IN ('pending', 'approved', 'executing') ORDER BY id FOR UPDATE`)
 		if err != nil {
 			return err
 		}
@@ -155,7 +155,9 @@ func (c *Core) settleRestore(ctx context.Context) error {
 			return err
 		}
 		for _, a := range as {
-			if a.State == "pending" {
+			// An approval that waits for its resource (ORC-12) has no call yet: it ends as a
+			// pending one does.
+			if a.State == "pending" || a.State == "approved" {
 				if err := c.closeApproval(ctx, tx, now, a, "canceled", "restored"); err != nil {
 					return err
 				}
