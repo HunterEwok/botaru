@@ -5,7 +5,6 @@ package evals
 import (
 	"bytes"
 	"encoding/base64"
-	"errors"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -278,6 +277,17 @@ func TestBenchRuns(t *testing.T) {
 		if es, _, _ := IndexEntries(t.Context(), b, rep); len(es) != 0 {
 			t.Fatal("a stopped run wrote index entries")
 		}
+		release := func() {
+			t.Helper()
+			var n int
+			if err := b.st.Pool.QueryRow(t.Context(), `SELECT count(*) FROM holds WHERE scope_kind = 'tenant' AND 'cancel_running' = ANY(effects) AND state = 'active'`).Scan(&n); err != nil || n == 0 {
+				t.Fatalf("a stopped run held no open work: %d %v (%s)", n, err, rep.Invalid)
+			}
+			if err := b.releaseCapHolds(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+		}
+		release()
 		// A reserve that fits but spend that crosses the cap stops the run during the case.
 		hp.Cases[0].Estimate = 0
 		hp.Cases = append(hp.Cases, &CasePlan{Case: hp.Cases[0].Case, Profile: hp.Cases[0].Profile})
@@ -285,12 +295,22 @@ func TestBenchRuns(t *testing.T) {
 		if !strings.Contains(rep.Stopped, "reached") || rep.Spend < 1 || rep.Results[1].Status != NotRun {
 			t.Fatalf("cap during a case: stopped %q, spend %d, %+v", rep.Stopped, rep.Spend, rep.Results)
 		}
+		release()
+		r.MaxRunMicros = th.MaxRunMicros
 
-		// A setup step the core makes no task for leaves the case untested: not run.
-		err = b.step(t.Context(), "before", map[string]any{"from": "dave", "chat": "dave-dm", "message": "just saying hi, no command"}, 30*time.Second)
-		var nr *notRunError
-		if !errors.As(err, &nr) || !strings.Contains(nr.reason, "made no task") {
-			t.Fatalf("step without a task: %v", err)
+		// A setup.then step the core makes no task for leaves the case untested: not run, but
+		// what the main input left is still checked, and a leak keeps the case failed.
+		c := *hp.Cases[0].Case
+		c.Setup = map[string]any{"then": []any{map[string]any{"from": "dave", "chat": "dave-dm", "message": "just saying hi, no command"}}}
+		if res := r.runCase(t.Context(), &c, hp.Cases[0].Profile, 1); res.Status != NotRun || !strings.Contains(res.Detail, "made no task") {
+			t.Fatalf("then step without a task: %s %s", res.Status, res.Detail)
+		}
+		leak := *hello
+		leak.Turns = slices.Clone(hello.Turns)
+		leak.Turns[0].Respond.Result = map[string]any{"answer": "Hello! CANARY-NOT-A-SECRET-P-carol-0b5e"}
+		r.BeforeCase = func(*Case) { mp.Reset(&leak) }
+		if res := r.runCase(t.Context(), &c, hp.Cases[0].Profile, 1); res.Status != Failed || !strings.Contains(res.Detail, "common/canary") {
+			t.Fatalf("then step without a task after a leak: %s %s", res.Status, res.Detail)
 		}
 	})
 }

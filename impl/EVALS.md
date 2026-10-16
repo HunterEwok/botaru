@@ -16,7 +16,7 @@ botaru-eval -real -dsn 'postgres://eval@127.0.0.1:5432/postgres' -model-profiles
 ```
 
 - The key is read only from `$BOTARU_EVAL_PROVIDER_KEY` or `-key-file`; it is given to P4 in memory and never written.
-- Before a real run the command prints the estimate. `-max-eur` lowers the cap of `budget.max_eur_per_run`; it cannot raise it. A full run of v0.3 is estimated above that cap (see `-dry-plan`), so split it with `-role` or `-case`. The spend is read from the store, the provider spend of the bench tenants before and after every attempt, failed attempts and setup steps included. A case starts only when its reserve fits under the cap: runs × (`infra.retries` + 1) × its estimate. The run stops as soon as the store total reaches the cap, also during a case. A stopped run is "not finished" and writes no index entries.
+- Before a real run the command prints the estimate. `-max-eur` lowers the cap of `budget.max_eur_per_run`; it cannot raise it. A full run of v0.3 is estimated above that cap (see `-dry-plan`), so split it with `-role` or `-case`. The spend is read from the store, the provider spend of the bench tenants before and after every attempt, failed attempts and setup steps included. A case starts only when its reserve fits under the cap: runs × (`infra.retries` + 1) × its estimate. The run stops as soon as the store total reaches the cap, also during a case. It then holds each bench tenant through P2 `hold.set` (`no_enqueue`, `no_claim`, `cancel_running`), so open tasks stop calling the model. A store that cannot report the spend also stops the run, and marks it invalid. A stopped run is "not finished" and writes no index entries.
 - `-repeats 3` before a model or runtime change: a blocking case passes only if all runs pass.
 - `-provider-url` points P4 at another endpoint of the same binding.
 - The run writes `report.xml` (JUnit), `results.jsonl` and `summary.txt` to `-out`. With `-index` it adds EvalReports entries (PRV-3) for a role and set only when the run holds every active case of that set for the claim, each passed or failed, and every blocking case of the role has an outcome. A run narrowed with `-case` or `-role` writes no entry for the sets it leaves incomplete and says so. An entry carries the static fingerprint of the role as the bench applied it, the date, and the counts of cases, failures and security failures. Inputs and model text are never written.
@@ -35,7 +35,7 @@ A case the bench cannot set up is reported `not_run` with the first missing piec
   - the core's refusal is `no_group_cap` for a type that one of the ungranted groups holds, whether the case expects a refusal or not;
   - no absence check, counter or common check failed.
 
-  A `setup.before` or `setup.then` step of such a person makes the case `not_run` before it starts. So does a step that made no task, since the case would pass untested.
+  A `setup.before` or `setup.then` step of such a person makes the case `not_run` before it starts. So does a step that made no task, since the case would pass untested. For a `setup.then` step, what the main input left is still collected and the common checks run, so a leak found there keeps the case failed.
 - **Inputs and setup.** The runner does not build:
   - inbox entries, system or task inputs, or group chats;
   - follow-ups later than `0m`, because the store clock is not moved;

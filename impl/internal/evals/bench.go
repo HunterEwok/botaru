@@ -91,6 +91,8 @@ type Bench struct {
 	done    sync.WaitGroup
 	closers []func()
 	people  map[string]string // seed name -> principal id
+	// capHolds are the holds stopSpend set.
+	capHolds map[string]string // tenant -> hold id
 	// spendCap is the store spend total at which a running case stops (0: none).
 	spendCap int64
 	// ungranted are the seed groups of a person the bench could not grant (PRM-13).
@@ -826,4 +828,38 @@ func (b *Bench) spendTotal(ctx context.Context) (int64, error) {
 	var n int64
 	err := b.st.Pool.QueryRow(ctx, `SELECT coalesce(sum(eur_micros + coalesce(correction_eur_micros, 0)), 0) FROM spend WHERE unit <> 'task'`).Scan(&n)
 	return n, err
+}
+
+// stopSpend holds the work of the bench tenants through P2 hold.set once the run stopped at the
+// cap: no new tasks, no claims, and running attempts get cancel_requested and end without
+// spending (HLD-3), so tasks of the run stop calling the model. The holds stay: releasing them
+// would let the held tasks be claimed again.
+func (b *Bench) stopSpend(ctx context.Context) error {
+	if len(b.capHolds) > 0 {
+		return nil
+	}
+	for _, tenant := range slices.Sorted(mapKeys(b.ops)) {
+		var out map[string]any
+		req := map[string]any{"scope": map[string]any{"kind": "tenant", "tenant": tenant},
+			"effects": []any{"no_enqueue", "no_claim", "cancel_running"}, "reason": "budget_exhausted", "until": nil}
+		if err := b.P2(ctx, tenant, "hold.set", req, &out); err != nil {
+			return fmt.Errorf("hold.set %s: %w", tenant, err)
+		}
+		if b.capHolds == nil {
+			b.capHolds = map[string]string{}
+		}
+		b.capHolds[tenant] = str(out["id"])
+	}
+	return nil
+}
+
+// releaseCapHolds releases the holds of stopSpend (a test seam: a run never does).
+func (b *Bench) releaseCapHolds(ctx context.Context) error {
+	for tenant, id := range b.capHolds {
+		if err := b.P2(ctx, tenant, "hold.release", map[string]any{"id": id}, nil); err != nil {
+			return err
+		}
+	}
+	b.capHolds = nil
+	return nil
 }

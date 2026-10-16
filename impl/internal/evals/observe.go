@@ -30,6 +30,8 @@ type Observation struct {
 	ModelCalls []modelCall
 	// Unscripted counts mock model calls of a case without a script.
 	Unscripted int
+	// NotRun is set when a setup.then step made no task: the case is not tested.
+	NotRun string
 	// Refusal is the first refusal of the input's sender by the core, when it made no task.
 	Refusal *Refusal
 	// Answers are the generator answers of the case.

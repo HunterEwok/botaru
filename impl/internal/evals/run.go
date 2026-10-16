@@ -42,6 +42,10 @@ type Result struct {
 	// NotCounted are the side effect counters this runner does not count.
 	NotCounted []string
 	Seconds    float64
+	// spendErr is set when the store could not say the spend of an attempt; capped when the
+	// spend cap stopped the case.
+	spendErr error
+	capped   bool
 }
 
 // Security says whether the case failed against the zero security threshold.
@@ -222,12 +226,29 @@ func (r *Runner) Run(ctx context.Context, p *Plan) *Report {
 		b.spendCap = start + r.MaxRunMicros
 	}
 	defer func() { b.spendCap = 0 }()
-	spent := func() int64 {
+	// stop ends the run: no further case starts, and the bench tenants' open work is held so it
+	// stops calling the model (HLD-3).
+	stop := func(why string) {
+		if rep.Stopped == "" {
+			rep.Stopped = why
+		}
+		if err := b.stopSpend(ctx); err != nil {
+			rep.Invalid = "the open work of the run could not be held after it stopped: " + err.Error()
+		}
+	}
+	// spent reads the run's spend; a store that cannot say it stops the run, since the cap
+	// cannot be kept without it.
+	spent := func() bool {
 		t, err := b.spendTotal(ctx)
 		if err != nil {
-			return rep.Spend
+			stop("the spend of the store cannot be read: " + err.Error())
+			if rep.Invalid == "" {
+				rep.Invalid = rep.Stopped
+			}
+			return false
 		}
-		return t - start
+		rep.Spend = t - start
+		return true
 	}
 	repeats := max(r.Repeats, 1)
 	attempts := int64(r.Thresholds.Retries + 1)
@@ -245,24 +266,33 @@ func (r *Runner) Run(ctx context.Context, p *Plan) *Report {
 		if c.Blocking {
 			n = repeats
 		}
-		rep.Spend = spent()
+		if !spent() {
+			rep.Results = append(rep.Results, &Result{Case: c, Status: NotRun, Detail: "the run stopped: " + rep.Stopped})
+			continue
+		}
 		// The cost guard: the case does not start when its reserve would take the run over the cap.
 		if r.Real && rep.Spend+int64(n)*attempts*cp.Estimate > r.MaxRunMicros {
-			rep.Stopped = fmt.Sprintf("the reserve of the next case %s would take the spend from %s over the cap of %s EUR", c.ID, formatEUR(rep.Spend), formatEUR(r.MaxRunMicros))
+			stop(fmt.Sprintf("the reserve of the next case %s would take the spend from %s over the cap of %s EUR", c.ID, formatEUR(rep.Spend), formatEUR(r.MaxRunMicros)))
 			rep.Results = append(rep.Results, &Result{Case: c, Status: NotRun, Detail: "the run stopped at the spend cap"})
 			continue
 		}
 		res := r.runCase(ctx, c, cp.Profile, n)
 		rep.Results = append(rep.Results, res)
-		rep.Spend = spent()
-		if r.Real && rep.Spend >= r.MaxRunMicros && rep.Stopped == "" {
-			rep.Stopped = fmt.Sprintf("the spend reached %s EUR during case %s, at the cap of %s EUR", formatEUR(rep.Spend), c.ID, formatEUR(r.MaxRunMicros))
+		switch {
+		case res.spendErr != nil:
+			stop("the spend of the store cannot be read during case " + c.ID + ": " + res.spendErr.Error())
+			if rep.Invalid == "" {
+				rep.Invalid = rep.Stopped
+			}
+		case !spent():
+		case r.Real && (rep.Spend >= r.MaxRunMicros || res.capped):
+			stop(fmt.Sprintf("the spend reached %s EUR during case %s, at the cap of %s EUR", formatEUR(rep.Spend), c.ID, formatEUR(r.MaxRunMicros)))
 		}
 		if r.Progress != nil {
 			fmt.Fprintf(r.Progress, "%-22s %-8s %s\n", c.ID, res.Status, res.Detail)
 		}
 	}
-	rep.Spend = spent()
+	spent()
 	for _, c := range p.Later {
 		rep.Results = append(rep.Results, &Result{Case: c, Status: Skipped, Detail: "the case is of a later version or pending"})
 	}
@@ -299,12 +329,21 @@ func (r *Runner) runCase(ctx context.Context, c *Case, profile string, n int) *R
 		var env *checkEnv
 		var err error
 		for try := 0; try <= r.Thresholds.Retries; try++ {
-			before, _ := r.Bench.spendTotal(ctx)
+			before, serr := r.Bench.spendTotal(ctx)
+			if serr != nil {
+				res.spendErr = serr
+				res.Status, res.Detail = NotRun, "the spend of the store cannot be read"
+				return res
+			}
 			o, env, err = r.once(ctx, c, profile)
 			// Every attempt's spend counts, a failed one too.
-			if after, serr := r.Bench.spendTotal(ctx); serr == nil {
-				res.Spend += after - before
+			after, serr := r.Bench.spendTotal(ctx)
+			if serr != nil {
+				res.spendErr = serr
+				res.Status, res.Detail = NotRun, "the spend of the store cannot be read"
+				return res
 			}
+			res.Spend += after - before
 			var nr *notRunError
 			if err == nil || errors.As(err, &nr) || errors.Is(err, errSpendCap) {
 				break
@@ -317,6 +356,7 @@ func (r *Runner) runCase(ctx context.Context, c *Case, profile string, n int) *R
 			res.Status, res.Detail = NotRun, nr.reason
 			return res
 		case errors.Is(err, errSpendCap):
+			res.capped = true
 			res.Status, res.Detail = NotRun, "the run stopped at the spend cap during this case"
 			return res
 		}
@@ -342,8 +382,24 @@ func (r *Runner) runCase(ctx context.Context, c *Case, profile string, n int) *R
 			}
 		}
 		common, notes := env.common(o)
-		findings = append(findings, common...)
 		res.NotCounted = notes
+		if o.NotRun != "" {
+			// A setup.then step made no task: the case is not tested, but what the main input
+			// left is checked, and a leak a common check found keeps the case failed.
+			var sec []*Finding
+			for _, f := range common {
+				if f.Security {
+					sec = append(sec, f)
+				}
+			}
+			if len(sec) == 0 {
+				res.Status, res.Detail = NotRun, o.NotRun
+				return res
+			}
+			findings = sec
+		} else {
+			findings = append(findings, common...)
+		}
 		if need := r.ungrantedNeed(c, o, findings); need != "" {
 			res.Status, res.Detail = NotRun, need
 			return res
@@ -457,9 +513,17 @@ func (r *Runner) once(ctx context.Context, c *Case, profile string) (*Observatio
 	if err != nil {
 		return nil, nil, err
 	}
+	thenNotRun := ""
 	for _, st := range asList(c.Setup["then"]) {
 		sm := asMap(st)
-		if err := b.step(ctx, "then", sm, timeout); err != nil {
+		err := b.step(ctx, "then", sm, timeout)
+		var nr *notRunError
+		if errors.As(err, &nr) {
+			// What the main input left is still collected and checked (common checks).
+			thenNotRun = nr.reason
+			break
+		}
+		if err != nil {
 			return nil, nil, err
 		}
 	}
@@ -467,6 +531,7 @@ func (r *Runner) once(ctx context.Context, c *Case, profile string) (*Observatio
 	if err != nil {
 		return nil, nil, err
 	}
+	o.NotRun = thenNotRun
 	o.Sent = b.bot.sentSince(sentMark)
 	o.ModelCalls = b.rec.since(mark)
 	o.Answers, o.DataIPs = answers, ips
