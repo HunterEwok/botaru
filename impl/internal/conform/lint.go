@@ -320,11 +320,39 @@ func (x *exec) lint(ctx context.Context, l map[string]any) (*outcome, error) {
 			return nil, errUnchecked(fmt.Sprintf("the lint context of %s does not apply: %s", strings.Join(keys, ", "), o.errors()))
 		}
 	}
+	removed := map[string]bool{}
 	for _, c := range changes {
 		f, _ := fragment(l[c.key])
+		nullKeys(f, removed)
 		c.obj.apply(c.target, deepCopy(f))
 	}
-	return x.apply(ctx, withObjects(set, groups), true)
+	o, err := x.apply(ctx, withObjects(set, groups), true)
+	if err != nil {
+		return nil, err
+	}
+	// A field the fragment removes (a null value) is absent on purpose: its absence is what the
+	// case checks, not an incomplete fixture manifest.
+	for _, oo := range append([]*outcome{o}, o.Alts...) {
+		var keep []string
+		for _, m := range oo.Missing {
+			if !removed[m[strings.LastIndex(m, ".")+1:]] {
+				keep = append(keep, m)
+			}
+		}
+		oo.Missing = keep
+	}
+	return o, nil
+}
+
+// nullKeys adds the names a fragment sets to null, at any depth, to out.
+func nullKeys(f map[string]any, out map[string]bool) {
+	for k, v := range f {
+		if v == nil {
+			out[k[strings.LastIndex(k, ".")+1:]] = true
+		} else if m, ok := v.(map[string]any); ok {
+			nullKeys(m, out)
+		}
+	}
 }
 
 // groupFragment builds the groups of a groups_yaml fragment (name: capability): a seed group
