@@ -662,7 +662,7 @@ func takeoverEvalPassed(cat *Catalog, tenant, role, profile string) (bool, error
 	}
 	raw := cat.RawGlobals[manifest.Key{Kind: "Role", Name: role}]
 	fp, err := staticFingerprint(cat.Hashes[manifest.Key{Kind: "Role", Name: role}], types, pin, profile, mstr(mmap(mmap(raw, "spec"), "models"), "analysis"),
-		mstr(mmap(mmap(raw, "spec"), "runtime"), "driver"))
+		mstr(mmap(mmap(raw, "spec"), "runtime"), "driver"), cat.Roles[role].Skills)
 	if err != nil {
 		return false, err
 	}

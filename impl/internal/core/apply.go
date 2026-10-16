@@ -28,6 +28,11 @@ type ApplyRequest struct {
 	Delete    []ApplyDelete    `json:"delete"`
 	// Personas are the texts of the persona files the charters pin, by their SHA-256 (GOV-4).
 	Personas map[string]string `json:"personas,omitempty"`
+	// Skills are the files of the farm git's skills/<name>/ folders by skill name, and
+	// Knowledge the documents of tenants/<t>/knowledge/<corpus>/ (profile knowledge: SKL-1,
+	// SKL-2, KNW-2).
+	Skills    map[string][]SkillFile `json:"skills,omitempty"`
+	Knowledge []KnowledgeFolder      `json:"knowledge,omitempty"`
 }
 
 // ApplyDelete names an object that apply deletes.
@@ -234,6 +239,8 @@ func (c *Core) applyOnce(ctx context.Context, op Operator, req ApplyRequest) (*A
 	// objects of the store that stay (orphaned ones included) overlaid with this set and its
 	// deletions, so that a check across objects does not miss an object of an earlier apply.
 	var after []manifest.Doc
+	var skillHashes map[string]string
+	var kerrs, kwarns, syncWarns []ApplyError
 	if len(res.Errors) == 0 {
 		stored, _, err := loadManifests(ctx, c.st.Pool)
 		if err != nil {
@@ -274,6 +281,14 @@ func (c *Core) applyOnce(ctx context.Context, op Operator, req ApplyRequest) (*A
 		}
 		res.Errors = append(res.Errors, gate...)
 		res.Warnings = append(res.Warnings, warns...)
+		// The skill folders and the corpus folders of the git (profile knowledge: SKL-1, SKL-2,
+		// KNW-2).
+		skillHashes, kerrs, kwarns, err = c.knowledgeLint(ctx, req, after, lintIndex)
+		if err != nil {
+			return nil, err
+		}
+		res.Errors = append(res.Errors, kerrs...)
+		res.Warnings = append(res.Warnings, kwarns...)
 		// accountability on needs every seat held with enough scored forecasts, on a core that
 		// claims v0.3 (GOV-36).
 		if claimsV03() {
@@ -459,6 +474,13 @@ func (c *Core) applyOnce(ctx context.Context, op Operator, req ApplyRequest) (*A
 		if err := c.applyV03(ctx, tx, now, next); err != nil {
 			return err
 		}
+		// The core copies of the skills and the corpus documents of the set (SKL-2, KNW-2, KNW-5).
+		if err := storeSkillTrees(ctx, tx, now, req.Skills, skillHashes); err != nil {
+			return err
+		}
+		if syncWarns, err = c.syncKnowledge(ctx, tx, now, op, next, req); err != nil {
+			return err
+		}
 		if err := recordMetadataPeriods(ctx, tx, now, next); err != nil {
 			return err
 		}
@@ -503,6 +525,7 @@ func (c *Core) applyOnce(ctx context.Context, op Operator, req ApplyRequest) (*A
 		return nil, err
 	}
 	res.Applied = !req.DryRun
+	res.Warnings = append(res.Warnings, syncWarns...)
 	if res.Applied {
 		cat, err := c.Catalog(ctx)
 		if err != nil {
