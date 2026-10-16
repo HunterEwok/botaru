@@ -5,6 +5,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -600,5 +601,39 @@ func TestDeadGroupsScheduleAutoStop(t *testing.T) {
 	b.tick(t, "schedule")
 	if s := b.skips(t); len(s) == 0 || !strings.HasSuffix(s[len(s)-1], " held") {
 		t.Fatalf("skips %v", s)
+	}
+}
+
+// Before "Accept" of a schedule change code finds the local times that disappear or repeat at
+// the transitions of the zone within a year, and a backup schedule that would lose a slot is
+// rejected(schedule_time_invalid) (TIM-5).
+func TestScheduleChangeTimes(t *testing.T) {
+	ctx := context.Background()
+	b := newScheduleBench(t, "0 4 * * *", nil)
+	cat, err := b.c.Catalog(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tv := cat.Tenants["demo"]
+	now := time.Date(2027, 1, 10, 12, 0, 0, 0, time.UTC)
+	op := manifestOp{Op: "set", Field: "spec.cron", Value: "30 2 * * *"}
+	op.Target.Kind, op.Target.Name = "Schedule", "morning"
+	times, err := b.c.checkScheduleTimes(now, cat, tv, op)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d, r := times["times_disappear"], times["times_repeat"]; fmt.Sprint(d) != "[2027-03-28 02:30]" || fmt.Sprint(r) != "[2027-10-31 02:30]" {
+		t.Fatalf("times %v", times)
+	}
+	if times, _ := b.c.checkScheduleTimes(now, cat, tv, manifestOp{Op: "set", Target: op.Target, Field: "spec.cron", Value: "0 5 * * *"}); times != nil {
+		t.Fatalf("a time clear of the transitions %v", times)
+	}
+	backup := *cat
+	backup.TaskTypes = maps.Clone(cat.TaskTypes)
+	tt := backup.TaskTypes["hello.greet.v1"]
+	tt.MakesBackup = true
+	backup.TaskTypes["hello.greet.v1"] = tt
+	if _, err = b.c.checkScheduleTimes(now, &backup, tv, op); err != rejection("schedule_time_invalid") {
+		t.Fatalf("a backup schedule that loses a slot: %v", err)
 	}
 }
