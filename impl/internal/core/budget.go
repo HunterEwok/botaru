@@ -81,11 +81,11 @@ type spendFilter struct {
 // reserve of a task that waits for the provider is kept but not counted: the reserve is taken
 // again before its call (BUD-4, GW-2). An estimated line counts as zero once a reconciliation
 // reached it or it was released by time, and a correction line counts its signed amount
-// (BUD-10).
+// (BUD-10). A person's window leaves out the items of a campaign a card paid (ORC-8).
 func windowUsed(ctx context.Context, tx pgx.Tx, tenant string, f spendFilter, from time.Time, ownRoot string) (int64, error) {
 	var used int64
 	err := tx.QueryRow(ctx, `WITH w AS (SELECT * FROM spend WHERE tenant = $1 AND time >= $2
-			AND ($3 = '' OR subject = $3) AND ($5 = '' OR line = $5) AND ($6 = '' OR role = $6))
+			AND ($3 = '' OR subject = $3 AND (task IS NULL OR NOT EXISTS (SELECT 1 FROM tasks t WHERE t.id = spend.task AND t.record ? 'paid_by_card'))) AND ($5 = '' OR line = $5) AND ($6 = '' OR role = $6))
 		SELECT coalesce((SELECT sum(CASE WHEN state = 'estimated' AND (reconciled_at IS NOT NULL OR released_at IS NOT NULL) THEN 0
 				ELSE eur_micros + coalesce(correction_eur_micros, 0) END) FROM w WHERE unit <> 'task'), 0)
 			+ coalesce((SELECT sum(greatest(r.eur_micros - coalesce((SELECT sum(s.eur_micros) FROM spend s LEFT JOIN tasks u ON u.id = s.task

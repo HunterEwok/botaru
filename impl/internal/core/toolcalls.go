@@ -36,6 +36,8 @@ type toolCallRow struct {
 	StartBy                 time.Time
 	// ArgsHash, ApprovalID and GrantID are set on the write call of an action (APR-7).
 	ArgsHash, ApprovalID, GrantID string
+	// CampaignItem is the item number of a campaign write call (ORC-3).
+	CampaignItem int
 }
 
 func (c *Core) insertToolCall(ctx context.Context, tx pgx.Tx, now time.Time, r toolCallRow) error {
@@ -55,11 +57,11 @@ func (c *Core) insertToolCall(ctx context.Context, tx pgx.Tx, now time.Time, r t
 		ended = &now
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO toolcalls (id, tenant, task, attempt_lease_no, tool, access, args, target_plugin, target_placement, target_host,
-		resolved, untrusted_output, state, reason, start_by, created_at, updated_at, ended_at, target_resource, tool_def_hash, args_hash, approval_id, grant_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $16, $17, $18, $19, $20, $21, $22)`,
+		resolved, untrusted_output, state, reason, start_by, created_at, updated_at, ended_at, target_resource, tool_def_hash, args_hash, approval_id, grant_id, campaign_item)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $16, $17, $18, $19, $20, $21, $22, $23)`,
 		r.ID, r.Tenant, r.Task, leaseNo(r), r.Tool, r.Access, args, r.Plugin, r.Placement, nullable(r.Host),
 		resolved, r.Untrusted, r.State, nullable(r.Reason), startBy, now, ended, nullable(r.Resource), nullable(r.DefHash),
-		nullable(r.ArgsHash), nullable(r.ApprovalID), nullable(r.GrantID))
+		nullable(r.ArgsHash), nullable(r.ApprovalID), nullable(r.GrantID), nullableInt(r.CampaignItem))
 	return err
 }
 
@@ -97,18 +99,19 @@ func (c *Core) claimToolcall(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 			id, task, tool, plugin, placement, access string
 			host, resource, defHash                   *string
 			argsHash, approval, grant                 *string
+			campaignItem                              *int
 			leaseNo                                   int
 			attemptLease                              *int
 			args, resolved                            []byte
 			startBy                                   time.Time
 		)
 		err := tx.QueryRow(ctx, `SELECT id, task, attempt_lease_no, tool, target_plugin, target_placement, target_host, target_resource, args, resolved, start_by, lease_no, tool_def_hash,
-			access, args_hash, approval_id, grant_id
+			access, args_hash, approval_id, grant_id, campaign_item
 			FROM toolcalls WHERE tenant = $1 AND state = 'queued' AND target_plugin = ANY($2) AND target_placement = $3
 			AND (target_host IS NULL OR target_host = $4) AND start_by > $5
 			ORDER BY created_at, id LIMIT 1 FOR UPDATE SKIP LOCKED`, w.Tenant, plugins, w.Placement, w.Host, now).
 			Scan(&id, &task, &attemptLease, &tool, &plugin, &placement, &host, &resource, &args, &resolved, &startBy, &leaseNo, &defHash,
-				&access, &argsHash, &approval, &grant)
+				&access, &argsHash, &approval, &grant, &campaignItem)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
@@ -206,6 +209,9 @@ func (c *Core) claimToolcall(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 			target["host"] = *host
 		}
 		payload := map[string]any{"target": target, "tool": name, "args": a, "approval_id": derefNil(approval), "grant_id": derefNil(grant), "args_hash": derefNil(argsHash)}
+		if campaignItem != nil {
+			payload["campaign_item"] = *campaignItem
+		}
 		// Implementation extensions (MAN-3): the catalog fields a plugin needs, and the limits of
 		// the tool from the manifest, so the toolhost redacts and cuts without reading manifests.
 		var res map[string]string
@@ -349,6 +355,15 @@ func (c *Core) completeToolcall(ctx context.Context, tx pgx.Tx, now time.Time, l
 	if err != nil {
 		return err
 	}
+	if untrusted {
+		// The first untrusted output sets untrusted_seen on the attempt; it never goes back
+		// (INJ-13). The first source stays. It is set before the call ends, so a
+		// campaign item that ends with the call carries it (ORC-9).
+		if _, err := tx.Exec(ctx, `UPDATE tasks SET record = record || jsonb_build_object('untrusted_seen', true,
+			'untrusted_source', coalesce(record->>'untrusted_source', $2::text)) WHERE id = $1`, task, untrustedSource(tool)); err != nil {
+			return err
+		}
+	}
 	if err := c.endToolCall(ctx, tx, now, l.WorkID, "done", "", raw); err != nil {
 		return err
 	}
@@ -359,15 +374,6 @@ func (c *Core) completeToolcall(ctx context.Context, tx pgx.Tx, now time.Time, l
 	if masked(t.Redact, raw) {
 		// The toolhost replaced an address: the attempt saw personal data (AUD-5).
 		if err := addPersonalSeen(ctx, tx, task, "masking"); err != nil {
-			return err
-		}
-	}
-	if untrusted {
-		// The first untrusted output sets untrusted_seen on the attempt; it never goes back
-		// (INJ-13).
-		// The first source stays.
-		if _, err := tx.Exec(ctx, `UPDATE tasks SET record = record || jsonb_build_object('untrusted_seen', true,
-			'untrusted_source', coalesce(record->>'untrusted_source', $2::text)) WHERE id = $1`, task, untrustedSource(tool)); err != nil {
 			return err
 		}
 	}

@@ -319,6 +319,12 @@ func (c *Core) holdChanged(ctx context.Context, tx pgx.Tx, now time.Time, h Hold
 	if err := c.appendEvent(ctx, tx, now, h.Tenant, Event{Type: event, Subject: h.ID, Data: data}); err != nil {
 		return 0, err
 	}
+	// A new hold pauses the campaigns it covers in the same transaction (ORC-11).
+	if event == "hold.set.v1" {
+		if err := c.pauseHeldCampaigns(ctx, tx, now, h.Scope.Tenant); err != nil {
+			return 0, err
+		}
+	}
 	// A hold on the farm manager seat stops the seat in the same transaction (MGR-15).
 	if h.Scope.Kind == "seat" && h.Scope.Name == managerSeatID {
 		cat, err := c.Catalog(ctx)

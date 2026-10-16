@@ -269,10 +269,6 @@ func (c *Core) decideControl(ctx context.Context, w *Worker, ob OnBehalf, req De
 		})
 		return err
 	})
-	var cm *committed
-	if errors.As(err, &cm) {
-		return nil, cm.p
-	}
 	return out, err
 }
 

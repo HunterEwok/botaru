@@ -976,6 +976,8 @@ func (c *Core) Decide(ctx context.Context, w *Worker, ob *OnBehalf, req DecideRe
 		return c.decideProposal(ctx, w, *ob, req)
 	case "control":
 		return c.decideControl(ctx, w, *ob, req)
+	case "campaign":
+		return c.decideCampaign(ctx, w, *ob, req)
 	default:
 		return nil, refuse("not_found", "this build decides approvals, memory records, a person's requests, proposals and control cards")
 	}
@@ -1095,10 +1097,6 @@ func (c *Core) Decide(ctx context.Context, w *Worker, ob *OnBehalf, req DecideRe
 		out.State = a.State
 		return nil
 	})
-	var cm *committed
-	if errors.As(err, &cm) {
-		return nil, cm.p
-	}
 	if err != nil {
 		return nil, err
 	}
@@ -1240,6 +1238,10 @@ type actionTaskInput struct {
 	// then the key of the activity, so a repeat of the same update finds the task (DLV-5).
 	Origin *Origin
 	Key    string
+	// Campaign, CampaignItem and Resource make the task an item of an action campaign (ORC-3).
+	Campaign     string
+	CampaignItem int
+	Resource     string
 }
 
 // insertActionTask creates the action.<a> task directly in working, without an attempt and a
@@ -1290,6 +1292,10 @@ func (c *Core) insertActionTask(ctx context.Context, tx pgx.Tx, now time.Time, i
 	if in.Origin != nil {
 		record["origin"] = in.Origin
 	}
+	if in.Campaign != "" {
+		record["campaign"], record["campaign_item"], record["fairness_key"] = in.Campaign, in.CampaignItem, "campaign:"+in.Campaign
+		record["scope"] = map[string]any{"resources": []any{in.Resource}}
+	}
 	rec, err := json.Marshal(record)
 	if err != nil {
 		return "", err
@@ -1316,6 +1322,10 @@ type writeCall struct {
 	Args                 map[string]any
 	ArgsHash             string
 	ApprovalID, GrantID  string
+	// CampaignItem is the item number of a campaign call: the plugin key is <campaign>:<n>
+	// (ORC-3). Host is the machine of the item for a tool with target: any.
+	CampaignItem int
+	Host         string
 }
 
 // insertWriteCall queues the one write call of an action task; a call that a hold or the lack
@@ -1329,6 +1339,7 @@ func (c *Core) insertWriteCall(ctx context.Context, tx pgx.Tx, now time.Time, ca
 	row := toolCallRow{
 		ID: id, Tenant: wc.Tenant, Task: wc.Task, Tool: right, Access: "write", Args: wc.Args, Plugin: plugin, Placement: pl.Placement,
 		Untrusted: !ok || !t.TrustedOutput(), State: "queued", ArgsHash: wc.ArgsHash, ApprovalID: wc.ApprovalID, GrantID: wc.GrantID,
+		CampaignItem: wc.CampaignItem,
 	}
 	end := func(state, reason string) (string, error) {
 		row.State, row.Reason = state, reason
@@ -1355,6 +1366,9 @@ func (c *Core) insertWriteCall(ctx context.Context, tx pgx.Tx, now time.Time, ca
 		return end("error", "input_schema_invalid")
 	}
 	row.Host, row.Resource, row.Resolved = target.host, target.resource, resolved
+	if t.Target == "any" && wc.Host != "" {
+		target.host, row.Host = wc.Host, wc.Host
+	}
 	scopes := append(tenantScopes(wc.Tenant), scopeRef{kind: "plugin", tenant: wc.Tenant, name: plugin},
 		scopeRef{kind: "action", tenant: wc.Tenant, name: wc.Action}, scopeRef{kind: "tasktype", tenant: wc.Tenant, name: "action." + wc.Action})
 	scopes = append(scopes, targetScopes(wc.Tenant, target)...)
@@ -1481,8 +1495,12 @@ func (c *Core) writeCallEnded(ctx context.Context, tx pgx.Tx, now time.Time, cal
 		if err := c.grantOutcomeNotice(ctx, tx, now, tenant, task, typ, initiator, rec, taskState, taskReason); err != nil {
 			return err
 		}
+		if err := c.campaignItemEnded(ctx, tx, now, task, taskState, taskReason); err != nil {
+			return err
+		}
 	}
-	if approval == nil {
+	// A campaign item has no approval row of its own: the campaign is its subject (ORC-2).
+	if approval == nil || strings.HasPrefix(*approval, ids.Campaign+"_") {
 		return nil
 	}
 	a, err := loadApproval(ctx, tx, tenant, *approval, true)

@@ -33,7 +33,13 @@ type card struct {
 	ExpiresAt        string         `json:"expires_at"`
 	State            string         `json:"state"`
 	Reminder         bool           `json:"reminder"`
-	Buttons          []struct {
+	Campaign         *struct {
+		Count     int      `json:"count"`
+		First     []string `json:"first"`
+		Rollout   string   `json:"rollout"`
+		Threshold int      `json:"threshold"`
+	} `json:"campaign"`
+	Buttons []struct {
 		Code        string `json:"code"`
 		SubjectKind string `json:"subject_kind"`
 		ID          string `json:"id"`
@@ -58,16 +64,17 @@ var buttonCodes = map[string]string{
 var openStates = []string{"pending", "presented", "realizing"}
 
 // subjectPrefixes give the subject kind of a card by the prefix of its id.
-var subjectPrefixes = map[string]string{"a": "approval", "prp": "proposal"}
+var subjectPrefixes = map[string]string{"a": "approval", "prp": "proposal", "cmp": "campaign"}
 
 // buttonLabels are the text keys of the button labels this driver draws.
 var buttonLabels = map[string]string{
 	"approve": "card.button.approve", "reject": "card.button.reject", "details": "card.button.details", "remind": "card.copy.remind_button",
-	"accept": "card.button.accept", "defer": "card.button.defer",
+	"accept": "card.button.accept", "defer": "card.button.defer", "pause": "card.button.pause", "cancel": "card.button.cancel",
 }
 
 // titleKeys are the title text keys of the card kinds that are not an approval card.
-var titleKeys = map[string]string{"proposal_card": "card.proposal.title", "realization_card": "card.realization.title", "rollback_card": "card.rollback.title"}
+var titleKeys = map[string]string{"proposal_card": "card.proposal.title", "realization_card": "card.realization.title", "rollback_card": "card.rollback.title",
+	"campaign_approval": "card.campaign.title", "campaign_progress": "card.campaign.progress_title"}
 
 // flat writes a map of closed fields as key=value pairs in key order.
 func flat(m map[string]any) string {
@@ -110,6 +117,10 @@ func (c *Channel) renderCard(locale string, cd *card) string {
 	if len(cd.Args) > 0 {
 		lines = append(lines, t.Render(locale, "card.args", map[string]any{"args": flat(cd.Args)}))
 	}
+	if cp := cd.Campaign; cp != nil {
+		lines = append(lines, t.Render(locale, "card.campaign.items", map[string]any{"count": cp.Count, "first": strings.Join(cp.First, ", ")}),
+			t.Render(locale, "card.campaign.rollout", map[string]any{"rollout": cp.Rollout}))
+	}
 	source, _ := cd.RequestedBy["source"].(string)
 	if role, ok := cd.RequestedBy["role"].(string); ok {
 		source += ", " + role
@@ -138,6 +149,8 @@ func (c *Channel) renderCard(locale string, cd *card) string {
 		footer = "card.realization.footer"
 	case cd.Card == "realization_card" || cd.Card == "rollback_card":
 		footer = "card.executor.footer"
+	case cd.Card == "campaign_progress":
+		footer = "card.campaign.footer"
 	}
 	lines = append(lines, t.Render(locale, footer, map[string]any{"why_you": cd.Footer.WhyYou, "until": cd.Footer.Until, "on_silence": cd.Footer.OnSilence}))
 	return strings.Join(lines, "\n")
@@ -250,6 +263,9 @@ func (c *Channel) press(ctx context.Context, q *callbackQuery) error {
 		}
 	case "remind":
 		err = c.cfg.Core.CallAs(ctx, "card.remind", headers, map[string]any{"op": "card.remind", "subject_kind": kind, "id": id, "nonce": nonce}, nil)
+	case "pause", "cancel":
+		// Campaign operations go as P1 campaign.control (e1-channel).
+		err = c.cfg.Core.CallAs(ctx, "campaign.control", headers, map[string]any{"id": id, "command": code, "nonce": nonce}, nil)
 	default:
 		err = c.cfg.Core.CallAs(ctx, "decide", headers, map[string]any{"subject_kind": kind, "id": id, "nonce": nonce, "decision": code}, nil)
 	}
@@ -262,7 +278,9 @@ func (c *Channel) press(ctx context.Context, q *callbackQuery) error {
 		answer("card.answer.already_decided", nil)
 	case r == "service_rate_limited":
 		answer("card.remind.rate_limited", map[string]any{"minutes": 5})
-	case r == "forbidden" || r == "not_found" || r == "held":
+	case r == "already_terminal":
+		answer("card.answer.already_decided", nil)
+	case r == "forbidden" || r == "not_found" || r == "held" || r == "estimate_exceeded":
 		answer("card.answer.forbidden", nil)
 	default:
 		var pe *p1client.Error

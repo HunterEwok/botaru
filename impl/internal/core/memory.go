@@ -531,10 +531,6 @@ func (c *Core) decideMemory(ctx context.Context, w *Worker, ob OnBehalf, req Dec
 		})
 		return err
 	})
-	var cm *committed
-	if errors.As(err, &cm) {
-		return nil, cm.p
-	}
 	return out, err
 }
 

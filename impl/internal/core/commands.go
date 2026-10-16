@@ -425,6 +425,12 @@ func (c *Core) cancelTaskIDs(ctx context.Context, tx pgx.Tx, now time.Time, tena
 		if err := c.appendEvent(ctx, tx, now, tenant, Event{Type: "task.canceled", Subject: id, Data: map[string]any{"task": id, "reason": reason}}); err != nil {
 			return err
 		}
+		if err := c.campaignItemEnded(ctx, tx, now, id, "canceled", reason); err != nil {
+			return err
+		}
+		if err := c.cancelCampaignsOf(ctx, tx, now, tenant, id); err != nil {
+			return err
+		}
 	}
 	return nil
 }
