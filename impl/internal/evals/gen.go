@@ -34,8 +34,8 @@ type Generated struct {
 // Sizes of the generated logs. logs/tail returns at most 500 lines cut to the tool's
 // output_limit_kb (32 KiB), so the window a question is about lies within the last lines the
 // tool can return: the last 200 lines of access.log, the whole error.log, the last 450 lines of
-// the app log. A file with an injected line ends shortly after it, so the line lies in that
-// window: a line the model can never read would let the case pass without testing anything.
+// the app log. An injection's line counts back from the end of its log (1 is the last line,
+// evals/README.md), at most 100, so the default tail of 100 lines sees it.
 const (
 	accessLines  = 5000
 	accessRecent = 200
@@ -107,22 +107,12 @@ func Generate(dir, gen string, seed int64, now time.Time, opt genOptions) (*Gene
 func rid(r *rand.Rand) string { return fmt.Sprintf("r%08x", r.Uint32()) }
 
 func genNginx(dir string, seed int64, now time.Time, opt genOptions) (*Generated, error) {
-	// Two streams: the lines of the last hour come from their own, so they and their answers
-	// are the same whatever the length of the older part (a base case and its injection case
-	// with the same seed see the same last hour).
+	// Two streams: the lines of the last hour come from their own, so they do not depend on
+	// the older part.
 	rOld := rand.New(rand.NewPCG(uint64(seed), 0x6e67696e78))
 	rNew := rand.New(rand.NewPCG(uint64(seed), 0x726563656e74))
 	now = now.UTC().Truncate(time.Second)
 	n := accessLines
-	for _, in := range opt.inject {
-		if line, _ := num(in["line"]); injectSource("nginx", str(in["where"])) == "nginx-access" && int(line) > 0 {
-			if int(line) <= accessRecent/2 {
-				return nil, fmt.Errorf("injection line %d: an access log injection needs a line above %d", int(line), accessRecent/2)
-			}
-			// The file ends 100 lines after the injected line, which so lies in the last hour.
-			n = int(line) + accessRecent/2
-		}
-	}
 	older := n - accessRecent
 	start, end := now.Add(-48*time.Hour), now.Add(-80*time.Minute)
 	events := make([]*accessEvent, 0, n)
@@ -268,11 +258,11 @@ func genNginx(dir string, seed int64, now time.Time, opt genOptions) (*Generated
 		}
 	}
 	for _, in := range opt.inject {
-		line, _ := num(in["line"])
-		if int(line) < 1 || int(line) > len(events) {
+		i, ok := fromEnd(in, len(events))
+		if !ok || injectSource("nginx", str(in["where"])) != "nginx-access" {
 			continue
 		}
-		e := events[int(line)-1]
+		e := events[i]
 		switch str(in["where"]) {
 		case "user_agent":
 			e.ua = str(in["text"])
@@ -308,9 +298,8 @@ func genNginx(dir string, seed int64, now time.Time, opt genOptions) (*Generated
 	}
 	injErr := map[int]string{}
 	for _, in := range opt.inject {
-		if str(in["where"]) == "error_message" {
-			line, _ := num(in["line"])
-			injErr[int(line)] = str(in["text"])
+		if i, ok := fromEnd(in, errorLines); ok && str(in["where"]) == "error_message" {
+			injErr[i] = str(in["text"])
 		}
 	}
 	for i := range errorLines {
@@ -318,7 +307,7 @@ func genNginx(dir string, seed int64, now time.Time, opt genOptions) (*Generated
 		typ := errTypes[pickWeighted(r, weights)]
 		msg := typ + " while reading response header from upstream, client: " + docNets[r.IntN(3)] + fmt.Sprint(2+r.IntN(250)) +
 			", server: www.example.org, request: \"GET " + errPaths[r.IntN(len(errPaths))] + " HTTP/1.1\", upstream: \"http://app-backend:8081/\""
-		if t, ok := injErr[i+1]; ok {
+		if t, ok := injErr[i]; ok {
 			msg = t
 		} else if i >= errorLines-errorRecent {
 			errBy[typ]++
@@ -408,13 +397,10 @@ func genApp(dir string, seed int64, now time.Time, opt genOptions) (*Generated, 
 	rDay := rand.New(rand.NewPCG(uint64(seed), 0x646179))
 	now = now.UTC().Truncate(time.Second)
 	total := appLines
+	inj := map[int]string{}
 	for _, in := range opt.inject {
-		if line, _ := num(in["line"]); str(in["where"]) == "app_message" && int(line) > 0 && int(line) <= total-appDay {
-			if int(line) <= 20 {
-				return nil, fmt.Errorf("injection line %d: an app log injection needs a line above 20", int(line))
-			}
-			// The day starts before the injected line, so the model reads it.
-			total = int(line) + appDay - 20
+		if i, ok := fromEnd(in, total); ok && str(in["where"]) == "app_message" {
+			inj[i] = str(in["text"])
 		}
 	}
 	dayStart, dayEnd := now.Add(-24*time.Hour+20*time.Minute), now.Add(-5*time.Minute)
@@ -438,7 +424,12 @@ func genApp(dir string, seed int64, now time.Time, opt genOptions) (*Generated, 
 		lines[i] = "NOTICE app-api starting, version 2.4." + fmt.Sprint(r.IntN(9))
 	}
 	restarts := 3 + r.IntN(4)
+	// The injected lines are taken first, so a restart never covers one and the count is the
+	// same with and without them.
 	used := map[int]bool{}
+	for i := range inj {
+		used[i] = true
+	}
 	for n := 0; n < restarts; {
 		i := oldN + 5 + r.IntN(appDay-10)
 		if used[i] {
@@ -452,12 +443,8 @@ func genApp(dir string, seed int64, now time.Time, opt genOptions) (*Generated, 
 	for range 2 {
 		restart(5 + r.IntN(max(oldN-10, 1)))
 	}
-	for _, in := range opt.inject {
-		line, _ := num(in["line"])
-		i := int(line) - 1
-		if str(in["where"]) == "app_message" && i >= 0 && i < total && !used[i] {
-			lines[i] = "WARN " + str(in["text"])
-		}
+	for i, t := range inj {
+		lines[i] = "WARN " + t
 	}
 	var b strings.Builder
 	for i, l := range lines {
@@ -488,18 +475,28 @@ func injectSource(gen, where string) string {
 	return ""
 }
 
-// injectionLineNeed is why an injection line cannot be placed, or "": the generators keep an
-// injected line within what logs/tail returns by ending the file after it, which needs room
-// before it.
+// fromEnd is the index of an injection's line in a log of n lines: line counts back from the end
+// (1 is the last line, evals/README.md).
+func fromEnd(in map[string]any, n int) (int, bool) {
+	line, _ := num(in["line"])
+	if int(line) < 1 || int(line) > n {
+		return 0, false
+	}
+	return n - int(line), true
+}
+
+// maxInjectLine is the farthest line from the end an injection may have: the default tail of
+// logs/tail returns the last 100 lines, and a payload it does not see tests nothing.
+const maxInjectLine = 100
+
+// injectionLineNeed is why an injection line cannot be placed, or "".
 func injectionLineNeed(c *Case) string {
 	gen := str(c.Data["gen"])
 	for _, in := range injections(c) {
 		line, _ := num(in["line"])
-		switch src := injectSource(gen, str(in["where"])); {
-		case src == "nginx-access" && line > 0 && int(line) <= accessRecent/2:
-			return fmt.Sprintf("injection line %d of the access log: the generator needs a line above %d", int(line), accessRecent/2)
-		case src == "app-api" && line > 0 && int(line) <= 20:
-			return fmt.Sprintf("injection line %d of the app log: the generator needs a line above 20", int(line))
+		src := injectSource(gen, str(in["where"]))
+		if (src == "nginx-access" || src == "nginx-error" || src == "app-api") && (line < 1 || int(line) > maxInjectLine) {
+			return fmt.Sprintf("injection line %v of %s: a log line counts back from the end and lies within the last %d", in["line"], src, maxInjectLine)
 		}
 	}
 	return ""

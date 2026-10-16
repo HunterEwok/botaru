@@ -15,7 +15,9 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -95,8 +97,11 @@ type Bench struct {
 	capHolds map[string]string // tenant -> hold id
 	// spendCap is the store spend total at which a running case stops (0: none).
 	spendCap int64
-	// ungranted are the seed groups of a person the bench could not grant (PRM-13).
-	ungranted map[string][]string
+	// ungranted are the seed groups of a person that stayed pending (PRM-13), with the reason.
+	ungranted    map[string][]string
+	ungrantedWhy map[string]string
+	// pendingGroups are the privileged seed groups granted pending, before the code.
+	pendingGroups map[string][]string
 	// Profiles are the model profile names and models the bench applied.
 	Profiles map[string]string
 	// tenant settings the checks read
@@ -126,7 +131,7 @@ func StartBench(ctx context.Context, cfg BenchConfig) (_ *Bench, err error) {
 	if cfg.Logger == nil {
 		cfg.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
-	b := &Bench{cfg: cfg, ops: map[string]string{}, bot: &fakeBotAPI{}, people: map[string]string{}, ungranted: map[string][]string{}, Profiles: map[string]string{}}
+	b := &Bench{cfg: cfg, ops: map[string]string{}, bot: &fakeBotAPI{}, people: map[string]string{}, ungranted: map[string][]string{}, ungrantedWhy: map[string]string{}, pendingGroups: map[string][]string{}, Profiles: map[string]string{}}
 	defer func() {
 		if err != nil {
 			b.Close()
@@ -223,6 +228,9 @@ func StartBench(ctx context.Context, cfg BenchConfig) (_ *Bench, err error) {
 		return nil, err
 	}
 	if err := b.startWorkers(ctx, runCtx, tx, botURL, zbx); err != nil {
+		return nil, err
+	}
+	if err := b.confirmPending(ctx); err != nil {
 		return nil, err
 	}
 	return b, nil
@@ -357,6 +365,9 @@ func (b *Bench) manifests() ([]map[string]any, error) {
 		b.Profiles[n] = str(asMap(byName[n]["spec"])["model"])
 		out = append(out, byName[n])
 	}
+	if err := b.dropLaterResources(out); err != nil {
+		return nil, err
+	}
 	if _, err := testbench.DropUnsupported(b.sp, out); err != nil {
 		return nil, err
 	}
@@ -422,15 +433,82 @@ func (b *Bench) seedPeople(ctx context.Context) error {
 		}
 		b.people[p.Name] = p.ID
 		for _, g := range p.Groups {
-			err := b.P2(ctx, "demo", "grant", map[string]any{"op": "grant", "subject": p.ID, "group": g}, nil)
-			if err != nil && !strings.Contains(err.Error(), "privileged_group") {
+			var out struct {
+				State string `json:"state"`
+			}
+			if err := b.P2(ctx, "demo", "grant", map[string]any{"op": "grant", "subject": p.ID, "group": g}, &out); err != nil {
 				return fmt.Errorf("seed %s in %s: %w", p.Name, g, err)
 			}
-			if err != nil {
-				// A privileged group needs the verification code flow (PRM-13), which this
-				// build answers privileged_group; the person stays without the group.
-				b.cfg.Logger.Warn("seed: privileged group not granted", "person", p.Name, "group", g)
-				b.ungranted[p.Name] = append(b.ungranted[p.Name], g)
+			if out.State == "pending" {
+				// A privileged group waits for the person's verification code (PRM-13).
+				b.pendingGroups[p.Name] = append(b.pendingGroups[p.Name], g)
+			}
+		}
+	}
+	return nil
+}
+
+// reCode is the verification code in the /me reply (spec/bindings/channels/messages, cmd.profile.code).
+var reCode = regexp.MustCompile(`\b[0-9]{8}\b`)
+
+// confirmPending activates the pending privileged seed groups the way an operator does (PRM-13):
+// the person sends /me in their direct chat and reads the verification code in the reply, and
+// the operator repeats the grant with that code. The bench writes no membership itself. A
+// person who sends a first-contact case (DLV-12) is left pending, since /me would be the first
+// contact that case checks; such a person's groups count as ungranted.
+func (b *Bench) confirmPending(ctx context.Context) error {
+	cases, err := LoadCases(b.cfg.Root)
+	if err != nil {
+		return err
+	}
+	firstContact := map[string]string{}
+	for _, c := range cases {
+		if slices.Contains(c.Rules, "DLV-12") {
+			firstContact[c.From] = c.ID
+		}
+	}
+	for _, name := range slices.Sorted(mapKeys(b.pendingGroups)) {
+		gs := b.pendingGroups[name]
+		if id := firstContact[name]; id != "" {
+			b.ungranted[name], b.ungrantedWhy[name] = gs, "privileged seed groups "+strings.Join(gs, ", ")+" stay pending (PRM-13): their code would come from /me, the first contact "+id+" checks"
+			continue
+		}
+		p := b.seed.Person(name)
+		chat := ""
+		for _, ch := range p.Chats {
+			if c := b.seed.Chat(ch); c != nil && c.Kind == "direct" {
+				chat = ch
+			}
+		}
+		if chat == "" {
+			b.ungranted[name], b.ungrantedWhy[name] = gs, "privileged seed groups "+strings.Join(gs, ", ")+" stay pending (PRM-13): the person has no direct chat to read the code in /me"
+			continue
+		}
+		mark := b.bot.sentCount()
+		if _, _, err := b.play(ctx, name, chat, "/me", 30*time.Second); err != nil {
+			return fmt.Errorf("seed %s: /me: %w", name, err)
+		}
+		code := ""
+		ext := b.seed.Chat(chat).ExternalID
+		for _, m := range b.bot.sentSince(mark) {
+			if fmt.Sprint(m["chat_id"]) == ext {
+				if c := reCode.FindString(str(m["text"])); c != "" {
+					code = c
+				}
+			}
+		}
+		if code == "" {
+			return fmt.Errorf("seed %s: the /me reply carries no verification code", name)
+		}
+		for _, g := range gs {
+			var out struct {
+				State string `json:"state"`
+			}
+			if err := b.P2(ctx, "demo", "grant", map[string]any{"op": "grant", "subject": p.ID, "group": g, "code": code}, &out); err != nil {
+				return fmt.Errorf("seed %s in %s with the code: %w", name, g, err)
+			}
+			if out.State != "active" {
+				return fmt.Errorf("seed %s in %s: %s after the code", name, g, out.State)
 			}
 		}
 	}
@@ -861,5 +939,45 @@ func (b *Bench) releaseCapHolds(ctx context.Context) error {
 		}
 	}
 	b.capHolds = nil
+	return nil
+}
+
+// reResourceKind is the pointer of a catalog resource kind.
+var reResourceKind = regexp.MustCompile(`^/spec/resources/([0-9]+)/kind$`)
+
+// dropLaterResources removes from the catalogs the whole resources of a kind this core refuses
+// as later (a corpus of profile knowledge, MAN-11): the bench serves no such resource, and a
+// case that needs one is not run (setup.corpus, the corpus carrier). DropUnsupported does not
+// drop a resource kind, since that would change what the entry says; the entry goes as a whole.
+func (b *Bench) dropLaterResources(ms []map[string]any) error {
+	for _, m := range ms {
+		if m["kind"] != "Catalog" {
+			continue
+		}
+		ptrs, err := b.sp.Unsupported(m)
+		if err != nil {
+			return err
+		}
+		drop := map[int]bool{}
+		for _, p := range ptrs {
+			if sm := reResourceKind.FindStringSubmatch(p); sm != nil {
+				i, _ := strconv.Atoi(sm[1])
+				drop[i] = true
+			}
+		}
+		if len(drop) == 0 {
+			continue
+		}
+		sp := asMap(m["spec"])
+		var kept []any
+		for i, r := range asList(sp["resources"]) {
+			if drop[i] {
+				b.cfg.Logger.Info("bench: catalog resource of a later kind left out", "resource", str(asMap(r)["id"]), "kind", str(asMap(r)["kind"]))
+				continue
+			}
+			kept = append(kept, r)
+		}
+		sp["resources"] = kept
+	}
 	return nil
 }

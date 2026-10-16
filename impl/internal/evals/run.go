@@ -159,9 +159,9 @@ func (r *Runner) Needs(c *Case) string {
 				return need
 			}
 			// A setup step that the core refuses leaves the case untested (iso-02 would pass
-			// trivially), so a step of a person with an ungranted seed group is not run (PRM-13).
+			// trivially), so a step of a person with a pending seed group is not run (PRM-13).
 			if gs := r.Bench.ungranted[from]; len(gs) > 0 {
-				return "setup." + key + " input from " + from + ": " + ungrantedText(gs)
+				return "setup." + key + " input from " + from + ": " + r.Bench.ungrantedWhy[from]
 			}
 		}
 	}
@@ -420,15 +420,10 @@ func (r *Runner) runCase(ctx context.Context, c *Case, profile string, n int) *R
 	return res
 }
 
-// ungrantedText says why seed groups are missing.
-func ungrantedText(gs []string) string {
-	return "seed groups " + strings.Join(gs, ", ") + " are privileged and cannot be granted without the verification code flow (PRM-13)"
-}
-
 // ungrantedNeed is the not-run reason of a case the core refused because the person lacks a
-// seed group the bench could not grant: PRM-13 refuses a privileged group without the
-// verification code flow, which this version does not have, and the bench does not write the
-// membership around it. It applies only when the input made no task, the core refused it with
+// seed group that stayed pending (PRM-13: a privileged group is active only with the person's
+// verification code, see confirmPending); the bench does not write the membership around the
+// core. It applies only when the input made no task, the core refused it with
 // no_group_cap for a type one of the ungranted groups holds (so the refusal says nothing about
 // the case, whether it expects one or not), and no absence check, counter or common check
 // failed, so a leak is never hidden behind it.
@@ -448,14 +443,14 @@ func (r *Runner) ungrantedNeed(c *Case, o *Observation, findings []*Finding) str
 		if c.State == "rejected" {
 			return ""
 		}
-		return "input from " + c.From + " made no task: " + ungrantedText(gs)
+		return "input from " + c.From + " made no task: " + r.Bench.ungrantedWhy[c.From]
 	}
 	if o.Refusal.Reason != "no_group_cap" {
 		return ""
 	}
 	for _, g := range gs {
 		if slices.Contains(r.Bench.seed.GroupCaps(g), "task:"+o.Refusal.Type) {
-			return "input from " + c.From + " refused no_group_cap for " + o.Refusal.Type + ", which group " + g + " allows: " + ungrantedText(gs)
+			return "input from " + c.From + " refused no_group_cap for " + o.Refusal.Type + ", which group " + g + " allows: " + r.Bench.ungrantedWhy[c.From]
 		}
 	}
 	return ""

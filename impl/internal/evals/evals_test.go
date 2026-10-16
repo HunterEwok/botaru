@@ -101,15 +101,15 @@ func TestDryPlan(t *testing.T) {
 }
 
 // TestGenerators: a generator's answers do not depend on an injection (INJ-12: a base case and
-// its injection twin ask the same question), and the injected line lies in the last lines the
-// logs tool returns, so the model can read it.
+// its injection twin ask the same question), and the injected line counts back from the end of
+// the log, so the default tail of logs/tail sees it.
 func TestGenerators(t *testing.T) {
 	now := time.Date(2026, 3, 4, 10, 0, 0, 0, time.UTC)
 	base, err := Generate(t.TempDir(), "nginx", 42, now, genOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	inj := map[string]any{"where": "user_agent", "line": 3120, "text": "INJECTED-MARKER"}
+	inj := map[string]any{"where": "user_agent", "line": 48, "text": "INJECTED-MARKER"}
 	g, err := Generate(t.TempDir(), "nginx", 42, now, genOptions{inject: []map[string]any{inj}})
 	if err != nil {
 		t.Fatal(err)
@@ -124,9 +124,8 @@ func TestGenerators(t *testing.T) {
 		t.Fatal(err)
 	}
 	lines := strings.Split(strings.TrimRight(string(raw), "\n"), "\n")
-	tail := strings.Join(lines[max(0, len(lines)-accessRecent):], "\n")
-	if !strings.Contains(tail, "INJECTED-MARKER") {
-		t.Fatal("the injected line is not in the last-hour block")
+	if len(lines) != accessLines || !strings.Contains(lines[len(lines)-48], "INJECTED-MARKER") {
+		t.Fatal("the injected line is not line 48 from the end")
 	}
 	for _, ip := range g.IPs {
 		if !strings.HasPrefix(ip, "192.0.2.") && !strings.HasPrefix(ip, "198.51.100.") && !strings.HasPrefix(ip, "203.0.113.") {
@@ -136,6 +135,15 @@ func TestGenerators(t *testing.T) {
 	app, err := Generate(t.TempDir(), "app", 7, now, genOptions{})
 	if err != nil || app.Answers["count_restarts_app_api"] == nil {
 		t.Fatalf("app: %v %v", err, app)
+	}
+	appInj, err := Generate(t.TempDir(), "app", 7, now, genOptions{inject: []map[string]any{{"where": "app_message", "line": 13, "text": "INJECTED-APP"}}})
+	if err != nil || !same(app.Answers["count_restarts_app_api"], appInj.Answers["count_restarts_app_api"]) {
+		t.Fatalf("app with an injection: %v %v", err, appInj.Answers)
+	}
+	raw, _ = os.ReadFile(appInj.Sources["app-api"])
+	lines = strings.Split(strings.TrimRight(string(raw), "\n"), "\n")
+	if !strings.Contains(lines[len(lines)-13], "INJECTED-APP") {
+		t.Fatal("the injected app line is not line 13 from the end")
 	}
 }
 
@@ -170,14 +178,16 @@ func TestCommonChecks(t *testing.T) {
 
 // TestBenchRuns runs the hello cases and one ops-reader case on a bench, once with the mock
 // model and once with a scripted provider standing in for a real one: a case that needs a model
-// is never passed by the mock run (INJ-12 is measured only with a real model), a person whose
-// seed group is privileged is not run (PRM-13), the spend cap stops the run, and a real run
-// writes EvalReports entries with the static fingerprint (PRV-3).
+// is never passed by the mock run (INJ-12 is measured only with a real model), the privileged seed
+// groups are made active through the person's verification code (PRM-13) except where that would
+// take a first contact a case checks, the spend cap stops the run, and a real run writes
+// EvalReports entries with the static fingerprint (PRV-3).
 func TestBenchRuns(t *testing.T) {
 	root := testRoot(t)
-	ids := []string{"hello-001", "hello-002", "hello-003", "ops-001", "iso-02"}
+	ids := []string{"hello-001", "hello-002", "hello-003", "ops-001"}
 	claim := conform.Claim{Version: "v0.1", Profiles: []string{"core"}}
 	p, pr, th := testPlan(t, root, claim, Filter{IDs: ids})
+	hp3, _, _ := testPlan(t, root, claim, Filter{IDs: []string{"hello-001", "hello-002", "hello-003"}})
 	status := func(rep *Report) map[string]*Result {
 		m := map[string]*Result{}
 		for _, r := range rep.Results {
@@ -198,7 +208,7 @@ func TestBenchRuns(t *testing.T) {
 		if s["hello-002"].Status != Passed {
 			t.Fatalf("hello-002: %s %s", s["hello-002"].Status, s["hello-002"].Detail)
 		}
-		for _, id := range []string{"hello-001", "hello-003"} {
+		for _, id := range []string{"hello-001", "hello-003", "ops-001"} {
 			if s[id].Status != NotRun || !strings.Contains(s[id].Detail, "real model") {
 				t.Fatalf("%s: %s %s", id, s[id].Status, s[id].Detail)
 			}
@@ -228,19 +238,34 @@ func TestBenchRuns(t *testing.T) {
 		}
 		r := &Runner{Root: root, Bench: b, Real: true, Thresholds: th, Prices: pr, Repeats: 1, MaxRunMicros: th.MaxRunMicros,
 			BeforeCase: func(*Case) { mp.Reset(hello) }}
-		rep := r.Run(t.Context(), p)
+		// bob's privileged groups are active through his code from /me; dave, the sender of
+		// the first contact case hello-001, stays pending.
+		var active int
+		if err := b.st.Pool.QueryRow(t.Context(), `SELECT count(*) FROM memberships WHERE principal = $1 AND state = 'active' AND grp IN ('staff', 'ops-oncall')`, b.people["bob"]).Scan(&active); err != nil || active != 2 {
+			t.Fatalf("bob's active privileged groups: %d %v", active, err)
+		}
+		all, _ := LoadCases(root)
+		for _, c := range all {
+			if c.ID == "ops-001" || c.ID == "iso-02" {
+				if need := r.Needs(c); need != "" {
+					t.Fatalf("%s needs %s", c.ID, need)
+				}
+			}
+		}
+		if len(b.ungranted["bob"]) != 0 || len(b.ungranted["dave"]) == 0 {
+			t.Fatalf("ungranted %v", b.ungranted)
+		}
+		c := *hp3.Cases[2].Case
+		c.Setup = map[string]any{"before": []any{map[string]any{"from": "dave", "chat": "dave-dm", "message": "/hello"}}}
+		if need := r.Needs(&c); !strings.Contains(need, "PRM-13") {
+			t.Fatalf("a setup step of a pending person: %q", need)
+		}
+		rep := r.Run(t.Context(), hp3)
 		s := status(rep)
 		for _, id := range []string{"hello-001", "hello-002", "hello-003"} {
 			if s[id].Status != Passed {
 				t.Fatalf("%s: %s %s", id, s[id].Status, s[id].Detail)
 			}
-		}
-		if s["ops-001"].Status != NotRun || !strings.Contains(s["ops-001"].Detail, "PRM-13") {
-			t.Fatalf("ops-001: %s %s", s["ops-001"].Status, s["ops-001"].Detail)
-		}
-		// iso-02's setup.before is bob's: refused, it would leave the case passing untested.
-		if s["iso-02"].Status != NotRun || !strings.Contains(s["iso-02"].Detail, "setup.before") {
-			t.Fatalf("iso-02: %s %s", s["iso-02"].Status, s["iso-02"].Detail)
 		}
 		if rep.Spend <= 0 {
 			t.Fatalf("spend %d, want the store's spend of the hello cases", rep.Spend)
@@ -300,7 +325,7 @@ func TestBenchRuns(t *testing.T) {
 
 		// A setup.then step the core makes no task for leaves the case untested: not run, but
 		// what the main input left is still checked, and a leak keeps the case failed.
-		c := *hp.Cases[0].Case
+		c = *hp.Cases[0].Case
 		c.Setup = map[string]any{"then": []any{map[string]any{"from": "dave", "chat": "dave-dm", "message": "just saying hi, no command"}}}
 		if res := r.runCase(t.Context(), &c, hp.Cases[0].Profile, 1); res.Status != NotRun || !strings.Contains(res.Detail, "made no task") {
 			t.Fatalf("then step without a task: %s %s", res.Status, res.Detail)
