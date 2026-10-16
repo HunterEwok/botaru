@@ -209,7 +209,8 @@ func (c *Core) evalGate(after []manifest.Doc, index []int, before []manifest.Doc
 					continue
 				}
 			}
-			if cur.reported(role, fp) {
+			// From v0.3 a commission role also needs the unawareness set (GOV-46).
+			if cur.reported(role, fp) && cur.unawareReported(role, fp) {
 				continue
 			}
 			e := ApplyError{Kind: "Role", Name: role, Code: "eval_report_missing", Path: "/store/spec"}
@@ -266,7 +267,7 @@ func (c *Core) doctorEvals(ctx context.Context, tx pgx.Tx, tenant string, add fu
 		if err != nil {
 			return err
 		}
-		if !x.reported(k.Name, fp) {
+		if !x.reported(k.Name, fp) || !x.unawareReported(k.Name, fp) {
 			stale = append(stale, k.Name)
 		}
 	}
