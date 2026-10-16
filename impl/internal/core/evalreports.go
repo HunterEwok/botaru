@@ -4,6 +4,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"regexp"
 	"slices"
 	"sort"
@@ -94,15 +95,19 @@ func seatEvalPassed(reports []evalReport, profile, fingerprint string) bool {
 }
 
 // seatFingerprint is the fingerprint an mgr-inj entry of the seat carries (eval-reports.schema:
-// "for a seat, of the seat profile"): the hash of the profile name, its provider, model and
-// max_output_tokens, and the persona pin of the farm manager position, so a change of the model,
-// its parameters or the manager persona asks for a new report (MGR-23, GOV-4).
+// "for a seat, of the seat profile"): the hash of the profile name, the hash of the whole
+// ModelProfile manifest as applied (the farm's own, else the farm-wide one) and the persona pin
+// of the farm manager position, so any change of the profile or the manager persona asks for a
+// new report (MGR-23, GOV-4).
 func seatFingerprint(cat *Catalog, profile string) (string, error) {
-	p, ok := cat.Profile(farmTenant, profile)
-	if !ok {
+	h := cat.Hashes[manifest.Key{Kind: "ModelProfile", Tenant: farmTenant, Name: profile}]
+	if h == "" {
+		h = cat.Hashes[manifest.Key{Kind: "ModelProfile", Name: profile}]
+	}
+	if h == "" {
 		return "", nil
 	}
-	parts := map[string]any{"profile": profile, "provider": p.Provider, "model": p.Model, "max_output_tokens": p.MaxOutputTokens, "persona": nil}
+	parts := map[string]any{"profile": profile, "manifest": h, "persona": nil}
 	if pr := personaOf(mmap(managerCharter(cat), "persona")); pr.pinned() {
 		parts["persona"] = pr.SHA256
 	}
@@ -197,24 +202,24 @@ func staticFingerprint(roleHash string, typeHashes map[string]string, persona, b
 	return jcs.Hash(parts)
 }
 
-// lintTranslatorEvals refuses, when the set holds a production tenant (a tenant without kind is
-// one, APR-9), a role of profile translator whose static fingerprint has no passing reports of
-// both translator sets in the index of the set (TRN-6, eval_report_missing). Every translator
-// role is checked on every apply, a stored one too, by its current fingerprint: a change of the
-// tenant, a claimed type, the persona pin or the index can take the role's reports away. The
-// fingerprint is taken per production tenant, with the persona its charter pins for the
-// translator position, and the threshold is that tenant's evals.translator_structural_match. The
-// finding goes on the object of the apply that moved it (the role, a claimed type, the tenant,
-// its Governance, an EvalReports manifest, in this order); when the apply holds none of them, on
-// the stored role.
-func lintTranslatorEvals(docs []manifest.Doc, S *lintSet, f *lintFindings) error {
+// trnState is the translator gate of one translator role in one production tenant of a set: its
+// static fingerprint there and whether the index of the set has both passing sets for it.
+type trnState struct {
+	tenant, role lintObj
+	gov          *lintObj
+	fp           string
+	passed       bool
+	types        []string
+}
+
+// translatorStates computes the gate of every translator role in every production tenant of a
+// set (a tenant without kind is one, APR-9). The fingerprint takes the persona the tenant's
+// charter pins for the translator position, and the threshold is the tenant's
+// evals.translator_structural_match (TRN-6).
+func translatorStates(docs []manifest.Doc, S *lintSet) (map[[2]string]*trnState, error) {
 	var specs []map[string]any
-	var indexes []lintObj
 	for _, o := range S.each("EvalReports") {
 		specs = append(specs, o.spec)
-		if o.i >= 0 {
-			indexes = append(indexes, o)
-		}
 	}
 	reports := evalReportsOf(specs)
 	hashes := map[manifest.Key]string{}
@@ -222,19 +227,12 @@ func lintTranslatorEvals(docs []manifest.Doc, S *lintSet, f *lintFindings) error
 		if d.Kind == "Role" || d.Kind == "TaskType" {
 			h, err := jcs.Hash(d.Value)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			hashes[manifest.Key{Kind: d.Kind, Name: d.Name}] = h
 		}
 	}
-	submitted := func(kind, name, tenant string) (lintObj, bool) {
-		for _, o := range S.each(kind) {
-			if o.i >= 0 && o.name == name && (tenant == "" || o.tenant == tenant) {
-				return o, true
-			}
-		}
-		return lintObj{}, false
-	}
+	out := map[[2]string]*trnState{}
 	for _, t := range S.each("Tenant") {
 		if mstr(t.spec, "kind") == "test" {
 			continue
@@ -247,21 +245,16 @@ func lintTranslatorEvals(docs []manifest.Doc, S *lintSet, f *lintFindings) error
 		var govObj *lintObj
 		for _, g := range S.each("Governance") {
 			if g.tenant == t.name {
-				gov = g.spec
-				if g.i >= 0 {
-					govObj = &g
-				}
+				gov, govObj = g.spec, &g
 				break
 			}
 		}
-		persona := personaOf(mmap(mmap(mmap(gov, "positions"), "translator"), "persona"))
 		pin := ""
-		if persona.pinned() {
+		if persona := personaOf(mmap(mmap(mmap(gov, "positions"), "translator"), "persona")); persona.pinned() {
 			pin = persona.SHA256
 		}
 		for _, r := range S.each("Role") {
-			// A role the lint already refuses needs no second refusal.
-			if mstr(r.spec, "profile") != "translator" || f.refuses(r) {
+			if mstr(r.spec, "profile") != "translator" {
 				continue
 			}
 			types := map[string]string{}
@@ -272,32 +265,149 @@ func lintTranslatorEvals(docs []manifest.Doc, S *lintSet, f *lintFindings) error
 			fp, err := staticFingerprint(hashes[manifest.Key{Kind: "Role", Name: r.name}], types, pin, mstr(models, "base"), mstr(models, "analysis"),
 				mstr(mmap(r.spec, "runtime"), "driver"))
 			if err != nil {
-				return err
+				return nil, err
 			}
-			if translatorEvalPassed(reports, r.name, fp, threshold) {
+			st := &trnState{role: r, gov: govObj, fp: fp, passed: translatorEvalPassed(reports, r.name, fp, threshold), types: slices.Sorted(mapKeys(types))}
+			st.tenant = t
+			out[[2]string{t.name, r.name}] = st
+		}
+	}
+	return out, nil
+}
+
+// lintTranslatorEvals refuses a translator role of a production tenant whose static fingerprint
+// has no passing reports of both translator sets in the index of the set (TRN-6,
+// eval_report_missing), as PRV-3 does: only when the apply enables the role in the tenant (a new
+// role, or a tenant that becomes production), moves one of its parts (the role, a claimed type,
+// the persona pin; a new fingerprint), or takes its passing entry away (an EvalReports change or a
+// higher threshold). A role already enabled that went stale with none of these, as after a core
+// minor upgrade, stays enabled, and doctor warns eval_report_stale. The finding goes on the object
+// of the apply that moved it (the role, a claimed type, the Governance, the tenant, the EvalReports
+// manifest that held the role's entries, in this order) and names the tenant and the expected
+// fingerprint. prior is the stored set before the apply.
+func lintTranslatorEvals(docs []manifest.Doc, S *lintSet, prior []manifest.Doc, f *lintFindings) error {
+	now, err := translatorStates(docs, S)
+	if err != nil {
+		return err
+	}
+	pindex := make([]int, len(prior))
+	for i := range pindex {
+		pindex[i] = -1
+	}
+	P := newLintSet(prior, pindex)
+	before, err := translatorStates(prior, P)
+	if err != nil {
+		return err
+	}
+	submitted := func(kind, name, tenant string) (lintObj, bool) {
+		for _, o := range S.each(kind) {
+			if o.i >= 0 && o.name == name && (tenant == "" || o.tenant == tenant) {
+				return o, true
+			}
+		}
+		return lintObj{}, false
+	}
+	// The submitted EvalReports manifest whose stored version held entries of the role.
+	heldEntries := func(role string) (lintObj, bool) {
+		var first *lintObj
+		for _, o := range S.each("EvalReports") {
+			if o.i < 0 {
 				continue
 			}
-			on := r
-			if r.i < 0 {
-				found := false
-				for _, typ := range slices.Sorted(mapKeys(types)) {
-					if o, ok := submitted("TaskType", typ, ""); ok {
-						on, found = o, true
-						break
+			if first == nil {
+				first = &o
+			}
+			if old := P.get("EvalReports", o.name, ""); old != nil {
+				for _, r := range evalReportsOf([]map[string]any{old}) {
+					if r.SubjectKind == "role" && r.SubjectName == role {
+						return o, true
 					}
 				}
-				switch {
-				case found:
-				case t.i >= 0:
-					on = t
-				case govObj != nil:
-					on = *govObj
-				case len(indexes) > 0:
-					on = indexes[0]
-				}
 			}
-			f.add(on, "eval_report_missing", "")
 		}
+		if first != nil {
+			return *first, true
+		}
+		return lintObj{}, false
+	}
+	keys := slices.SortedFunc(mapKeys(now), func(a, b [2]string) int { return strings.Compare(a[0]+"/"+a[1], b[0]+"/"+b[1]) })
+	for _, k := range keys {
+		st := now[k]
+		if st.passed || f.refuses(st.role) {
+			continue
+		}
+		if old, ok := before[k]; ok && old.fp == st.fp && !old.passed {
+			continue // stale before this apply: doctor warns eval_report_stale
+		}
+		on, found := st.role, st.role.i >= 0
+		for _, typ := range st.types {
+			if found {
+				break
+			}
+			on, found = submitted("TaskType", typ, "")
+		}
+		if !found && st.gov != nil && st.gov.i >= 0 {
+			on, found = *st.gov, true
+		}
+		if !found && st.tenant.i >= 0 {
+			on, found = st.tenant, true
+		}
+		if !found {
+			if o, ok := heldEntries(st.role.name); ok {
+				on, found = o, true
+			}
+		}
+		if !found {
+			on = st.role
+		}
+		f.addDetail(on, "eval_report_missing", "", fmt.Sprintf("role %s in tenant %s needs reports for static fingerprint %s", st.role.name, st.tenant.name, st.fp))
+	}
+	return nil
+}
+
+// staleTranslatorRoles are the translator roles of a production tenant of the stored set whose
+// current static fingerprint has no passing reports: roles that stay enabled until an apply moves
+// them, which doctor warns as eval_report_stale (PRV-3, TRN-6).
+func staleTranslatorRoles(stored []manifest.Doc, kinds map[string]kindInfo, tenant string) ([]string, error) {
+	docs := make([]manifest.Doc, len(stored))
+	index := make([]int, len(stored))
+	for i, d := range stored {
+		if kinds[d.Kind].scope == "global" {
+			d.Tenant = ""
+		}
+		docs[i], index[i] = d, -1
+	}
+	states, err := translatorStates(docs, newLintSet(docs, index))
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for k, st := range states {
+		if k[0] == tenant && !st.passed {
+			out = append(out, k[1])
+		}
+	}
+	slices.Sort(out)
+	return out, nil
+}
+
+// doctorEvals warns eval_report_stale, one check per translator role of a production tenant that
+// stays enabled while its current static fingerprint has no passing reports (PRV-3, TRN-6).
+func (c *Core) doctorEvals(ctx context.Context, tx pgx.Tx, tenant string, add func(DoctorCheck)) error {
+	stored, _, err := loadManifests(ctx, tx)
+	if err != nil {
+		return err
+	}
+	kinds, err := c.manifestKinds()
+	if err != nil {
+		return err
+	}
+	roles, err := staleTranslatorRoles(stored, kinds, tenant)
+	if err != nil {
+		return err
+	}
+	for _, r := range roles {
+		add(DoctorCheck{ID: "eval_report_stale", OK: false, Severity: "warn", Value: r, Tenant: tenant})
 	}
 	return nil
 }
@@ -334,7 +444,7 @@ func (c *Core) seatEvalWait(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 	if err != nil || !first {
 		return true, err
 	}
-	params := map[string]any{"profile": profile}
+	params := map[string]any{"profile": profile, "fingerprint": fp}
 	params["tenant"] = waiting
 	return true, c.noticeAdmins(ctx, tx, now, cat, []string{farmTenant}, "seat_eval_missing_notice", "notice.seat_eval_missing", params, "admin:governance")
 }

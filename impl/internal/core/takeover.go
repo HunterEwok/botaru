@@ -103,6 +103,9 @@ func (c *Core) takeoverToolCall(ctx context.Context, tx pgx.Tx, now time.Time, c
 		return refused("takeover_not_allowed")
 	}
 	estimate := grantEstimate(pr, len(body), 1)
+	if err := lockTenantBudget(ctx, tx, g.Tenant); err != nil {
+		return nil, err
+	}
 	open, err := openGrantMicros(ctx, tx, g.Tenant, "takeover")
 	if err != nil {
 		return nil, err
@@ -140,9 +143,28 @@ func (c *Core) publishTakeovers(ctx context.Context, tx pgx.Tx, now time.Time, c
 		return err
 	}
 	if untrusted {
-		_, err := tx.Exec(ctx, `UPDATE takeovers SET state = 'dropped', reason = 'takeover_untrusted', updated_at = $3 WHERE seat_task = $1 AND lease_no = $2 AND state = 'staged'`,
-			task, leaseNo, now)
-		return err
+		rows, err := tx.Query(ctx, `UPDATE takeovers SET state = 'dropped', reason = 'takeover_untrusted', updated_at = $3 WHERE seat_task = $1 AND lease_no = $2 AND state = 'staged'
+			RETURNING id, tenant`, task, leaseNo, now)
+		if err != nil {
+			return err
+		}
+		type drop struct{ id, tenant string }
+		drops, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (drop, error) {
+			var d drop
+			return d, row.Scan(&d.id, &d.tenant)
+		})
+		if err != nil {
+			return err
+		}
+		for _, d := range drops {
+			if _, err := c.appendAudit(ctx, tx, now, Audit{
+				Tenant: d.tenant, Kind: "command", Actor: Actor{Principal: "system", Via: "seat", Role: managerSeatID, Task: task},
+				Command: takeoverToolName, Target: &Target{Kind: "takeover", ID: d.id}, OK: false, Reason: "takeover_untrusted", After: map[string]any{"state": "dropped"},
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
 	}
 	rows, err := tx.Query(ctx, `UPDATE takeovers SET state = 'pending', expires_at = $3, updated_at = $4 WHERE seat_task = $1 AND lease_no = $2 AND state = 'staged'
 		RETURNING id, tenant`, task, leaseNo, now.Add(takeoverCardTTL), now)
@@ -360,6 +382,9 @@ func (c *Core) runTakeover(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 	tv := cat.Tenants[r.Tenant]
 	if state == "completed" || state == "failed" || state == "canceled" || !lineOpen(tv, "takeover") {
 		return "", "takeover_not_allowed", nil
+	}
+	if err := lockTenantBudget(ctx, tx, r.Tenant); err != nil {
+		return "", "", err
 	}
 	open, err := openGrantMicros(ctx, tx, r.Tenant, "takeover")
 	if err != nil {

@@ -600,7 +600,11 @@ func (c *Core) decideGrant(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 	if d.CapEUR != nil {
 		capMicros = money.FromEUR(*d.CapEUR)
 	}
-	// The open caps of grants count against the line as their reserve.
+	// The open caps of grants count against the line as their reserve, read under the tenant's
+	// budget lock.
+	if err := lockTenantBudget(ctx, tx, tenant); err != nil {
+		return "", "", err
+	}
 	open, err := openGrantMicros(ctx, tx, tenant, "grant")
 	if err != nil {
 		return "", "", err
@@ -613,7 +617,10 @@ func (c *Core) decideGrant(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 	}
 	if by.Seat {
 		// The seat's daily ceiling counts the caps the seat issued since the start of the UTC
-		// calendar day, in every tenant; it is always on (MGR-18).
+		// calendar day, in every tenant, under one farm-wide lock; it is always on (MGR-18).
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(7300152)`); err != nil {
+			return "", "", err
+		}
 		var today int64
 		if err := tx.QueryRow(ctx, `SELECT coalesce(sum(cap_micros), 0) FROM model_grants WHERE kind = 'grant' AND decided_by->>'kind' = 'seat' AND state <> 'denied' AND decided_at >= $1`,
 			utcDayStart(now)).Scan(&today); err != nil {
@@ -1077,6 +1084,13 @@ func (c *Core) ModelGrantList(ctx context.Context, op Operator, req ModelGrantRe
 func utcDayStart(t time.Time) time.Time {
 	y, m, d := t.UTC().Date()
 	return time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
+}
+
+// lockTenantBudget takes the tenant's budget lock that checkBudget takes, so a read of the open
+// grant caps and the budget check see the same spend.
+func lockTenantBudget(ctx context.Context, tx pgx.Tx, tenant string) error {
+	_, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(7300102, hashtext($1))`, tenant)
+	return err
 }
 
 // openGrantMicros is the rest of the caps of a tenant's approved and active grants on a line:

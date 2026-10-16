@@ -96,6 +96,15 @@ func (f *lintFindings) refuses(o lintObj) bool {
 	return false
 }
 
+// addDetail is add with a detail text on the error.
+func (f *lintFindings) addDetail(o lintObj, code, path, detail string) {
+	n := len(f.out)
+	f.add(o, code, path)
+	if len(f.out) > n {
+		f.out[len(f.out)-1].Detail = detail
+	}
+}
+
 func (f *lintFindings) add(o lintObj, code, path string) {
 	k := fmt.Sprintf("%d/%s/%s", o.i, code, path)
 	if o.i < 0 {
@@ -329,7 +338,7 @@ func (r *lintRegs) parseCap(cp string) (string, string) {
 // personaLookup gives the text of a persona of a tenant by its hash, when apply has it.
 type personaLookup func(tenant, sha string) (string, bool)
 
-func (c *Core) lintManifests(docs []manifest.Doc, index []int, personas personaLookup) ([]ApplyError, error) {
+func (c *Core) lintManifests(docs []manifest.Doc, index []int, personas personaLookup, prior []manifest.Doc) ([]ApplyError, error) {
 	r, err := c.lintRegistries()
 	if err != nil {
 		return nil, err
@@ -1777,7 +1786,7 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int, personas personaL
 		return nil, err
 	}
 	// The translator gate of a production tenant (TRN-6).
-	if err := lintTranslatorEvals(docs, S, f); err != nil {
+	if err := lintTranslatorEvals(docs, S, prior, f); err != nil {
 		return nil, err
 	}
 	sort.SliceStable(f.out, func(i, j int) bool { return f.out[i].Path < f.out[j].Path })

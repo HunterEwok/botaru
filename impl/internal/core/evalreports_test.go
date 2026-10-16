@@ -31,8 +31,9 @@ spec: {profile: translator, worker_kind: agent, claims: [fx.translate.v1], model
 `
 
 // A translator role of a production tenant passes apply only with both translator sets in the
-// EvalReports index for its static fingerprint; a test tenant needs none. A stored role is
-// checked again on every apply by its current fingerprint (TRN-6).
+// EvalReports index for its static fingerprint; a test tenant needs none. Over a stored set the
+// apply refuses only what it enables or moves, and a stale role is a doctor warning (TRN-6,
+// PRV-3).
 func TestTranslatorEvalGate(t *testing.T) {
 	c := lintCore(t)
 	base := fmt.Sprintf(trnSet, "production")
@@ -83,38 +84,61 @@ spec:
 		}
 	}
 
-	// The role and its type are stored; a new production tenant, or a changed stored type, takes
-	// the reports away, and the finding goes on the object of the apply.
-	stored := func(docs string, submitted ...string) []ApplyError {
+	// An apply over a stored set: it refuses only when it enables the role in a production
+	// tenant or moves one of its parts or entries, and names the tenant and the fingerprint; a
+	// role that went stale without that stays enabled and doctor warns eval_report_stale.
+	parse := func(docs string) []manifest.Doc {
 		ds, err := manifest.ParseYAML(strings.NewReader(docs), "test")
 		if err != nil {
 			t.Fatal(err)
 		}
+		for i := range ds {
+			if ds[i].Kind != "Tenant" {
+				ds[i].Tenant = ""
+			}
+		}
+		return ds
+	}
+	apply := func(after, prior string, submitted ...string) []ApplyError {
+		ds := parse(after)
 		index := make([]int, len(ds))
 		for i := range ds {
 			index[i] = -1
 			if slices.Contains(submitted, ds[i].Kind) {
 				index[i] = i
 			}
-			if ds[i].Kind != "Tenant" {
-				ds[i].Tenant = ""
-			}
 		}
-		errs, err := c.lintManifests(ds, index, nil)
+		errs, err := c.lintManifests(ds, index, nil, parse(prior))
 		if err != nil {
 			t.Fatal(err)
 		}
 		return slices.DeleteFunc(errs, func(e ApplyError) bool { return e.Code != "eval_report_missing" })
 	}
-	if errs := stored(base, "Tenant"); len(errs) != 1 || errs[0].Kind != "Tenant" {
+	roleOnly := base[strings.Index(base, "---"):]
+	if errs := apply(base, roleOnly, "Tenant"); len(errs) != 1 || errs[0].Kind != "Tenant" || !strings.Contains(errs[0].Detail, fp) || !strings.Contains(errs[0].Detail, "tenant t1") {
 		t.Errorf("new production tenant over a stored role: %+v", errs)
 	}
-	if errs := stored(base+reports(0.95, 30, 0), "Tenant"); len(errs) != 0 {
+	if errs := apply(base+reports(0.95, 30, 0), roleOnly, "Tenant"); len(errs) != 0 {
 		t.Errorf("stored role with reports: %+v", errs)
 	}
 	changed := strings.Replace(base, `title: "Translation"`, `title: "Translation 2"`, 1)
-	if errs := stored(changed+reports(0.95, 30, 0), "TaskType"); len(errs) != 1 || errs[0].Kind != "TaskType" {
+	if errs := apply(changed+reports(0.95, 30, 0), base+reports(0.95, 30, 0), "TaskType"); len(errs) != 1 || errs[0].Kind != "TaskType" {
 		t.Errorf("changed claimed type: %+v", errs)
+	}
+	emptyIndex := "---\napiVersion: botaru/v1alpha1\nkind: EvalReports\nmetadata: {name: evals}\nspec: {reports: []}\n"
+	if errs := apply(base+emptyIndex, base+reports(0.95, 30, 0), "EvalReports"); len(errs) != 1 || errs[0].Kind != "EvalReports" || errs[0].Name != "evals" {
+		t.Errorf("entries taken away: %+v", errs)
+	}
+	// Stale before the apply (a core minor upgrade, or a role stored before the gate).
+	if errs := apply(base+emptyIndex, base, "EvalReports"); len(errs) != 0 {
+		t.Errorf("stale role refused: %+v", errs)
+	}
+	kinds, err := c.manifestKinds()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if roles, err := staleTranslatorRoles(parse(base), kinds, "t1"); err != nil || !slices.Equal(roles, []string{"fx-trn"}) {
+		t.Errorf("stale roles %v %v", roles, err)
 	}
 }
 

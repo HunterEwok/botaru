@@ -103,6 +103,10 @@ func TestTakeover(t *testing.T) {
 		if err := tx.QueryRow(ctx, `SELECT state || ':' || coalesce(reason, '') FROM takeovers WHERE seat_task = $1`, seatTask).Scan(&state); err != nil || state != "dropped:takeover_untrusted" {
 			t.Fatalf("untrusted at publication %s %v", state, err)
 		}
+		var audits int
+		if err := tx.QueryRow(ctx, `SELECT count(*) FROM audit WHERE record->>'reason' = 'takeover_untrusted' AND record->'after'->>'state' = 'dropped'`).Scan(&audits); err != nil || audits != 1 {
+			t.Fatalf("drop audit %d %v", audits, err)
+		}
 	}()
 	if _, err := b.c.Complete(ctx, mw, header(t, item), CompleteRequest{Result: map[string]any{"summary": "asked"}}); err != nil {
 		t.Fatal(err)
