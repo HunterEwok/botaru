@@ -178,10 +178,15 @@ type CancelResult struct {
 }
 
 // cancelTask cancels a task of the tenant with its tree and the approvals the tree asked for,
-// in one transaction (APR-6). A task that already ended with a cancellation gives the same
+// in one transaction (APR-6); only a root task is cancelled. A task that already ended with a cancellation gives the same
 // answer again (IDM-3); one that ended otherwise is already_terminal, unless an approval or a
 // script run of its tree still waits, which the cancellation withdraws (PRM-17).
 func (c *Core) cancelTask(ctx context.Context, tx pgx.Tx, now time.Time, t *taskRow, reason string, actor Actor, command string) (*CancelResult, error) {
+	// The cancellation acts on a whole tree, so it names the root: a child is cancelled with its
+	// tree, never alone with its descendants left running (APR-6).
+	if root, _ := t.rec["root"].(string); root != "" && root != t.id {
+		return nil, refuse("input_schema_invalid", "the task is a child of %s; cancel the root task", root)
+	}
 	switch t.state {
 	case "submitted", "working":
 	case "canceled":
@@ -361,7 +366,19 @@ func (c *Core) TaskList(ctx context.Context, op Operator, req TaskListRequest) (
 				pr.Needs = []string{"team.view:" + orDash(group)}
 				return pr
 			}
-			where, args[1] = `t.initiator IN (SELECT principal FROM memberships WHERE tenant = $1 AND grp = $2 AND state = 'active')`, group
+			// The members of now, and only rows of types and data the person may read (PRM-9).
+			var types, marks []string
+			for _, typ := range slices.Sorted(mapKeys(cat.TaskTypes)) {
+				if hasCap(tv, groups, "task.read:"+typ) {
+					types = append(types, typ)
+				}
+			}
+			for _, g := range groups {
+				marks = append(marks, tv.Groups[g].Data...)
+			}
+			where, args[1] = `t.initiator IN (SELECT principal FROM memberships WHERE tenant = $1 AND grp = $2 AND state = 'active'
+				AND (until IS NULL OR until > $3)) AND t.type = ANY($4) AND coalesce(t.record->>'data_mark', '') = ANY($5)`, group
+			args = append(args, now, nonNil(types), nonNil(marks))
 		}
 		q := `SELECT t.id, t.type, t.state, t.created_at, coalesce(t.record->>'data_mark', '') FROM tasks t
 			WHERE t.tenant = $1 AND t.type NOT LIKE 'action.%' AND ` + where
@@ -373,7 +390,8 @@ func (c *Core) TaskList(ctx context.Context, op Operator, req TaskListRequest) (
 			args = append(args, from, fromID)
 			q += ` AND (t.created_at, t.id) > ($` + strconv.Itoa(len(args)-1) + `, $` + strconv.Itoa(len(args)) + `)`
 		}
-		q += ` ORDER BY t.created_at, t.id`
+		args = append(args, limit+1)
+		q += ` ORDER BY t.created_at, t.id LIMIT $` + strconv.Itoa(len(args))
 		rows, err := tx.Query(ctx, q, args...)
 		if err != nil {
 			return err

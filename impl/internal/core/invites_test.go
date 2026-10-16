@@ -100,6 +100,23 @@ func TestInvitations(t *testing.T) {
 			t.Fatalf("invitation %d: %+v", i, r)
 		}
 	}
+	// Each failure is audited with its reason, though the text is the same.
+	var reasons []string
+	rows, err := b.c.st.Pool.Query(ctx, `SELECT record->>'reason' FROM audit WHERE tenant = 'demo' AND record->>'command' = 'invite.use' AND record->>'ok' = 'false' ORDER BY seq`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var r string
+		if err := rows.Scan(&r); err != nil {
+			t.Fatal(err)
+		}
+		reasons = append(reasons, r)
+	}
+	rows.Close()
+	if strings.Join(reasons, ",") != "already_terminal,already_terminal,expired,not_found" {
+		t.Fatalf("audited failures %v", reasons)
+	}
 
 	// A privileged group waits for the verification code (PRM-13).
 	priv := b.invite(t, b.op, "staff", "hello")
@@ -111,6 +128,14 @@ func TestInvitations(t *testing.T) {
 	code := b.c.verificationCode("demo", carol)
 	if !strings.Contains(res.Text, code) || b.membership(t, carol, "staff") != "pending" || b.membership(t, carol, "hello") != "active" {
 		t.Fatalf("privileged use %+v", res)
+	}
+	// The stored outcome holds no copy of the code; a retried update shows it again.
+	var copies int
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM activity_outcomes WHERE reply::text LIKE '%' || $1 || '%'`, code).Scan(&copies); err != nil || copies != 0 {
+		t.Fatalf("the code in a stored outcome %d %v", copies, err)
+	}
+	if again := b.say(t, "1010", "u4", "/start "+priv.Code); again.Text != res.Text {
+		t.Fatalf("a retried privileged use %+v", again)
 	}
 	if p, err := loadPrincipal(ctx, b.c.st.Pool, timeNow(t, b.bench), "demo", carol); err != nil || containsString(p.Groups, "staff") {
 		t.Fatalf("a pending group grants: %+v %v", p, err)
@@ -137,6 +162,35 @@ func TestInvitations(t *testing.T) {
 	}
 	if b.membership(t, carol, "staff") != "active" {
 		t.Fatal("the confirmed group is not active")
+	}
+	// A pending group lapses when nobody checks the code in time.
+	late := b.invite(t, b.op, "staff")
+	b.say(t, "1014", "u6", "/start "+late.Code)
+	dave, err := principalByIdentity(ctx, b.c.st.Pool, "demo", "telegram:1014")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE memberships SET pending_until = botaru_now() - interval '1 second' WHERE principal = $1`, dave); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.Invite(ctx, b.op, InviteRequest{Op: "invite.confirm", Invite: late.Invite, Code: b.c.verificationCode("demo", dave)}); err != nil {
+		t.Fatal(err)
+	}
+	if b.membership(t, dave, "staff") != "pending" {
+		t.Fatal("a lapsed pending group became active")
+	}
+	// grant --code activates a group pending from an invitation and confirms the invitation.
+	viaGrant := b.invite(t, b.op, "staff")
+	b.say(t, "1015", "u7", "/start "+viaGrant.Code)
+	erin, err := principalByIdentity(ctx, b.c.st.Pool, "demo", "telegram:1015")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d, err := b.c.Grant(ctx, b.op, GrantRequest{Op: "grant", Subject: erin, Group: "staff", Code: b.c.verificationCode("demo", erin)}); err != nil || d.State != "active" {
+		t.Fatalf("grant --code %+v %v", d, err)
+	}
+	if st := b.inviteState(t, viaGrant.Invite); st != "confirmed" {
+		t.Fatalf("the invitation after grant --code is %s", st)
 	}
 
 	// The creator is checked again at use: an inactive creator's invitation does not work.
@@ -190,7 +244,8 @@ func TestPrivilegedGrantCode(t *testing.T) {
 	}
 }
 
-// PRM-16: /me shows a group of delegated_groups with the attribute delegated.
+// PRM-16: /me shows a group of delegated_groups with the attribute delegated, and every admin
+// hears of a delegated grant, removal or invitation made on P2.
 func TestMeDelegatedMark(t *testing.T) {
 	ctx := context.Background()
 	b := newPeopleBench(t, func(ms []map[string]any) {
@@ -198,6 +253,9 @@ func TestMeDelegatedMark(t *testing.T) {
 			if m["kind"] == "Group" && m["metadata"].(map[string]any)["name"] == "leads" {
 				m["metadata"].(map[string]any)["name"] = "researcher"
 				m["spec"].(map[string]any)["caps"] = []any{"task.read:hello.greet.v1"}
+			}
+			if m["kind"] == "Group" && m["metadata"].(map[string]any)["name"] == "staff" {
+				m["spec"].(map[string]any)["caps"] = []any{"admin:people"}
 			}
 		}
 	})
@@ -207,6 +265,32 @@ func TestMeDelegatedMark(t *testing.T) {
 	me := b.say(t, "1001", "m1", "/me")
 	if !strings.Contains(me.Text, "researcher (delegated)") || strings.Contains(me.Text, "hello (delegated)") {
 		t.Fatalf("/me %s", me.Text)
+	}
+	// Every admin hears privately of a delegated group granted, removed or invited on P2
+	// (PRM-16), as from a chat.
+	if _, err := b.c.Grant(ctx, b.op, GrantRequest{Op: "grant", Subject: b.alice, Group: "staff", Code: b.c.verificationCode("demo", b.alice)}); err != nil {
+		t.Fatal(err)
+	}
+	bob := "human:p_01JB0000000000000000000B0B"
+	if _, err := b.c.Principal(ctx, b.op, PrincipalRequest{Op: "principal.add", Subject: bob, Identity: "telegram:1002"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, op := range []string{"grant", "ungrant"} {
+		if _, err := b.c.Grant(ctx, b.op, GrantRequest{Op: op, Subject: bob, Group: "researcher"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	inv := b.invite(t, b.op, "researcher")
+	b.say(t, "1016", "d1", "/start "+inv.Code)
+	notices := func(key string) int {
+		var n int
+		if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM deliveries WHERE tenant = 'demo' AND recipient = $1 AND body->>'text_key' = $2`, b.alice, key).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	if g, u := notices("notice.delegated_grant"), notices("notice.delegated_ungrant"); g != 2 || u != 1 {
+		t.Fatalf("delegated notices: %d grants, %d removals", g, u)
 	}
 }
 

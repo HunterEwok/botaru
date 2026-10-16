@@ -141,6 +141,10 @@ func TestProgramEnqueue(t *testing.T) {
 	if _, err := b.c.ProgramEnqueue(ctx, b.prog, EnqueueRequest{Body: greet("x"), IdempotencyKey: "k-off"}); reasonOf(err) != "person_inactive" {
 		t.Fatalf("inactive program: %v", err)
 	}
+	// Its key no longer opens P1, so it reads nothing either.
+	if _, err := b.c.AuthenticateProgram(ctx, "demo", "report-client"); reasonOf(err) != "person_inactive" {
+		t.Fatalf("an inactive program's key: %v", err)
+	}
 }
 
 // DSP-7 and MAN-5: at the queue ceiling a program gets over_capacity with retry_after_s and the

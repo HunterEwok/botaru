@@ -110,13 +110,13 @@ func (c *Core) SubmitActivity(ctx context.Context, w *Worker, a Activity) (*Acti
 		}
 		// An invitation link opened in a private chat by a verified sender (PRM-7).
 		if code := inviteCode(a); code != "" && a.Sender.Verified && binding == nil {
-			r, err := onceReply(ctx, tx, now, w.Tenant, key, func() (*ActivityResult, error) {
+			r, err := onceReply(ctx, tx, now, w.Tenant, key, func() (*inviteReply, error) {
 				return c.useInvitation(ctx, tx, now, tv, cat, a, code, principal)
 			})
 			if err != nil {
 				return err
 			}
-			out = *r
+			out = c.renderInviteReply(w.Tenant, r)
 			return nil
 		}
 		if errors.Is(err, pgx.ErrNoRows) {

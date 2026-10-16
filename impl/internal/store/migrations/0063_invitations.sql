@@ -25,3 +25,5 @@ CREATE INDEX invitations_creator ON invitations (tenant, created_by) WHERE state
 ALTER TABLE memberships ADD COLUMN granted_by text;
 ALTER TABLE memberships ADD COLUMN requested_by text;
 ALTER TABLE memberships ADD COLUMN invite text;
+-- A membership pending from an invitation lapses at pending_until unless its code is checked.
+ALTER TABLE memberships ADD COLUMN pending_until timestamptz;

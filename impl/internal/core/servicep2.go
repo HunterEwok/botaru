@@ -34,7 +34,9 @@ func (c *Core) ServiceControl(ctx context.Context, op Operator, req ServiceContr
 		return nil, err
 	}
 	var out *serviceResult
+	var refusal *Problem
 	err = c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+		out, refusal = nil, nil
 		actor := Actor{Principal: op.Principal, Via: "farmctl"}
 		deny := func(code, reason string, needs ...string) error {
 			out = &serviceResult{Code: code, Needs: needs}
@@ -53,8 +55,14 @@ func (c *Core) ServiceControl(ctx context.Context, op Operator, req ServiceContr
 			return err
 		}
 		if p == nil || p.State != "active" || p.Kind != "human" {
-			// The command is accepted only from a person (PRM-18).
-			return refuse("forbidden", "service.control is given by an active person")
+			// The command is accepted only from a person (PRM-18); the refusal is audited and
+			// the transaction commits it.
+			refusal = refuse("forbidden", "service.control is given by an active person")
+			_, err := c.appendAudit(ctx, tx, now, Audit{
+				Tenant: tv.Name, Kind: "authorize", Actor: actor, Command: "service.control",
+				Target: &Target{Kind: "service", ID: req.Service}, OK: false, Reason: "forbidden",
+			})
+			return err
 		}
 		groups := groupClosure(tv, p.Groups)
 		cp := "service.control:" + req.Service
@@ -83,7 +91,8 @@ func (c *Core) ServiceControl(ctx context.Context, op Operator, req ServiceContr
 				return err
 			}
 			if code != "pending" {
-				return deny("forbidden", code)
+				// Past the card limit the answer is service_rate_limited (PRM-18).
+				return deny(code, code)
 			}
 			ap, err := loadApproval(ctx, tx, tv.Name, id, true)
 			if err != nil {
@@ -119,6 +128,9 @@ func (c *Core) ServiceControl(ctx context.Context, op Operator, req ServiceContr
 	})
 	if err != nil {
 		return nil, err
+	}
+	if refusal != nil {
+		return nil, refusal
 	}
 	return out, nil
 }

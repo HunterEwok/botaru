@@ -236,10 +236,17 @@ func (c *Core) enqueueChild(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		return childResult{}, err
 	}
 	key := "system:child:" + g.Task + ":" + hash
+	if g.ChildKey != "" {
+		// A P1 caller names its own key: the same key with another body is a conflict (IDM-1).
+		key = "system:child:" + g.Task + ":p1:" + g.ChildKey
+	}
 	// A repeat of the same call is the same child, even at the limit.
-	var existing string
-	err = tx.QueryRow(ctx, `SELECT id FROM tasks WHERE tenant = $1 AND idempotency_key = $2`, g.Tenant, key).Scan(&existing)
+	var existing, existingHash string
+	err = tx.QueryRow(ctx, `SELECT id, body_hash FROM tasks WHERE tenant = $1 AND idempotency_key = $2`, g.Tenant, key).Scan(&existing, &existingHash)
 	if err == nil {
+		if existingHash != hash {
+			return deny("idempotency_conflict")
+		}
 		return childResult{Code: "enqueued", ID: existing, Existing: true}, nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {

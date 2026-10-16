@@ -791,6 +791,10 @@ func (c *Core) proposeCampaignKeyed(ctx context.Context, tx pgx.Tx, now time.Tim
 		}
 	}
 	if raw, ok := args["rollout"].(map[string]any); ok {
+		// The rollout waves and the release rate (ORC-15) are deferred: refused, never ignored.
+		if raw["waves"] != nil || raw["rate_per_min"] != nil {
+			return deny("version_unsupported")
+		}
 		b, _ := json.Marshal(raw)
 		if err := json.Unmarshal(b, &p.Rollout); err != nil {
 			return deny("input_schema_invalid")

@@ -4,6 +4,7 @@ package core
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
@@ -53,21 +54,17 @@ func (c *Core) verificationCode(tenant, principal string) string {
 // codeMatches checks a verification code under the current key and the keys of the rotation
 // window (SEC-5).
 func (c *Core) codeMatches(tenant, principal, code string) bool {
-	if code == c.verificationCode(tenant, principal) {
-		return true
-	}
+	match := subtle.ConstantTimeCompare([]byte(code), []byte(c.verificationCode(tenant, principal)))
 	for _, id := range slices.Sorted(maps.Keys(c.cfg.PreviousKeys)) {
-		if code == verificationCodeWith(c.cfg.PreviousKeys[id], tenant, principal) {
-			return true
-		}
+		match |= subtle.ConstantTimeCompare([]byte(code), []byte(verificationCodeWith(c.cfg.PreviousKeys[id], tenant, principal)))
 	}
-	return false
+	return match == 1
 }
 
 // privilegedNeedsCode says whether a group is granted only with the verification code: a
 // privileged group outside the tenant's delegated_groups (PRM-13, PRM-16).
 func (c *Core) privilegedNeedsCode(tv *TenantView, cat *Catalog, group string) bool {
-	if slices.Contains(tv.Spec.DelegatedGroups, group) && c.delegable(tv, cat, group) {
+	if c.delegatedGroup(tv, cat, group) {
 		return false
 	}
 	return privilegedGroup(tv, cat, group, map[string]bool{})
@@ -321,8 +318,9 @@ func (c *Core) confirmInvite(ctx context.Context, tx pgx.Tx, now time.Time, tv *
 		out.refusal = refuse("forbidden", "the verification code does not match")
 		return err
 	}
-	rows, err := tx.Query(ctx, `UPDATE memberships SET state = 'active' WHERE tenant = $1 AND principal = $2 AND invite = $3 AND state = 'pending' RETURNING grp`,
-		tv.Name, r.usedBy, r.id)
+	rows, err := tx.Query(ctx, `UPDATE memberships SET state = 'active', pending_until = NULL
+		WHERE tenant = $1 AND principal = $2 AND invite = $3 AND state = 'pending' AND (pending_until IS NULL OR pending_until > $4) RETURNING grp`,
+		tv.Name, r.usedBy, r.id, now)
 	if err != nil {
 		return err
 	}
@@ -370,15 +368,35 @@ func inviteCode(a Activity) string {
 // sender becomes a new person with the sender's identity, a known active person gets the
 // groups. A missing, used, revoked or expired invitation, an inactive creator and a group the
 // creator may no longer grant all answer with the same text and change nothing (PRM-7).
-func (c *Core) useInvitation(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, cat *Catalog, a Activity, code, principal string) (*ActivityResult, error) {
+func (c *Core) useInvitation(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, cat *Catalog, a Activity, code, principal string) (*inviteReply, error) {
 	locale := c.pickLocale("", tv.Spec.Locale)
-	invalid := &ActivityResult{Result: "reply", Text: c.texts.Render(locale, "cmd.invite.invalid", nil)}
-	r, err := loadInvite(ctx, tx, `tenant = $1 AND code_hash = ANY($2)`, tv.Name, c.secretHashes(code))
-	if err != nil || r == nil {
-		return invalid, err
+	actor := Actor{Principal: principal, Via: "channel"}
+	if principal == "" {
+		actor.Principal = "system"
 	}
-	if r.state != "open" || !r.expires.After(now) {
-		return invalid, nil
+	// Every failure has the same text, and its audit record keeps the reason (PRM-7).
+	invalid := func(id, reason string) (*inviteReply, error) {
+		au := Audit{Tenant: tv.Name, Kind: "command", Actor: actor, Command: "invite.use", OK: false, Reason: reason}
+		if id != "" {
+			au.Target = &Target{Kind: "invitation", ID: id}
+		}
+		if _, err := c.appendAudit(ctx, tx, now, au); err != nil {
+			return nil, err
+		}
+		return &inviteReply{Key: "cmd.invite.invalid", Locale: locale}, nil
+	}
+	r, err := loadInvite(ctx, tx, `tenant = $1 AND code_hash = ANY($2)`, tv.Name, c.secretHashes(code))
+	if err != nil {
+		return nil, err
+	}
+	if r == nil {
+		return invalid("", "not_found")
+	}
+	if r.state != "open" {
+		return invalid(r.id, "already_terminal")
+	}
+	if !r.expires.After(now) {
+		return invalid(r.id, "expired")
 	}
 	// The creator is checked again: still active if it is a person of the tenant, and every
 	// group still exists; a group that became privileged on a production tenant needs the
@@ -386,18 +404,18 @@ func (c *Core) useInvitation(ctx context.Context, tx pgx.Tx, now time.Time, tv *
 	var creatorState string
 	switch err := tx.QueryRow(ctx, `SELECT state FROM principals WHERE tenant = $1 AND id = $2`, tv.Name, r.createdBy).Scan(&creatorState); {
 	case err == nil && creatorState != "active":
-		return invalid, nil
+		return invalid(r.id, "forbidden")
 	case err != nil && !errors.Is(err, pgx.ErrNoRows):
 		return nil, err
 	}
 	var pending []string
 	for _, g := range r.groups {
 		if _, ok := tv.Groups[g]; !ok {
-			return invalid, nil
+			return invalid(r.id, "not_found")
 		}
 		if c.privilegedNeedsCode(tv, cat, g) {
 			if !slices.Contains(r.privileged, g) && tv.Spec.Kind == "production" && r.requestedBy == "" {
-				return invalid, nil
+				return invalid(r.id, "forbidden")
 			}
 			pending = append(pending, g)
 		}
@@ -417,21 +435,29 @@ func (c *Core) useInvitation(ctx context.Context, tx pgx.Tx, now time.Time, tv *
 			return nil, err
 		}
 		if state != "active" || kind != "human" {
-			return invalid, nil
+			return invalid(r.id, "person_inactive")
 		}
 	}
 	for _, g := range r.groups {
-		state := "active"
+		state, pendingUntil := "active", any(nil)
 		if slices.Contains(pending, g) {
-			state = "pending"
+			// A pending membership lapses when nobody checks the code in time (PRM-13).
+			state, pendingUntil = "pending", now.Add(inviteTTL)
 		}
 		// An active membership stays active; a pending one waits for the code of this invitation.
-		if _, err := tx.Exec(ctx, `INSERT INTO memberships (tenant, principal, grp, state, created_at, granted_by, requested_by, invite)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		if _, err := tx.Exec(ctx, `INSERT INTO memberships (tenant, principal, grp, state, created_at, granted_by, requested_by, invite, pending_until)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 			ON CONFLICT (tenant, principal, grp) DO UPDATE SET invite = CASE WHEN memberships.state = 'active' THEN memberships.invite ELSE EXCLUDED.invite END,
+			pending_until = CASE WHEN memberships.state = 'active' THEN memberships.pending_until ELSE EXCLUDED.pending_until END,
 			state = CASE WHEN memberships.state = 'active' THEN 'active' ELSE EXCLUDED.state END`,
-			tv.Name, principal, g, state, now, r.createdBy, nullable(r.requestedBy), r.id); err != nil {
+			tv.Name, principal, g, state, now, r.createdBy, nullable(r.requestedBy), r.id, pendingUntil); err != nil {
 			return nil, err
+		}
+		// Every admin hears of a delegated group granted through an invitation (PRM-16).
+		if c.delegatedGroup(tv, cat, g) {
+			if err := c.notifyAdmins(ctx, tx, now, tv, "notice.delegated_grant", principal, g, r.createdBy); err != nil {
+				return nil, err
+			}
 		}
 	}
 	if _, err := tx.Exec(ctx, `UPDATE invitations SET state = 'used', used_by = $2, used_at = $3 WHERE id = $1`, r.id, principal, now); err != nil {
@@ -449,10 +475,37 @@ func (c *Core) useInvitation(ctx context.Context, tx pgx.Tx, now time.Time, tv *
 		if _, err := tx.Exec(ctx, `UPDATE invitations SET state = 'confirmed' WHERE id = $1`, r.id); err != nil {
 			return nil, err
 		}
-		return &ActivityResult{Result: "reply", Text: c.texts.Render(locale, "cmd.invite.done", params)}, nil
+		return &inviteReply{Key: "cmd.invite.done", Params: params, Locale: locale}, nil
 	}
-	params["code"] = c.verificationCode(tv.Name, principal)
-	return &ActivityResult{Result: "reply", Text: c.texts.Render(locale, "cmd.invite.pending", params)}, nil
+	// The code is rendered at each reply, so the stored outcome holds no copy of it.
+	return &inviteReply{Key: "cmd.invite.pending", Params: params, CodeFor: principal, Locale: locale}, nil
+}
+
+// inviteReply is the stored reply to an invitation link: its text key and parameters, and the
+// principal whose verification code the text shows, rendered only when the reply is sent.
+type inviteReply struct {
+	Key     string         `json:"text_key"`
+	Params  map[string]any `json:"params,omitempty"`
+	CodeFor string         `json:"code_for,omitempty"`
+	Locale  string         `json:"locale"`
+}
+
+// render gives the reply's text, with the verification code of CodeFor.
+func (c *Core) renderInviteReply(tenant string, r *inviteReply) ActivityResult {
+	params := maps.Clone(r.Params)
+	if r.CodeFor != "" {
+		if params == nil {
+			params = map[string]any{}
+		}
+		params["code"] = c.verificationCode(tenant, r.CodeFor)
+	}
+	return ActivityResult{Result: "reply", Text: c.texts.Render(r.Locale, r.Key, params)}
+}
+
+// delegatedGroup says whether a group is one of the tenant's delegated_groups in the shape
+// PRM-16 allows; its grants and removals are told to every admin.
+func (c *Core) delegatedGroup(tv *TenantView, cat *Catalog, group string) bool {
+	return slices.Contains(tv.Spec.DelegatedGroups, group) && c.delegable(tv, cat, group)
 }
 
 // revokeInvitationsOf revokes the unused invitations a person issued, in the transaction of the
@@ -464,14 +517,14 @@ func revokeInvitationsOf(ctx context.Context, tx pgx.Tx, tenant, subject string)
 
 // onceReply runs a code command of an activity once: a retried update of the same activity
 // gets the reply of the first and changes nothing again (DLV-5, IDM-3).
-func onceReply(ctx context.Context, tx pgx.Tx, now time.Time, tenant, key string, run func() (*ActivityResult, error)) (*ActivityResult, error) {
+func onceReply[T any](ctx context.Context, tx pgx.Tx, now time.Time, tenant, key string, run func() (*T, error)) (*T, error) {
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 7300105))`, tenant+"/"+key); err != nil {
 		return nil, err
 	}
 	var raw []byte
 	err := tx.QueryRow(ctx, `SELECT reply FROM activity_outcomes WHERE tenant = $1 AND key = $2`, tenant, key).Scan(&raw)
 	if err == nil {
-		var out ActivityResult
+		var out T
 		if err := json.Unmarshal(raw, &out); err != nil {
 			return nil, err
 		}

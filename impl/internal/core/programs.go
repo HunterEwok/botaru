@@ -33,12 +33,16 @@ func (c *Core) AuthenticateProgram(ctx context.Context, tenant, keyID string) (*
 	if err != nil {
 		return nil, err
 	}
-	var kind string
-	if err := c.st.Pool.QueryRow(ctx, `SELECT kind FROM principals WHERE tenant = $1 AND id = $2`, tenant, id).Scan(&kind); err != nil {
+	var kind, state string
+	if err := c.st.Pool.QueryRow(ctx, `SELECT kind, state FROM principals WHERE tenant = $1 AND id = $2`, tenant, id).Scan(&kind, &state); err != nil {
 		return nil, err
 	}
 	if kind != "service" {
 		return nil, refuse("unauthenticated", "the program key names no service principal")
+	}
+	if state != "active" {
+		// A turned-off program reads and cancels nothing either (IDM-1).
+		return nil, refuse("person_inactive", "the program is turned off")
 	}
 	return &Program{Tenant: tenant, Principal: id, KeyID: keyID}, nil
 }
@@ -170,11 +174,12 @@ func ownedRef(ctx context.Context, tx pgx.Tx, tenant, initiator, ref string) (bo
 // the request carries only the type, the goal and the params; refs, a group address, a scope
 // and attachments are refused (TEN-7: a child gets only the parent's attachments).
 func (c *Core) LeaseEnqueue(ctx context.Context, w *Worker, header string, req EnqueueRequest) (*TaskRef, error) {
-	if req.Mode != "" {
-		return nil, refuse("version_unsupported", "mode: validate (PRM-11) is not served by this version")
-	}
 	if w.Kind != "job" && w.Kind != "agent" {
 		return nil, refuse("forbidden", "only a job or agent attempt enqueues a child")
+	}
+	if req.Mode != "" {
+		// The dry run is a sender's check; a lease holder never gets it (PRM-11).
+		return nil, refuse("forbidden", "mode: validate is not open to a lease holder (PRM-11)")
 	}
 	if len(req.Refs) > 0 || req.To != nil || len(req.Scope) > 0 || req.Priority != 0 {
 		return nil, refuse("input_schema_invalid", "a child takes refs, address, scope and priority from its parent")
@@ -201,7 +206,7 @@ func (c *Core) LeaseEnqueue(ctx context.Context, w *Worker, header string, req E
 		if l.Kind != "attempt" || l.State != "active" || !l.Until.After(now) {
 			return refuse("fenced", "a child is enqueued under a live attempt lease")
 		}
-		g := &toolsGrant{Tenant: l.Tenant, Task: l.WorkID, Worker: w.ID, Role: w.Role, LeaseNo: l.LeaseNo, P1: true}
+		g := &toolsGrant{Tenant: l.Tenant, Task: l.WorkID, Worker: w.ID, Role: w.Role, LeaseNo: l.LeaseNo, P1: true, ChildKey: req.IdempotencyKey}
 		if err := c.loadGrantTask(ctx, tx, g); err != nil {
 			return err
 		}

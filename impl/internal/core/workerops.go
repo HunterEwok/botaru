@@ -26,13 +26,14 @@ type RotateResult struct {
 
 // lockWorker reads the state of a worker of the operator's tenant under its row lock; a worker
 // of another tenant is not_found.
-func lockWorker(ctx context.Context, tx pgx.Tx, op Operator, id string) (string, error) {
-	var tenant, state string
-	err := tx.QueryRow(ctx, `SELECT tenant, state FROM workers WHERE id = $1 FOR UPDATE`, id).Scan(&tenant, &state)
-	if errors.Is(err, pgx.ErrNoRows) || err == nil && tenant != op.Tenant {
-		return "", refuse("not_found", "no such worker in the tenant")
+func lockWorker(ctx context.Context, tx pgx.Tx, op Operator, id string) (state, tenant string, err error) {
+	err = tx.QueryRow(ctx, `SELECT tenant, state FROM workers WHERE id = $1 FOR UPDATE`, id).Scan(&tenant, &state)
+	// The operator credential of tenant farm reaches a worker of any tenant (PRM-14), as for
+	// secret.revoke; any other credential only its own tenant's.
+	if errors.Is(err, pgx.ErrNoRows) || err == nil && tenant != op.Tenant && op.Tenant != farmTenant {
+		return "", "", refuse("not_found", "no such worker in the tenant")
 	}
-	return state, err
+	return state, tenant, err
 }
 
 // WorkerRotate is P2 worker.rotate (IDN-4): a new P1 token, shown once and stored as a keyed
@@ -42,7 +43,7 @@ func (c *Core) WorkerRotate(ctx context.Context, op Operator, req WorkerRequest)
 	token := "bw1_" + ids.Secret(32)
 	var out *RotateResult
 	err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
-		state, err := lockWorker(ctx, tx, op, req.Worker)
+		state, tenant, err := lockWorker(ctx, tx, op, req.Worker)
 		if err != nil {
 			return err
 		}
@@ -55,7 +56,7 @@ func (c *Core) WorkerRotate(ctx context.Context, op Operator, req WorkerRequest)
 			return err
 		}
 		if _, err := c.appendAudit(ctx, tx, now, Audit{
-			Tenant: op.Tenant, Kind: "command", Actor: Actor{Principal: op.Principal, Via: "farmctl"},
+			Tenant: tenant, Kind: "command", Actor: Actor{Principal: op.Principal, Via: "farmctl"},
 			Command: "worker.rotate", Target: &Target{Kind: "worker", ID: req.Worker}, OK: true,
 			After: map[string]any{"old_valid_until": fmtTime(until)},
 		}); err != nil {
@@ -77,7 +78,7 @@ func (c *Core) WorkerRotate(ctx context.Context, op Operator, req WorkerRequest)
 func (c *Core) WorkerUnblock(ctx context.Context, op Operator, req WorkerRequest) (*Done, error) {
 	var out Done
 	err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
-		state, err := lockWorker(ctx, tx, op, req.Worker)
+		state, tenant, err := lockWorker(ctx, tx, op, req.Worker)
 		if err != nil {
 			return err
 		}
@@ -89,7 +90,7 @@ func (c *Core) WorkerUnblock(ctx context.Context, op Operator, req WorkerRequest
 			return err
 		}
 		seq, err := c.appendAudit(ctx, tx, now, Audit{
-			Tenant: op.Tenant, Kind: "command", Actor: Actor{Principal: op.Principal, Via: "farmctl"},
+			Tenant: tenant, Kind: "command", Actor: Actor{Principal: op.Principal, Via: "farmctl"},
 			Command: "worker.unblock", Target: &Target{Kind: "worker", ID: req.Worker}, OK: true,
 			Before: map[string]any{"state": "blocked"}, After: map[string]any{"state": "enrolled"},
 		})

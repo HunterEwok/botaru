@@ -264,12 +264,23 @@ func (c *Core) Grant(ctx context.Context, op Operator, req GrantRequest) (*Done,
 			if _, err := tx.Exec(ctx, `INSERT INTO memberships (tenant, principal, grp, state, until, created_at, granted_by, requested_by) VALUES ($1, $2, $3, $6, $4, $5, $7, $8)
 				ON CONFLICT (tenant, principal, grp) DO UPDATE SET until = EXCLUDED.until,
 				state = CASE WHEN memberships.state = 'active' THEN 'active' ELSE EXCLUDED.state END,
+				pending_until = CASE WHEN memberships.state = 'active' OR EXCLUDED.state = 'active' THEN NULL ELSE memberships.pending_until END,
 				granted_by = EXCLUDED.granted_by, requested_by = coalesce(EXCLUDED.requested_by, memberships.requested_by)`,
 				op.Tenant, req.Subject, req.Group, until, now, mstate, op.Principal, nullable(req.RequestedBy)); err != nil {
 				return err
 			}
-			if err := tx.QueryRow(ctx, `SELECT state FROM memberships WHERE tenant = $1 AND principal = $2 AND grp = $3`, op.Tenant, req.Subject, req.Group).Scan(&mstate); err != nil {
+			var invite *string
+			if err := tx.QueryRow(ctx, `SELECT state, invite FROM memberships WHERE tenant = $1 AND principal = $2 AND grp = $3`, op.Tenant, req.Subject, req.Group).Scan(&mstate, &invite); err != nil {
 				return err
+			}
+			// The code checked here also confirms the invitation the membership waited on, once
+			// none of its groups waits any more (PRM-13).
+			if invite != nil && mstate == "active" {
+				if _, err := tx.Exec(ctx, `UPDATE invitations SET state = 'confirmed' WHERE id = $1 AND state = 'used'
+					AND NOT EXISTS (SELECT 1 FROM memberships WHERE tenant = $2 AND principal = $3 AND invite = $1 AND state = 'pending')`,
+					*invite, op.Tenant, req.Subject); err != nil {
+					return err
+				}
 			}
 		case "ungrant":
 			if _, err := tx.Exec(ctx, `DELETE FROM memberships WHERE tenant = $1 AND principal = $2 AND grp = $3`, op.Tenant, req.Subject, req.Group); err != nil {
@@ -302,6 +313,10 @@ func (c *Core) Grant(ctx context.Context, op Operator, req GrantRequest) (*Done,
 		// Every admin hears of an active grant and of a removal of a privileged group (PRM-13).
 		if privileged && (req.Op == "ungrant" || mstate == "active") {
 			return c.notifyAdmins(ctx, tx, now, tv, "notice.privileged_"+req.Op, req.Subject, req.Group, op.Principal)
+		}
+		// And of a grant and a removal of a delegated group (PRM-16), as from a chat.
+		if c.delegatedGroup(tv, cat, req.Group) {
+			return c.notifyAdmins(ctx, tx, now, tv, "notice.delegated_"+req.Op, req.Subject, req.Group, op.Principal)
 		}
 		return nil
 	})

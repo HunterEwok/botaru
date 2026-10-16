@@ -41,6 +41,10 @@ func TestWorkerRotate(t *testing.T) {
 	if _, err := b.c.WorkerRotate(ctx, Operator{Principal: b.op.Principal, Tenant: "demo2"}, WorkerRequest{Op: "worker.rotate", Worker: r.Worker.ID}); reasonOf(err) != "not_found" {
 		t.Fatalf("another tenant: %v", err)
 	}
+	// The farm operator reaches a worker of any tenant (PRM-14).
+	if _, err := b.c.WorkerRotate(ctx, Operator{Principal: b.op.Principal, Tenant: "farm"}, WorkerRequest{Op: "worker.rotate", Worker: r.Worker.ID}); err != nil {
+		t.Fatalf("the farm operator: %v", err)
+	}
 	if _, err := b.c.WorkerRevoke(ctx, b.op, WorkerRequest{Op: "worker.revoke", Worker: r.Worker.ID}); err != nil {
 		t.Fatal(err)
 	}
@@ -104,12 +108,23 @@ func TestServiceControlP2(t *testing.T) {
 	ctx := context.Background()
 	b := newServiceBench(t)
 	alice := Operator{Principal: b.alice, Tenant: "demo"}
-	// A stop goes through a card first; the restart then runs, one operation at a time.
+	// A stop goes through a card first, a start past the card limit is service_rate_limited; the
+	// restart then runs, one operation at a time.
 	stop, err := b.c.ServiceControl(ctx, alice, ServiceControlRequest{Service: "nginx", Verb: "stop"})
 	if err != nil || stop.Code != "approval_required" || stop.ApprovalID == "" {
 		t.Fatalf("stop %+v %v", stop, err)
 	}
 	validOut(t, b.bench, "service-control-result", stop)
+	// PRM-18: past the card limit the answer is service_rate_limited.
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE manifests SET doc = jsonb_set(doc, '{spec,attention}', '{"cards_per_tenant_hour": 1}') WHERE kind = 'Tenant' AND name = 'demo'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE apply_status SET set_hash = set_hash || 'x'`); err != nil {
+		t.Fatal(err)
+	}
+	if lim, err := b.c.ServiceControl(ctx, alice, ServiceControlRequest{Service: "nginx", Verb: "start"}); err != nil || lim.Code != "service_rate_limited" {
+		t.Fatalf("past the card limit %+v %v", lim, err)
+	}
 	r, err := b.c.ServiceControl(ctx, alice, ServiceControlRequest{Service: "nginx", Verb: "restart"})
 	if err != nil || r.Code != "done" || r.GrantID == "" {
 		t.Fatalf("restart %+v %v", r, err)
@@ -136,5 +151,10 @@ func TestServiceControlP2(t *testing.T) {
 	}
 	if _, err := b.c.ServiceControl(ctx, Operator{Principal: "service:ops", Tenant: "demo"}, ServiceControlRequest{Service: "nginx", Verb: "restart"}); reasonOf(err) != "forbidden" {
 		t.Fatalf("a service principal: %v", err)
+	}
+	var denied int
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM audit WHERE record->>'command' = 'service.control' AND record->'actor'->>'principal' = 'service:ops'
+		AND record->>'ok' = 'false'`).Scan(&denied); err != nil || denied != 1 {
+		t.Fatalf("the refusal of a service principal in the audit %d %v", denied, err)
 	}
 }

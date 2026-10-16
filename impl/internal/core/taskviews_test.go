@@ -143,6 +143,13 @@ func TestTaskLists(t *testing.T) {
 		t.Fatalf("team %+v %v", team, err)
 	}
 	validOut(t, b.bench, "p2-task-list-response", team)
+	// A membership past its until no longer counts the person in the group.
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE memberships SET until = botaru_now() - interval '1 second' WHERE principal = $1 AND grp = 'hello'`, b.alice); err != nil {
+		t.Fatal(err)
+	}
+	if gone, err := b.c.TaskList(ctx, aliceOp, TaskListRequest{Op: "team.tasks"}); err != nil || len(gone.Items) != 0 {
+		t.Fatalf("an expired member %+v %v", gone, err)
+	}
 	about, err := b.c.TaskList(ctx, aliceOp, TaskListRequest{Op: "about"})
 	if err != nil || about.Text == "" || len(about.Items) != 0 {
 		t.Fatalf("about %+v %v", about, err)
