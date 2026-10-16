@@ -215,7 +215,7 @@ v0.1 of the implementation stops at the first working bot; the following parts o
 
 Of the eval runner these are not built: the roles other than `hello` and `ops-reader` on the bench, inbox, system, task and group chat inputs, the `monitor` and `corpus` injection carriers, follow-ups that need the store clock to move, `drift` and `rate` checks, parallel cases, and the judge. A case that needs one of them is reported `not_run` with the reason (EVALS.md).
 
-Of stage 7c these are not built: the PRM-13 raise check in the skeleton lint (`ci/check_manifests.py` lints one state of the git and has no stored set to compare with; the core checks it at `apply`), and a registry of programs whose output is text from outside (INJ-14 names the journal as its example).
+Of stage 7c these are not built: the PRM-13 raise check in the skeleton lint (`ci/check_manifests.py` lints one state of the git and has no stored set to compare with; the core checks it at `apply`), and a registry of programs whose output is text from outside (INJ-14 names the journal as its example). The case `gov-fx-26#2` stays unchecked in the runner: the core refuses its charter with `charter_seat_twice`, but also with `lens_persona_missing` and `veto_lens_no_executor`, since the fixture's seats name lenses without persona addenda or fallback roles; `TestLintCharterBounds` checks the code.
 
 Of stage 7 part 1 these are not built: the notice `approve_unread_digest` of the excess cards (APR-13); merging a daily digest of preferences into one message; alarms and quiet hours from the monitoring system for profile `monitor` (DLV-10, MON-1); a "pause" field of schedules for TIM-5, since `Schedule` has none.
 
