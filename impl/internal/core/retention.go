@@ -273,13 +273,14 @@ func (c *Core) retentionLoop(ctx context.Context) error {
 		// C4 by the tenant's memory period: a person's records (RET-9).
 		exec(`DELETE FROM memory_items WHERE id IN (SELECT m.id FROM memory_items m JOIN p ON p.tenant = m.tenant
 			WHERE m.updated_at <= p.memory LIMIT $8 FOR UPDATE OF m SKIP LOCKED)`, base),
-		// Facts by the memory period, a sealed fact of a retired identity too, before its seal
+		// Facts by the memory period from their last verification (a memory record ages from its
+		// last change), a sealed fact of a retired identity too, before its seal
 		// ends (MEM-10); an open offer no longer lists a deleted fact, so the successor's recheck
 		// never reads it (MEM-7). The end of the seal still erases what is left (MEM-9).
 		func(tx pgx.Tx, now time.Time) (int64, error) {
 			var n int64
 			err := tx.QueryRow(ctx, retentionCuts+`, d AS (DELETE FROM facts WHERE id IN (SELECT f.id FROM facts f JOIN p ON p.tenant = f.tenant
-				WHERE f.created_at <= p.memory LIMIT $8 FOR UPDATE OF f SKIP LOCKED) RETURNING id),
+				WHERE greatest(f.created_at, f.verified_at) <= p.memory LIMIT $8 FOR UPDATE OF f SKIP LOCKED) RETURNING id),
 				o AS (UPDATE fact_offers SET facts = array(SELECT x FROM unnest(facts) x WHERE x <> ALL (SELECT id FROM d))
 				WHERE state = 'open' AND facts && array(SELECT id FROM d))
 				SELECT count(*) FROM d`, base...).Scan(&n)
@@ -413,6 +414,17 @@ func (c *Core) metadataRetention(ctx context.Context, cat *Catalog) error {
 					LIMIT $4 FOR UPDATE SKIP LOCKED)`, ts.name, ts.from, ts.to, retentionBatch)
 				return tag.RowsAffected(), err
 			},
+			// A reservation left behind is terminal once nothing live holds it: no live task,
+			// tool call, campaign or script run.
+			func(tx pgx.Tx, now time.Time) (int64, error) {
+				tag, err := tx.Exec(ctx, `DELETE FROM spend WHERE id IN (SELECT s.id FROM spend s WHERE s.tenant = $1 AND s.state = 'reserved'`+fmt.Sprintf(in, "s.time", "s.time")+`
+					AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.id = s.task AND t.state IN ('submitted', 'working'))
+					AND NOT EXISTS (SELECT 1 FROM toolcalls c WHERE c.id = s.toolcall AND c.state IN ('requested', 'queued', 'leased'))
+					AND NOT EXISTS (SELECT 1 FROM campaigns k WHERE k.id = s.campaign AND k.state = ANY($5))
+					AND NOT EXISTS (SELECT 1 FROM script_runs r WHERE r.id = s.script AND r.state = ANY($6))
+					LIMIT $4 FOR UPDATE OF s SKIP LOCKED)`, ts.name, ts.from, ts.to, retentionBatch, campaignLive, scriptLive)
+				return tag.RowsAffected(), err
+			},
 			func(tx pgx.Tx, now time.Time) (int64, error) {
 				_, err := tx.Exec(ctx, `DELETE FROM spend_reconciliations WHERE tenant = $1`+fmt.Sprintf(in, "day", "day"), ts.name, ts.from, ts.to)
 				return 0, err
@@ -429,6 +441,59 @@ func (c *Core) metadataRetention(ctx context.Context, cat *Catalog) error {
 				return c.cutAudit(ctx, tx, now, ts.name, ts.prefix)
 			},
 		}
+		// The other metadata records go by the month in which they ended, terminal ones only
+		// and none a live object still reads (RET-10). Each is one statement: the dependents
+		// (card views, alarm values, notices, items, match steps) go with their record.
+		meta := func(sql string, extra ...any) func(tx pgx.Tx, now time.Time) (int64, error) {
+			return func(tx pgx.Tx, now time.Time) (int64, error) {
+				var n int64
+				err := tx.QueryRow(ctx, sql, append([]any{ts.name, ts.from, ts.to, retentionBatch}, extra...)...).Scan(&n)
+				return n, err
+			}
+		}
+		steps = append(steps,
+			meta(`WITH d AS (DELETE FROM approvals WHERE id IN (SELECT a.id FROM approvals a WHERE a.tenant = $1
+				AND a.state IN ('executed', 'exec_failed', 'rejected', 'expired', 'canceled')`+fmt.Sprintf(in, "a.updated_at", "a.updated_at")+`
+				AND NOT EXISTS (SELECT 1 FROM script_steps st JOIN script_runs r ON r.id = st.run WHERE st.approval = a.id AND r.state = ANY($5))
+				LIMIT $4 FOR UPDATE OF a SKIP LOCKED) RETURNING id),
+				v AS (DELETE FROM card_views WHERE subject_kind = 'approval' AND subject_id IN (SELECT id FROM d))
+				SELECT count(*) FROM d`, scriptLive),
+			meta(`WITH d AS (DELETE FROM holds WHERE id IN (SELECT h.id FROM holds h WHERE h.tenant = $1 AND h.state IN ('expired', 'released')`+
+				fmt.Sprintf(in, "coalesce(h.ended_at, h.until, h.created_at)", "coalesce(h.ended_at, h.until, h.created_at)")+`
+				LIMIT $4 FOR UPDATE OF h SKIP LOCKED) RETURNING id) SELECT count(*) FROM d`),
+			meta(`WITH d AS (DELETE FROM incidents WHERE id IN (SELECT i.id FROM incidents i WHERE i.tenant = $1 AND i.state IN ('closed', 'dismissed')`+
+				fmt.Sprintf(in, "coalesce(i.ended_at, i.updated_at)", "coalesce(i.ended_at, i.updated_at)")+`
+				AND NOT EXISTS (SELECT 1 FROM control_cards k WHERE k.incident = i.id AND k.state = 'pending')
+				LIMIT $4 FOR UPDATE OF i SKIP LOCKED) RETURNING id),
+				n AS (DELETE FROM manager_notices WHERE basis_kind = 'incident' AND basis IN (SELECT id FROM d))
+				SELECT count(*) FROM d`),
+			meta(`WITH d AS (DELETE FROM alarm_episodes WHERE id IN (SELECT e.id FROM alarm_episodes e WHERE e.tenant = $1 AND e.state = 'resolved'`+
+				fmt.Sprintf(in, "e.resolved_at", "e.resolved_at")+`
+				AND NOT EXISTS (SELECT 1 FROM incidents i WHERE e.id = ANY (i.episodes) AND i.state NOT IN ('closed', 'dismissed'))
+				LIMIT $4 FOR UPDATE OF e SKIP LOCKED) RETURNING id),
+				v AS (DELETE FROM alarm_values WHERE episode IN (SELECT id FROM d))
+				SELECT count(*) FROM d`),
+			meta(`WITH d AS (DELETE FROM control_ops WHERE id IN (SELECT o.id FROM control_ops o WHERE o.tenant = $1`+fmt.Sprintf(in, "o.created_at", "o.created_at")+`
+				LIMIT $4 FOR UPDATE OF o SKIP LOCKED) RETURNING id) SELECT count(*) FROM d`),
+			meta(`WITH d AS (DELETE FROM control_cards WHERE id IN (SELECT k.id FROM control_cards k WHERE k.tenant = $1 AND k.state <> 'pending'`+
+				fmt.Sprintf(in, "k.updated_at", "k.updated_at")+` LIMIT $4 FOR UPDATE OF k SKIP LOCKED) RETURNING id) SELECT count(*) FROM d`),
+			meta(`WITH c AS (SELECT k.id FROM campaigns k WHERE k.tenant = $1 AND k.state IN ('completed', 'failed', 'canceled', 'rejected')`+
+				fmt.Sprintf(in, "k.updated_at", "k.updated_at")+`
+				AND NOT EXISTS (SELECT 1 FROM script_steps st JOIN script_runs r ON r.id = st.run WHERE st.campaign = k.id AND r.state = ANY($5))
+				AND NOT EXISTS (SELECT 1 FROM spend s WHERE s.campaign = k.id AND s.state = 'reserved')
+				LIMIT $4 FOR UPDATE OF k SKIP LOCKED),
+				i AS (DELETE FROM campaign_items WHERE campaign IN (SELECT id FROM c)),
+				d AS (DELETE FROM campaigns WHERE id IN (SELECT id FROM c) RETURNING id)
+				SELECT count(*) FROM d`, scriptLive),
+			// A person's request goes once it was refused or withdrawn, or once its erasure is
+			// done with the ids it found recorded on the erasure itself (the replay reads those).
+			meta(`WITH c AS (SELECT q.id FROM subject_requests q LEFT JOIN erasure_requests e ON e.id = q.erasure WHERE q.tenant = $1
+				AND (q.state IN ('rejected', 'withdrawn') OR q.state = 'approved' AND e.state = 'done' AND (q.kind = 'erase' OR e.found IS NOT NULL))`+
+				fmt.Sprintf(in, "q.updated_at", "q.updated_at")+` LIMIT $4 FOR UPDATE OF q SKIP LOCKED),
+				m AS (DELETE FROM subject_match_steps WHERE request IN (SELECT id FROM c)),
+				d AS (DELETE FROM subject_requests WHERE id IN (SELECT id FROM c) RETURNING id)
+				SELECT count(*) FROM d`),
+		)
 		for _, step := range steps {
 			if err := c.batches(ctx, step); err != nil {
 				return err

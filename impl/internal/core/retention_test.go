@@ -209,19 +209,50 @@ func TestMetadataWholeMonths(t *testing.T) {
 	b.advance(t, 31*24*3600)
 	write("after")
 	t1 := b.storeNow(t)
+	// Terminal records of other metadata tables in the same month, and live ones that stay.
+	for _, sql := range []string{
+		`INSERT INTO approvals (id, tenant, initiator, action, args_hash, state, record, nonce, expires_at, created_at, updated_at)
+			VALUES ('ap_old', 'demo', 'x', 'a', 'h', 'rejected', '{}', 'n', $1, $1, $1), ('ap_live', 'demo', 'x', 'a', 'h', 'pending', '{}', 'n', $1, $1, $1)`,
+		`INSERT INTO holds (id, tenant, scope_kind, effects, reason, author, author_kind, state, created_at, ended_at)
+			VALUES ('h_old', 'demo', 'tenant', '{}', 'r', 'x', 'operator', 'released', $1, $1), ('h_live', 'demo', 'tenant', '{}', 'r', 'x', 'operator', 'active', $1, NULL)`,
+		`INSERT INTO alarm_episodes (tenant, alarmkey, alarm, state, severity, subject, seq, opened_at, last_seen_at, resolved_at)
+			VALUES ('demo', 'k_old', 'a', 'resolved', 'warn', '{}', 1, $1, $1, $1)`,
+		`INSERT INTO campaigns (id, tenant, initiator, state, plan_hash, record, nonce, card, created_at, updated_at)
+			VALUES ('cmp_old', 'demo', 'x', 'completed', 'h', '{}', 'n', false, $1, $1)`,
+		`INSERT INTO campaign_items (campaign, n, resource, args, args_hash, state) VALUES ('cmp_old', 1, 'r', '{}', 'h', 'ok')`,
+		`INSERT INTO spend (id, tenant, line, unit, state, eur_micros, time) VALUES ('sp_stuck', 'demo', 'work', 'task', 'reserved', 7, $1)`,
+	} {
+		args := []any{t1}
+		if !strings.Contains(sql, "$1") {
+			args = nil
+		}
+		if _, err := b.c.st.Pool.Exec(ctx, sql, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	others := func() int {
+		return b.count(t, `SELECT (SELECT count(*) FROM approvals) + (SELECT count(*) FROM holds) + (SELECT count(*) FROM alarm_episodes WHERE alarmkey = 'k_old')
+			+ (SELECT count(*) FROM campaigns) + (SELECT count(*) FROM campaign_items) + (SELECT count(*) FROM spend WHERE id = 'sp_stuck')`)
+	}
+	if n := others(); n != 8 {
+		t.Fatalf("records written: %d", n)
+	}
 	events := func(tag string) int {
 		return b.count(t, `SELECT count(*) FROM events WHERE subject = $1`, tag)
 	}
 	// 93 days after the record, its month has not ended its period yet.
 	b.advance(t, int(monthStart(t1).AddDate(0, 1, 93).Add(-time.Hour).Sub(t1)/time.Second))
 	b.loop(t, "retention")
-	if events("after") != 1 || events("before") != 1 {
+	if events("after") != 1 || events("before") != 1 || others() != 8 {
 		t.Fatal("a month went before all of it was past the period")
 	}
 	b.advance(t, 2*3600)
 	b.loop(t, "retention")
 	if events("after") != 0 {
 		t.Fatal("the month past the period stayed")
+	}
+	if n := b.count(t, `SELECT count(*) FROM approvals WHERE id = 'ap_live'`) + b.count(t, `SELECT count(*) FROM holds WHERE id = 'h_live'`); n != 2 || others() != 2 {
+		t.Fatalf("terminal records of the month stayed or live ones went: %d of 2 left", others())
 	}
 	if n := b.count(t, `SELECT count(*) FROM spend WHERE tenant = 'demo' AND time >= $1 AND time < $2`, monthStart(t1), monthStart(t1).AddDate(0, 1, 0)); n != 0 {
 		t.Fatalf("usage lines of the month stayed: %d", n)
