@@ -79,6 +79,45 @@ func (s *Server) test(w http.ResponseWriter, r *http.Request) {
 		}
 	case "loop.tick":
 		out, err = s.c.TestLoopTick(ctx, req.Loop, req.Copies)
+	case "process.stop":
+		r, derr := decode[core.ProcessStopRequest](m)
+		if derr != nil {
+			Problem(w, &core.Problem{Reason: "input_schema_invalid", Detail: "the body could not be read"})
+			return
+		}
+		out, err = s.c.TestProcessStop(ctx, r)
+	case "store.fault":
+		// store.fault has no request schema (D-114); the core checks the fields it reads.
+		r, derr := decode[core.StoreFaultRequest](m)
+		if derr != nil {
+			Problem(w, &core.Problem{Reason: "input_schema_invalid", Detail: "the body could not be read"})
+			return
+		}
+		out, err = s.c.TestStoreFault(ctx, r)
+	case "store.snapshot":
+		out, err = s.c.TestStoreSnapshot(ctx, req.Label)
+	case "store.restore":
+		out, err = s.c.TestStoreRestore(ctx, req.Label)
+	case "authorize.eval":
+		// The body is the authz-request of a table row in request, with the tenant kind of the
+		// row (conformance/runner.md, "Test bench").
+		body, _ := m["request"].(map[string]any)
+		kind, _ := m["tenant_kind"].(string)
+		out, err = s.c.TestAuthorize(ctx, body, kind)
+	case "function.eval":
+		r, derr := decode[core.FunctionEvalRequest](m)
+		if derr != nil {
+			Problem(w, &core.Problem{Reason: "input_schema_invalid", Detail: "the body could not be read"})
+			return
+		}
+		out, err = s.c.TestFunctionEval(ctx, r)
+	case "event.inject":
+		r, derr := decode[core.EventInjectRequest](m)
+		if derr != nil {
+			Problem(w, &core.Problem{Reason: "input_schema_invalid", Detail: "the body could not be read"})
+			return
+		}
+		out, err = s.c.TestEventInject(ctx, r)
 	default:
 		Problem(w, &core.Problem{Reason: "not_found", Detail: "the operation is not implemented in this build"})
 		return
@@ -97,4 +136,5 @@ type testRequest struct {
 	ByS    *int64 `json:"by_s"`
 	Loop   string `json:"loop"`
 	Copies int    `json:"copies"`
+	Label  string `json:"label"`
 }

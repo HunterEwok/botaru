@@ -265,41 +265,9 @@ func parseDuration(s string) (time.Duration, bool) {
 // ceiling and the key. A refusal writes nothing except the audit record.
 func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, in enqueueInput) (*enqueueOutcome, error) {
 	tv := cat.Tenants[in.Tenant]
-	tt, ok := cat.TaskTypes[in.Type]
-	if !ok || strings.HasPrefix(in.Type, "action.") {
-		return nil, refuse("type_not_allowed", "unknown task type")
-	}
-	// Analysis starts only from a schedule or a route, as system; an agent or a person does
-	// not start it (INS-1).
-	if p := tt.Purpose; (p == "insight" || p == "aggregate") && (in.Initiator != "system" || in.Source != "schedule" && in.Source != "route" || in.Chain != nil) {
-		return nil, refuse("type_not_allowed", "analysis starts only from a schedule or a route")
-	}
-	// The analysis mark stays within insight.max_data of its role (INS-2): the lint refuses such
-	// a set, and the core does not start one that got past it.
-	if tt.Purpose == "insight" {
-		for _, r := range cat.Roles {
-			if r.Insight == nil || r.Insight.MaxData == "" || !slices.Contains(r.Insight.Types, in.Type) {
-				continue
-			}
-			to, ok1 := c.markOrder(tt.DataClass)
-			mo, ok2 := c.markOrder(r.Insight.MaxData)
-			if !ok1 || !ok2 || to > mo {
-				return nil, refuse("type_not_allowed", "the analysis class is above insight.max_data")
-			}
-		}
-	}
-	// A lens review is enqueued only by the proposal loop, as system (COM-2).
-	if tt.Purpose == "review" && (in.Initiator != "system" || in.Source != reviewSource || in.Chain != nil) {
-		return nil, refuse("type_not_allowed", "a review is enqueued only by the proposal loop")
-	}
-	// A translator works only on text its initiator typed: a person's own message or its
-	// follow-up, never a forward, a quote, a bot's child or a system task (TRN-2).
-	if tt.Purpose == "translate" && (in.Source != "interactive" || in.Initiator == "system" || in.Forwarded || in.Quoted || in.Chain != nil && in.Continues == "") {
-		return nil, refuse("type_not_allowed", "a translator takes only text its initiator typed")
-	}
-	// A farm manager seat task is enqueued only by the core, for its seat (MGR-3, MGR-42).
-	if (tt.Purpose == "manage" || tt.Purpose == "inspect") && (in.Initiator != "system" || in.Source != seatSource || in.Chain != nil) {
-		return nil, refuse("type_not_allowed", "a farm manager seat task is enqueued only by the core")
+	tt, pr := c.enqueueType(cat, in)
+	if pr != nil {
+		return nil, pr
 	}
 	bodyHash, err := jcs.Hash(in.Body)
 	if err != nil {
@@ -340,169 +308,14 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 	if err := c.validateParams(tt, in.Body); err != nil {
 		return reject(refuse("input_schema_invalid", "params do not match params_schema"))
 	}
-	// A hold with no_enqueue on the farm, the tenant or the type is checked before the
-	// permission formula, as a ban no permission lifts (HLD-3, PRM-2).
-	if held, err := heldBy(ctx, tx, now, []string{"no_enqueue"},
-		append(tenantScopes(in.Tenant), scopeRef{kind: "tasktype", tenant: in.Tenant, name: in.Type})...); err != nil {
-		return nil, err
-	} else if held != "" {
-		return reject(refuse("held", "a hold forbids new tasks of this type"))
-	}
-	// The initiator: an active principal with task:<type> and data:<mark> (PRM-3, PRM-5).
-	var groups []string
-	if in.Initiator != "system" {
-		p, err := loadPrincipal(ctx, tx, now, in.Tenant, in.Initiator)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return reject(refuse("person_inactive", "unknown initiator"))
-		}
-		if err != nil {
-			return nil, err
-		}
-		if p.State != "active" {
-			return reject(refuse("person_inactive", "the initiator is not active"))
-		}
-		groups = groupClosure(tv, p.Groups)
-	} else {
-		// system enqueues with its own group only: the types of its schedules and routes
-		// (PRM-10); a farm manager seat task with the tenant's consent group for the manager
-		// (MGR-3).
-		groups = groupClosure(tv, []string{"system-ops"})
-		if in.Source == seatSource {
-			groups = groupClosure(tv, []string{"farm-manager-ops"})
-		}
-	}
-	capName := "task:" + in.Type
-	if !hasCap(tv, groups, capName) {
-		pr := refuse("no_group_cap", "the initiator has no %s", capName)
-		pr.Needs = groupsWithCap(tv, capName)
-		return reject(pr)
-	}
-	// In a tree the mark is not lower than the participants' marks (PRM-6, CNT-3).
-	mark := tt.DataClass
-	if in.Chain != nil {
-		mark = c.higherMark(mark, in.Chain.Mark)
-	}
-	if in.ContinuesMark != "" {
-		mark = c.higherMark(mark, in.ContinuesMark)
-	}
-	// An attached file must be a stored file of the tenant; the task takes its mark and is
-	// untrusted from the start (ART-2, ART-3, TEN-7).
-	files, err := attachedFiles(in.Body)
-	if err != nil {
-		return reject(refuse("input_schema_invalid", "attachments"))
-	}
-	for _, ref := range files {
-		f, err := loadFile(ctx, tx, in.Tenant, ref)
-		if err != nil {
-			return nil, err
-		}
-		// An export file is never a task input (LCY-2, SEC-10).
-		if f == nil || f.Origin == "export" || f.State != "stored" || (f.Expires != nil && !f.Expires.After(now)) {
-			return reject(refuse("ref_invalid", "no such file"))
-		}
-		// A sender's request carries only files its initiator uploaded or its tasks produced;
-		// a foreign file answers as a missing one (TEN-7).
-		if in.OwnRefs {
-			own, err := ownedRef(ctx, tx, in.Tenant, in.Initiator, ref)
-			if err != nil {
-				return nil, err
-			}
-			if !own {
-				return reject(refuse("ref_invalid", "no such file"))
-			}
-		}
-		mark = c.higherMark(mark, f.Mark)
-	}
-	if in.OwnRefs {
-		for _, ref := range in.Refs {
-			own, err := ownedRef(ctx, tx, in.Tenant, in.Initiator, ref)
-			if err != nil {
-				return nil, err
-			}
-			if !own {
-				return reject(refuse("ref_invalid", "no such reference"))
-			}
-		}
-	}
-	if !hasData(tv, groups, mark) {
-		pr := refuse("no_data_class", "the initiator has no data:%s", mark)
-		pr.Needs = []string{"data:" + mark}
-		return reject(pr)
-	}
-	// The initiators of what the tree read narrow it as the initiator does: C2 intersects with
-	// each of them (MSG-7).
-	for _, id := range coInitiatorsOf(in) {
-		cg, err := principalGroups(ctx, tx, now, tv, id)
-		if err != nil {
-			return nil, err
-		}
-		if !hasCap(tv, cg, capName) {
-			pr := refuse("no_group_cap", "an initiator of what the tree read has no %s", capName)
-			pr.Needs = groupsWithCap(tv, capName)
-			return reject(pr)
-		}
-		if !hasData(tv, cg, mark) {
-			pr := refuse("no_data_class", "an initiator of what the tree read has no data:%s", mark)
-			pr.Needs = []string{"data:" + mark}
-			return reject(pr)
-		}
-	}
-	if in.Chain != nil {
-		if p, err := c.checkChain(ctx, tx, tv, tt, in.Chain); err != nil {
-			return nil, err
-		} else if p != nil {
-			return reject(p)
-		}
-	}
-	// Money: the estimate of the task is reserved in the tenant windows and the person's day
-	// limit, next to usage and open reserves (BUD-1). The reserve is written with the task below.
-	estimate, err := taskEstimate(ctx, tx, now, in.Tenant, in.Type, tt)
+	g, denial, err := c.authorizeEnqueue(ctx, tx, now, cat, tv, tt, in)
 	if err != nil {
 		return nil, err
 	}
-	estimate = max(estimate, in.EstimateMin)
-	line := c.budgetLine(tt.Purpose)
-	var crossed []crossing
-	askSubject := in.Initiator
-	if in.PaidByCard {
-		askSubject = "system"
+	if denial != nil {
+		return reject(denial.p)
 	}
-	budgetTV, payer := tv, in.Tenant
-	if pt := cat.Tenants[in.PayTenant]; pt != nil && in.PayTenant != in.Tenant {
-		budgetTV, payer, askSubject = pt, in.PayTenant, "system"
-	}
-	if p := c.checkBudget(ctx, tx, now, budgetTV, budgetAsk{subject: askSubject, groups: groups, extra: estimate, line: line, sev1: in.Sev1, crossed: &crossed}); p != nil {
-		return reject(p)
-	}
-	// A wake-up reserves in the day limit of each principal the entries came from too (MSG-11).
-	if in.Wake != nil {
-		for _, sub := range in.Wake.Subjects {
-			if sub == "system" || sub == in.Initiator {
-				continue
-			}
-			sg, err := principalGroups(ctx, tx, now, tv, sub)
-			if err != nil {
-				return nil, err
-			}
-			if p := c.checkBudget(ctx, tx, now, tv, budgetAsk{subject: sub, groups: sg, extra: estimate, line: line}); p != nil {
-				return reject(p)
-			}
-			if p, err := c.wakeShare(ctx, tx, now, tv, sub, sg, line, estimate, ""); err != nil {
-				return nil, err
-			} else if p != nil {
-				return reject(p)
-			}
-		}
-	}
-	// A task in a wake-up's subtree draws on the wake-up's money: the inbox's day and the day
-	// limits of the principals its entries came from (MSG-11, BUD-2).
-	if in.Chain != nil && in.Chain.WakeTask != "" {
-		if p, err := c.wakeLimits(ctx, tx, now, tv, in.Chain.WakeTask, estimate, line); err != nil {
-			return nil, err
-		} else if p != nil {
-			return reject(p)
-		}
-	}
+	groups, mark, files, estimate, line, crossed, payer := g.groups, g.mark, g.files, g.estimate, g.line, g.crossed, g.payer
 	// The enqueue ceiling of the sliding hour, under the tenant's budget lock (CAP-1).
 	if max := tv.Spec.Limits.MaxEnqueuePerHour; max > 0 {
 		var n int
@@ -798,6 +611,249 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 		return nil, err
 	}
 	return &enqueueOutcome{TaskID: id}, nil
+}
+
+// enqueueType is the type of a new task with the bans by its purpose, which come before
+// everything else and leave no audit record (INS-1, INS-2, COM-2, TRN-2, MGR-3, MGR-42):
+// action.* types and unknown types are type_not_allowed, so only the core enqueues an action
+// (APR-5). authorize.eval of the test bench runs it too.
+func (c *Core) enqueueType(cat *Catalog, in enqueueInput) (manifest.TaskType, *Problem) {
+	tt, ok := cat.TaskTypes[in.Type]
+	if !ok || strings.HasPrefix(in.Type, "action.") {
+		return tt, refuse("type_not_allowed", "unknown task type")
+	}
+	// Analysis starts only from a schedule or a route, as system; an agent or a person does
+	// not start it (INS-1).
+	if p := tt.Purpose; (p == "insight" || p == "aggregate") && (in.Initiator != "system" || in.Source != "schedule" && in.Source != "route" || in.Chain != nil) {
+		return tt, refuse("type_not_allowed", "analysis starts only from a schedule or a route")
+	}
+	// The analysis mark stays within insight.max_data of its role (INS-2): the lint refuses such
+	// a set, and the core does not start one that got past it.
+	if tt.Purpose == "insight" {
+		for _, r := range cat.Roles {
+			if r.Insight == nil || r.Insight.MaxData == "" || !slices.Contains(r.Insight.Types, in.Type) {
+				continue
+			}
+			to, ok1 := c.markOrder(tt.DataClass)
+			mo, ok2 := c.markOrder(r.Insight.MaxData)
+			if !ok1 || !ok2 || to > mo {
+				return tt, refuse("type_not_allowed", "the analysis class is above insight.max_data")
+			}
+		}
+	}
+	// A lens review is enqueued only by the proposal loop, as system (COM-2).
+	if tt.Purpose == "review" && (in.Initiator != "system" || in.Source != reviewSource || in.Chain != nil) {
+		return tt, refuse("type_not_allowed", "a review is enqueued only by the proposal loop")
+	}
+	// A translator works only on text its initiator typed: a person's own message or its
+	// follow-up, never a forward, a quote, a bot's child or a system task (TRN-2).
+	if tt.Purpose == "translate" && (in.Source != "interactive" || in.Initiator == "system" || in.Forwarded || in.Quoted || in.Chain != nil && in.Continues == "") {
+		return tt, refuse("type_not_allowed", "a translator takes only text its initiator typed")
+	}
+	// A farm manager seat task is enqueued only by the core, for its seat (MGR-3, MGR-42).
+	if (tt.Purpose == "manage" || tt.Purpose == "inspect") && (in.Initiator != "system" || in.Source != seatSource || in.Chain != nil) {
+		return tt, refuse("type_not_allowed", "a farm manager seat task is enqueued only by the core")
+	}
+	return tt, nil
+}
+
+// enqueueGrant is what the permission decision of an enqueue keeps for writing the task.
+type enqueueGrant struct {
+	groups   []string
+	mark     string
+	files    []string
+	estimate int64
+	line     string
+	crossed  []crossing
+	payer    string
+}
+
+// authorizeEnqueue is the permission decision of an enqueue in the order of PRM-2: a hold with
+// no_enqueue, then the intersection of the initiator's task:<type> and data:<mark>, the data of
+// attached files, every other initiator of what the tree read, the chain, and the money windows
+// of the payer and of the wake-up. A refusal comes back with its stage (hold or intersection);
+// enqueue writes the audit record of it. authorize.eval of the test bench runs the same decision.
+func (c *Core) authorizeEnqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tv *TenantView, tt manifest.TaskType, in enqueueInput) (*enqueueGrant, *enqueueDenial, error) {
+	deny := func(p *Problem) (*enqueueGrant, *enqueueDenial, error) {
+		stage := "intersection"
+		if p.Reason == "held" {
+			stage = "hold"
+		}
+		return nil, &enqueueDenial{p: p, stage: stage}, nil
+	}
+	// A hold with no_enqueue on the farm, the tenant or the type is checked before the
+	// permission formula, as a ban no permission lifts (HLD-3, PRM-2).
+	if held, err := heldBy(ctx, tx, now, []string{"no_enqueue"},
+		append(tenantScopes(in.Tenant), scopeRef{kind: "tasktype", tenant: in.Tenant, name: in.Type})...); err != nil {
+		return nil, nil, err
+	} else if held != "" {
+		_, d, err := deny(refuse("held", "a hold forbids new tasks of this type"))
+		d.hold = held
+		return nil, d, err
+	}
+	// The initiator: an active principal with task:<type> and data:<mark> (PRM-3, PRM-5).
+	var groups []string
+	if in.Initiator != "system" {
+		p, err := loadPrincipal(ctx, tx, now, in.Tenant, in.Initiator)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return deny(refuse("person_inactive", "unknown initiator"))
+		}
+		if err != nil {
+			return nil, nil, err
+		}
+		if p.State != "active" {
+			return deny(refuse("person_inactive", "the initiator is not active"))
+		}
+		groups = groupClosure(tv, p.Groups)
+	} else {
+		// system enqueues with its own group only: the types of its schedules and routes
+		// (PRM-10); a farm manager seat task with the tenant's consent group for the manager
+		// (MGR-3).
+		groups = groupClosure(tv, []string{"system-ops"})
+		if in.Source == seatSource {
+			groups = groupClosure(tv, []string{"farm-manager-ops"})
+		}
+	}
+	capName := "task:" + in.Type
+	if !hasCap(tv, groups, capName) {
+		pr := refuse("no_group_cap", "the initiator has no %s", capName)
+		pr.Needs = groupsWithCap(tv, capName)
+		return deny(pr)
+	}
+	// In a tree the mark is not lower than the participants' marks (PRM-6, CNT-3).
+	mark := tt.DataClass
+	if in.Chain != nil {
+		mark = c.higherMark(mark, in.Chain.Mark)
+	}
+	if in.ContinuesMark != "" {
+		mark = c.higherMark(mark, in.ContinuesMark)
+	}
+	// An attached file must be a stored file of the tenant; the task takes its mark and is
+	// untrusted from the start (ART-2, ART-3, TEN-7).
+	files, err := attachedFiles(in.Body)
+	if err != nil {
+		return deny(refuse("input_schema_invalid", "attachments"))
+	}
+	for _, ref := range files {
+		f, err := loadFile(ctx, tx, in.Tenant, ref)
+		if err != nil {
+			return nil, nil, err
+		}
+		// An export file is never a task input (LCY-2, SEC-10).
+		if f == nil || f.Origin == "export" || f.State != "stored" || (f.Expires != nil && !f.Expires.After(now)) {
+			return deny(refuse("ref_invalid", "no such file"))
+		}
+		// A sender's request carries only files its initiator uploaded or its tasks produced;
+		// a foreign file answers as a missing one (TEN-7).
+		if in.OwnRefs {
+			own, err := ownedRef(ctx, tx, in.Tenant, in.Initiator, ref)
+			if err != nil {
+				return nil, nil, err
+			}
+			if !own {
+				return deny(refuse("ref_invalid", "no such file"))
+			}
+		}
+		mark = c.higherMark(mark, f.Mark)
+	}
+	if in.OwnRefs {
+		for _, ref := range in.Refs {
+			own, err := ownedRef(ctx, tx, in.Tenant, in.Initiator, ref)
+			if err != nil {
+				return nil, nil, err
+			}
+			if !own {
+				return deny(refuse("ref_invalid", "no such reference"))
+			}
+		}
+	}
+	if !hasData(tv, groups, mark) {
+		pr := refuse("no_data_class", "the initiator has no data:%s", mark)
+		pr.Needs = []string{"data:" + mark}
+		return deny(pr)
+	}
+	// The initiators of what the tree read narrow it as the initiator does: C2 intersects with
+	// each of them (MSG-7).
+	for _, id := range coInitiatorsOf(in) {
+		cg, err := principalGroups(ctx, tx, now, tv, id)
+		if err != nil {
+			return nil, nil, err
+		}
+		if !hasCap(tv, cg, capName) {
+			pr := refuse("no_group_cap", "an initiator of what the tree read has no %s", capName)
+			pr.Needs = groupsWithCap(tv, capName)
+			return deny(pr)
+		}
+		if !hasData(tv, cg, mark) {
+			pr := refuse("no_data_class", "an initiator of what the tree read has no data:%s", mark)
+			pr.Needs = []string{"data:" + mark}
+			return deny(pr)
+		}
+	}
+	if in.Chain != nil {
+		if p, err := c.checkChain(ctx, tx, tv, tt, in.Chain); err != nil {
+			return nil, nil, err
+		} else if p != nil {
+			return deny(p)
+		}
+	}
+	// Money: the estimate of the task is reserved in the tenant windows and the person's day
+	// limit, next to usage and open reserves (BUD-1). The reserve is written with the task below.
+	estimate, err := taskEstimate(ctx, tx, now, in.Tenant, in.Type, tt)
+	if err != nil {
+		return nil, nil, err
+	}
+	estimate = max(estimate, in.EstimateMin)
+	line := c.budgetLine(tt.Purpose)
+	var crossed []crossing
+	askSubject := in.Initiator
+	if in.PaidByCard {
+		askSubject = "system"
+	}
+	budgetTV, payer := tv, in.Tenant
+	if pt := cat.Tenants[in.PayTenant]; pt != nil && in.PayTenant != in.Tenant {
+		budgetTV, payer, askSubject = pt, in.PayTenant, "system"
+	}
+	if p := c.checkBudget(ctx, tx, now, budgetTV, budgetAsk{subject: askSubject, groups: groups, extra: estimate, line: line, sev1: in.Sev1, crossed: &crossed}); p != nil {
+		return deny(p)
+	}
+	// A wake-up reserves in the day limit of each principal the entries came from too (MSG-11).
+	if in.Wake != nil {
+		for _, sub := range in.Wake.Subjects {
+			if sub == "system" || sub == in.Initiator {
+				continue
+			}
+			sg, err := principalGroups(ctx, tx, now, tv, sub)
+			if err != nil {
+				return nil, nil, err
+			}
+			if p := c.checkBudget(ctx, tx, now, tv, budgetAsk{subject: sub, groups: sg, extra: estimate, line: line}); p != nil {
+				return deny(p)
+			}
+			if p, err := c.wakeShare(ctx, tx, now, tv, sub, sg, line, estimate, ""); err != nil {
+				return nil, nil, err
+			} else if p != nil {
+				return deny(p)
+			}
+		}
+	}
+	// A task in a wake-up's subtree draws on the wake-up's money: the inbox's day and the day
+	// limits of the principals its entries came from (MSG-11, BUD-2).
+	if in.Chain != nil && in.Chain.WakeTask != "" {
+		if p, err := c.wakeLimits(ctx, tx, now, tv, in.Chain.WakeTask, estimate, line); err != nil {
+			return nil, nil, err
+		} else if p != nil {
+			return deny(p)
+		}
+	}
+	return &enqueueGrant{groups: groups, mark: mark, files: files, estimate: estimate, line: line, crossed: crossed, payer: payer}, nil, nil
+}
+
+// enqueueDenial is a refusal of the permission decision with its stage.
+type enqueueDenial struct {
+	p     *Problem
+	stage string
+	hold  string // the hold that refused, at the hold stage
 }
 
 func viaOf(enqueuedBy string) string {

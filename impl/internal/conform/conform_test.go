@@ -220,8 +220,34 @@ func TestTestControlPort(t *testing.T) {
 	if o := problemOutcome(status, resp); o.Unimplemented == "" {
 		t.Fatalf("a missing loop is not reported as unimplemented: %d %v", status, resp)
 	}
-	status, resp = post("store.snapshot", ep.TestKey, map[string]any{"label": "a"})
+	status, resp = post("function.eval", ep.TestKey, map[string]any{"function": "commission.accuracy", "input": map[string]any{}})
 	if o := problemOutcome(status, resp); o.Unimplemented == "" {
-		t.Fatalf("a missing operation is not reported as unimplemented: %d %v", status, resp)
+		t.Fatalf("a function this build lacks is not reported as unimplemented: %d %v", status, resp)
+	}
+	// The other operations of the port (APR-9), each with the test bench key only.
+	for _, c := range []struct {
+		op   string
+		body map[string]any
+		want int
+	}{
+		{"store.snapshot", map[string]any{"label": "store-daily"}, 200},
+		{"store.restore", map[string]any{"label": "store-daily"}, 200},
+		{"store.restore", map[string]any{"label": "other"}, 404},
+		{"store.snapshot", map[string]any{"label": "Bad Label"}, 400},
+		{"store.fault", map[string]any{"point": "clear"}, 200},
+		{"process.stop", map[string]any{"process": map[string]any{"kind": "core"}, "mode": "kill"}, 200},
+		{"process.stop", map[string]any{"process": map[string]any{"kind": "toolhost"}, "mode": "kill"}, 400},
+		{"authorize.eval", map[string]any{"request": map[string]any{
+			"principal": map[string]any{"kind": "system", "id": "system", "tenant": "demo"},
+			"action":    "task:hello.greet.v1", "resource": map[string]any{"tenant": "demo", "kind": "task_type"}}}, 404}, // nothing is applied on this bench
+		{"function.eval", map[string]any{"function": "schedule.check", "input": map[string]any{"cron": "15 6 * * *", "timezone": "Europe/Berlin"}}, 200},
+		{"event.inject", map[string]any{"event": map[string]any{}, "via": "w_x"}, 400},
+	} {
+		if status, resp := post(c.op, ep.TestKey, c.body); status != c.want {
+			t.Errorf("%s %v: %d %v, want %d", c.op, c.body, status, resp, c.want)
+		}
+		if status, _ := post(c.op, ep.Operators["farm"], c.body); status != 401 {
+			t.Errorf("%s with an operator credential: %d", c.op, status)
+		}
 	}
 }

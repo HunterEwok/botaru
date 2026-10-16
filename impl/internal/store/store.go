@@ -26,6 +26,8 @@ var migrations embed.FS
 // Store is the open farm store.
 type Store struct {
 	Pool *pgxpool.Pool
+	// faults are the store faults a test bench injects (fault.go).
+	faults faults
 }
 
 // Open connects to the store; it does not migrate.
@@ -46,7 +48,12 @@ func Open(ctx context.Context, dsn string) (*Store, error) {
 func (s *Store) Close() { s.Pool.Close() }
 
 // Ping reports whether the store answers.
-func (s *Store) Ping(ctx context.Context) error { return s.Pool.Ping(ctx) }
+func (s *Store) Ping(ctx context.Context) error {
+	if s.faults.unavailable.Load() {
+		return ErrFaultUnavailable
+	}
+	return s.Pool.Ping(ctx)
+}
 
 // Migrate applies the embedded migrations that are not applied yet, under an advisory lock, so
 // that two core copies starting at once do not apply a migration twice.
@@ -144,9 +151,12 @@ func (s *Store) Init(ctx context.Context, testBench bool) (Meta, error) {
 // Tx runs fn in a READ COMMITTED transaction. Work is serialized by row locks taken inside fn;
 // a serialization or deadlock failure is retried a few times.
 func (s *Store) Tx(ctx context.Context, fn func(tx pgx.Tx) error) error {
+	if s.faults.unavailable.Load() {
+		return ErrFaultUnavailable
+	}
 	var err error
 	for attempt := 0; attempt < 5; attempt++ {
-		err = pgx.BeginFunc(ctx, s.Pool, fn)
+		err = pgx.BeginFunc(ctx, s.Pool, s.faults.wrap(fn))
 		if !retryable(err) {
 			return err
 		}

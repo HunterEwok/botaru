@@ -141,7 +141,7 @@ func (c *Core) heldLease(ctx context.Context, tx pgx.Tx, w *Worker, header, op s
 	if t.WorkerID != w.ID {
 		return nil, nil, refuse("lease_mismatch", "the lease token is of another worker")
 	}
-	if t.Epoch != c.epoch {
+	if t.Epoch != c.epoch.Load() {
 		return nil, nil, refuse("fenced", "the lease token is of another store epoch")
 	}
 	var l leaseRow

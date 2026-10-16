@@ -103,7 +103,7 @@ type Core struct {
 	texts *texts.Catalog
 	cat   catalogCache
 	wake  *waker
-	epoch int64
+	epoch atomic.Int64
 	log   *slog.Logger
 	rs    *resultSchemas
 	// capacity is the state of the store volume by the last measurement (CAP-5).
@@ -122,6 +122,8 @@ type Core struct {
 	// answer then), from which a loop that never ticked counts its age (OBS-4).
 	running   atomic.Bool
 	startedAt atomic.Int64
+	// bench holds the faults the test-control port injected (teststand.go); zero elsewhere.
+	bench benchFaults
 }
 
 // New opens the core over a migrated store.
@@ -139,7 +141,8 @@ func New(ctx context.Context, cfg Config, st *store.Store, sp *spec.Spec, tx *te
 	if err != nil {
 		return nil, err
 	}
-	c := &Core{cfg: cfg, st: st, spec: sp, texts: tx, epoch: meta.Epoch, log: cfg.Logger, rs: newResultSchemas()}
+	c := &Core{cfg: cfg, st: st, spec: sp, texts: tx, log: cfg.Logger, rs: newResultSchemas()}
+	c.epoch.Store(meta.Epoch)
 	c.wake = newWaker()
 	cat, err := c.Catalog(ctx)
 	if err != nil {
@@ -148,17 +151,24 @@ func New(ctx context.Context, cfg Config, st *store.Store, sp *spec.Spec, tx *te
 	if cfg.Offline {
 		return c, nil
 	}
-	if err := c.settleRestore(ctx); err != nil {
-		return nil, err
-	}
-	if err := c.loadRestoring(ctx); err != nil {
-		return nil, err
-	}
-	c.warnNoticeFallbacks(cat)
-	if err := c.fillNoticeParams(ctx, cat); err != nil {
+	if err := c.startUp(ctx, cat); err != nil {
 		return nil, err
 	}
 	return c, nil
+}
+
+// startUp is what a core process does over its store before it serves: it settles a restore,
+// reads the restore mark and completes the parameters of waiting notices. New runs it, and so
+// does a test bench core that process.stop or store.restore starts again (teststand.go).
+func (c *Core) startUp(ctx context.Context, cat *Catalog) error {
+	if err := c.settleRestore(ctx); err != nil {
+		return err
+	}
+	if err := c.loadRestoring(ctx); err != nil {
+		return err
+	}
+	c.warnNoticeFallbacks(cat)
+	return c.fillNoticeParams(ctx, cat)
 }
 
 // Spec returns the loaded specification.
@@ -168,7 +178,7 @@ func (c *Core) Spec() *spec.Spec { return c.spec }
 func (c *Core) Store() *store.Store { return c.st }
 
 // Epoch returns the store epoch.
-func (c *Core) Epoch() int64 { return c.epoch }
+func (c *Core) Epoch() int64 { return c.epoch.Load() }
 
 // Problem is a refusal with a reason code from spec/model/reasons.yaml. The HTTP binding turns
 // it into problem details (RFC 9457).
