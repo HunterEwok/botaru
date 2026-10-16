@@ -17,6 +17,7 @@ import (
 
 	"github.com/HunterEwok/botaru/impl/internal/ids"
 	"github.com/HunterEwok/botaru/impl/internal/mcp"
+	"github.com/HunterEwok/botaru/impl/internal/money"
 	"github.com/HunterEwok/botaru/impl/internal/toolspec"
 )
 
@@ -546,6 +547,11 @@ func (c *Core) doctorManager(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 		return err
 	}
 	add(DoctorCheck{ID: "budget.used_30d_eur_micros.manager_review", OK: true, Severity: "info", Value: review, Tenant: tenant})
+	if claimsV03() {
+		if err := doctorManagerMonth(ctx, tx, now, tv, add); err != nil {
+			return err
+		}
+	}
 	if !incidentReviewOn(tv) {
 		return nil
 	}
@@ -645,4 +651,40 @@ func (c *Core) ManagerReads(ctx context.Context, op Operator, req ManagerReadsRe
 		return nil, err
 	}
 	return out, nil
+}
+
+// doctorManagerMonth shows the usage of the manager line in the month with the analysis and
+// takeover rows, and the date the month's line runs out at the spend of the last 7 days
+// (MGR-49, BUD-15).
+func doctorManagerMonth(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, add func(DoctorCheck)) error {
+	day := tenantDay(tv, now)
+	month := time.Date(day.Year(), day.Month(), 1, 0, 0, 0, 0, day.Location())
+	var used, postmortem, takeover, week int64
+	if err := tx.QueryRow(ctx, `SELECT coalesce(sum(s.eur_micros + coalesce(s.correction_eur_micros, 0)), 0),
+		coalesce(sum(s.eur_micros + coalesce(s.correction_eur_micros, 0)) FILTER (WHERE t.type = $3), 0),
+		coalesce(sum(s.eur_micros + coalesce(s.correction_eur_micros, 0)) FILTER (WHERE t.record ? 'takeover_of'), 0),
+		coalesce(sum(s.eur_micros + coalesce(s.correction_eur_micros, 0)) FILTER (WHERE s.time >= $4), 0)
+		FROM spend s LEFT JOIN tasks t ON t.id = s.task WHERE s.tenant = $1 AND s.line = 'manager' AND s.unit <> 'task' AND s.time >= least($2, $4)`,
+		tv.Name, month, postmortemType, now.Add(-7*24*time.Hour)).Scan(&used, &postmortem, &takeover, &week); err != nil {
+		return err
+	}
+	add(DoctorCheck{ID: "budget.used_month_eur_micros.manager", OK: true, Severity: "info", Value: used, Tenant: tv.Name})
+	add(DoctorCheck{ID: "budget.used_month_eur_micros.manager_postmortem", OK: true, Severity: "info", Value: postmortem, Tenant: tv.Name})
+	add(DoctorCheck{ID: "budget.used_month_eur_micros.manager_takeover", OK: true, Severity: "info", Value: takeover, Tenant: tv.Name})
+	lb := tv.Spec.Budgets.Lines["manager"]
+	if lb.MonthEUR == nil {
+		return nil
+	}
+	ch := DoctorCheck{ID: "manager.line_runs_out", OK: true, Severity: "info", Tenant: tv.Name, Value: "-"}
+	if left := money.FromEUR(*lb.MonthEUR) - used; left <= 0 {
+		ch.OK, ch.Severity, ch.Value = false, "warn", day.Format("2006-01-02")
+	} else if week > 0 {
+		out := now.Add(time.Duration(float64(left) / (float64(week) / 7) * float64(24*time.Hour)))
+		ch.Value = out.In(day.Location()).Format("2006-01-02")
+		if out.Before(month.AddDate(0, 1, 0)) {
+			ch.OK, ch.Severity = false, "warn"
+		}
+	}
+	add(ch)
+	return nil
 }

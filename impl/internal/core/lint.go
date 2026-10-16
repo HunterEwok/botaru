@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/HunterEwok/botaru/impl/internal/manifest"
+	"github.com/HunterEwok/botaru/impl/internal/money"
 )
 
 // The set lint of apply: the checks of ci/check_manifests.py that span objects of the set and
@@ -644,9 +645,11 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int, personas personaL
 
 	// Tenants (APR-9, PRM-17, DSP-10, APR-17, PRM-16, MGR-20, MON-1, GW-15, DSP-3).
 	var seatProfile string
+	var farmManager map[string]any
 	for _, o := range S.each("Governance") {
 		if o.tenant == "farm" {
-			if mp := mstr(mmap(o.spec, "farm_manager"), "model_profile"); mp != "" {
+			farmManager = mmap(o.spec, "farm_manager")
+			if mp := mstr(farmManager, "model_profile"); mp != "" {
 				seatProfile = mp
 			}
 		}
@@ -770,19 +773,14 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int, personas personaL
 			}
 			line := mmap(mmap(mmap(ts, "budgets"), "lines"), "manager")
 			m, _ := mnum(line, "month_eur")
-			d, hasDay := mnum(line, "day_eur")
+			d, _ := mnum(line, "day_eur")
 			if m <= 0 && d <= 0 {
 				f.add(o, "manager_line_missing", "/budgets/lines")
 			}
 			// The day of the line holds three readings of one worst-case incident at the seat
 			// profile's prices (MGR-20).
-			if p := profile(o.name, seatProfile); p != nil && hasDay {
-				in, _ := mnum(mmap(p, "price"), "input")
-				out, _ := mnum(mmap(p, "price"), "output")
-				maxOut, _ := mnum(p, "max_output_tokens")
-				if d*1e6 < seatWorstReadMicros(in, out, int(maxOut)) {
-					f.add(o, "manager_line_too_small", "/budgets/lines/manager/day_eur")
-				}
+			for _, ptr := range managerLineShort(ts, farmManager, profile(o.name, seatProfile)) {
+				f.add(o, "manager_line_too_small", ptr)
 			}
 		}
 		priv := mmap(ts, "privacy")
@@ -2077,7 +2075,10 @@ func (c *Core) lintGovernance(S *lintSet, f *lintFindings, personas personaLooku
 				f.add(o, "lens_persona_missing", fmt.Sprintf("/commission/seats/%d/lens", i))
 			}
 		}
-		refs := charterPersonas(o.spec)
+		// From v0.3 the size of a persona counts with its addenda (GOV-45).
+		v03 := claimsV03()
+		refs := charterPersonas(o.spec, v03)
+		sizes := map[string]int{}
 		for _, path := range slices.Sorted(mapKeys(refs)) {
 			r := refs[path]
 			if !r.pinned() {
@@ -2102,8 +2103,25 @@ func (c *Core) lintGovernance(S *lintSet, f *lintFindings, personas personaLooku
 			} else if strings.HasPrefix(path, "/positions/") {
 				position = strings.Split(path, "/")[2]
 			}
-			for _, code := range personaFindings(text, position, u) {
+			if !v03 {
+				for _, code := range personaFindings(text, position, u) {
+					f.add(o, code, path)
+				}
+				continue
+			}
+			kind := position
+			if strings.Contains(path, "/addenda/") {
+				kind = "addendum"
+			}
+			for _, code := range personaFindingsV03(text, kind, u) {
 				f.add(o, code, path)
+			}
+			key := path
+			if strings.HasPrefix(path, "/positions/") {
+				key = "/positions/" + position
+			}
+			if sizes[key] += len(text); sizes[key] > 4096 {
+				f.add(o, "persona_size", path)
 			}
 		}
 	}
@@ -2206,4 +2224,35 @@ func (c *Core) lintTwoApprovers(f *lintFindings, S *lintSet) {
 			}
 		}
 	}
+}
+
+// managerLineShort are the fields of a tenant's manager line that do not cover what the seat may
+// spend: the day holds three worst-case readings of one incident at the seat profile's prices
+// (MGR-20), from v0.3 also the daily review and the daily ceiling of the analyses, and the month
+// the takeover ceiling (MGR-49).
+func managerLineShort(ts, farmManager, seatProfile map[string]any) []string {
+	var out []string
+	line := mmap(mmap(mmap(ts, "budgets"), "lines"), "manager")
+	if d, hasDay := mnum(line, "day_eur"); seatProfile != nil && hasDay {
+		in, _ := mnum(mmap(seatProfile, "price"), "input")
+		outPrice, _ := mnum(mmap(seatProfile, "price"), "output")
+		maxOut, _ := mnum(seatProfile, "max_output_tokens")
+		need := seatWorstReadMicros(in, outPrice, int(maxOut))
+		if claimsV03() {
+			need += float64(money.FromEUR(charterReviewMaxEUR(farmManager)) + money.FromEUR(postmortemDayEUR(farmManager)))
+		}
+		if d*1e6 < need {
+			out = append(out, "/budgets/lines/manager/day_eur")
+		}
+	}
+	if claimsV03() {
+		tm := defaultTakeoverMonthEUR
+		if v, ok := mnum(mmap(ts, "takeover"), "manager_month_eur"); ok {
+			tm = v
+		}
+		if mm, ok := mnum(line, "month_eur"); ok && mm < tm {
+			out = append(out, "/budgets/lines/manager/month_eur")
+		}
+	}
+	return out
 }

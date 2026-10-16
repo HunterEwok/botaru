@@ -72,6 +72,8 @@ func taskTreeBudget(rec []byte, tt manifest.TaskType) int64 {
 // does not narrow.
 type spendFilter struct {
 	subject, line, role string
+	// sev1 narrows to the lines of tasks whose record has severity sev1 (MGR-49).
+	sev1 bool
 }
 
 // windowUsed sums the spend of a window: usage lines and call reserves in full, and of each
@@ -85,7 +87,8 @@ type spendFilter struct {
 func windowUsed(ctx context.Context, tx pgx.Tx, tenant string, f spendFilter, from time.Time, ownRoot string) (int64, error) {
 	var used int64
 	err := tx.QueryRow(ctx, `WITH w AS (SELECT * FROM spend WHERE tenant = $1 AND time >= $2
-			AND ($3 = '' OR subject = $3 AND (task IS NULL OR NOT EXISTS (SELECT 1 FROM tasks t WHERE t.id = spend.task AND t.record ? 'paid_by_card'))) AND ($5 = '' OR line = $5) AND ($6 = '' OR role = $6))
+			AND ($3 = '' OR subject = $3 AND (task IS NULL OR NOT EXISTS (SELECT 1 FROM tasks t WHERE t.id = spend.task AND t.record ? 'paid_by_card'))) AND ($5 = '' OR line = $5) AND ($6 = '' OR role = $6)
+			AND (NOT $7 OR EXISTS (SELECT 1 FROM tasks t WHERE t.id = spend.task AND t.record->>'severity' = 'sev1')))
 		SELECT coalesce((SELECT sum(CASE WHEN state = 'estimated' AND (reconciled_at IS NOT NULL OR released_at IS NOT NULL) THEN 0
 				ELSE eur_micros + coalesce(correction_eur_micros, 0) END) FROM w WHERE unit <> 'task'), 0)
 			+ coalesce((SELECT sum(greatest(r.eur_micros - coalesce((SELECT sum(s.eur_micros) FROM spend s LEFT JOIN tasks u ON u.id = s.task
@@ -93,7 +96,7 @@ func windowUsed(ctx context.Context, tx pgx.Tx, tenant string, f spendFilter, fr
 					AND (u.record->>'wake_task') IS NOT DISTINCT FROM (SELECT x.record->>'wake_task' FROM tasks x WHERE x.id = r.task)), 0), 0))
 				FROM w r WHERE r.unit = 'task' AND r.root <> $4
 				AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.id = r.task AND t.state = 'submitted' AND t.reason IN ('provider_unavailable', 'provider_quota'))), 0)`,
-		tenant, from, f.subject, ownRoot, f.line, f.role).Scan(&used)
+		tenant, from, f.subject, ownRoot, f.line, f.role, f.sev1).Scan(&used)
 	return used, err
 }
 
@@ -112,6 +115,9 @@ type budgetAsk struct {
 	// sev1 marks a seat ask for a sev1 incident, which may use the reserve of the manager line
 	// (MGR-20).
 	sev1 bool
+	// fallback marks a seat ask of work outside sev1 on the farm charter's fallback_profile after
+	// the month of the manager line is spent (MGR-49).
+	fallback bool
 	// crossed collects the windows whose 80% threshold the ask reaches. The caller gives the
 	// events only once the ask is accepted, so a refused ask takes no threshold slot (BUD-4).
 	crossed *[]crossing
@@ -193,6 +199,31 @@ func (c *Core) checkBudget(ctx context.Context, tx pgx.Tx, now time.Time, tv *Te
 	if line == "manager" && lb.DayEUR != nil && !ask.sev1 {
 		v := *lb.DayEUR * managerNonSev1Share
 		windows = append(windows, window{&v, day, spendFilter{line: line}, "the manager line keeps its sev1 reserve", ""})
+	}
+	// From v0.3 the month of the manager line stops work outside sev1 at 70% as the day does;
+	// sev1 runs from the day's reserve, and the fallback profile from the day alone (MGR-49).
+	if line == "manager" && claimsV03() {
+		if ask.sev1 || ask.fallback {
+			windows[2].limit = nil
+			// Once the month is spent, sev1 runs only from the day's reserve: today's sev1 spend,
+			// counted as every window counts, within 30% of the line's day.
+			if ask.sev1 && lb.MonthEUR != nil {
+				used, err := windowUsed(ctx, tx, tv.Name, spendFilter{line: line}, month, ask.ownRoot)
+				if err != nil {
+					return refuse("not_ready", "store")
+				}
+				if used >= money.FromEUR(*lb.MonthEUR) {
+					reserve := 0.0
+					if lb.DayEUR != nil {
+						reserve = *lb.DayEUR * (1 - managerNonSev1Share)
+					}
+					windows = append(windows, window{&reserve, day, spendFilter{line: line, sev1: true}, "the manager line is spent but for the sev1 reserve", ""})
+				}
+			}
+		} else if lb.MonthEUR != nil {
+			v := *lb.MonthEUR * managerNonSev1Share
+			windows = append(windows, window{&v, month, spendFilter{line: line}, "the manager line keeps its sev1 reserve", ""})
+		}
 	}
 	if ask.role != "" {
 		windows = append(windows, window{lb.PerRoleMonthEUR, month, spendFilter{line: line, role: ask.role}, "the budget line of the role is used up", ""})
@@ -289,7 +320,12 @@ func (c *Core) reserveSpend(ctx context.Context, tx pgx.Tx, now time.Time, tv *T
 		if err != nil {
 			return err
 		}
-		if p := c.checkBudget(ctx, tx, now, tv, budgetAsk{subject: r.Subject, groups: groups, extra: r.Micros, ownRoot: r.Root, line: r.Line, role: r.Role, sev1: sev1, crossed: &crossed}); p != nil {
+		fallback, err := taskFallback(ctx, tx, r.Line, r.Task)
+		if err != nil {
+			return err
+		}
+		if p := c.checkBudget(ctx, tx, now, tv, budgetAsk{subject: r.Subject, groups: groups, extra: r.Micros, ownRoot: r.Root, line: r.Line, role: r.Role,
+			sev1: sev1, fallback: fallback, crossed: &crossed}); p != nil {
 			return p
 		}
 		// A call in a wake-up's subtree draws on the wake-up's money too (MSG-11).
@@ -363,6 +399,35 @@ func taskSev1(ctx context.Context, tx pgx.Tx, line, task string) (bool, error) {
 		return false, nil
 	}
 	return sev == "sev1", err
+}
+
+// taskFallback says whether a task of the manager line runs on the fallback profile the core
+// chose at claim (MGR-49).
+func taskFallback(ctx context.Context, tx pgx.Tx, line, task string) (bool, error) {
+	if line != "manager" || task == "" || !claimsV03() {
+		return false, nil
+	}
+	var fb bool
+	err := tx.QueryRow(ctx, `SELECT coalesce((record->>'seat_fallback')::boolean, false) FROM tasks WHERE id = $1`, task).Scan(&fb)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	return fb, err
+}
+
+// managerMonthSpent says whether work outside sev1 has used its 70% of the month of the tenant's
+// manager line (MGR-49); a line without a month limit is never spent this way.
+func managerMonthSpent(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView) (bool, error) {
+	lb := tv.Spec.Budgets.Lines["manager"]
+	if lb.MonthEUR == nil {
+		return false, nil
+	}
+	day := tenantDay(tv, now)
+	used, err := windowUsed(ctx, tx, tv.Name, spendFilter{line: "manager"}, time.Date(day.Year(), day.Month(), 1, 0, 0, 0, 0, day.Location()), "")
+	if err != nil {
+		return false, err
+	}
+	return float64(used) >= float64(money.FromEUR(*lb.MonthEUR))*managerNonSev1Share, nil
 }
 
 // toolPrice is the price of one call in micro-euros: the manifest price of a tool the farm

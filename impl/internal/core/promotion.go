@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 
@@ -56,10 +57,17 @@ func (c *Core) governanceLoop(ctx context.Context) error {
 	}
 	var errs []error
 	for _, t := range slices.Sorted(mapKeys(cat.Tenants)) {
-		if t == farmTenant || len(charterSeats(cat, t)) == 0 {
+		if t == farmTenant {
 			continue
 		}
 		tv := cat.Tenants[t]
+		if len(charterSeats(cat, t)) == 0 {
+			// Script links need no commission (TRN-7).
+			if err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error { return c.scriptLinkStep(ctx, tx, now, cat, tv) }); err != nil {
+				errs = append(errs, fmt.Errorf("script links of %s: %w", t, err))
+			}
+			continue
+		}
 		if err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error { return c.governTenant(ctx, tx, now, cat, tv) }); err != nil {
 			errs = append(errs, fmt.Errorf("governance of %s: %w", t, err))
 		}
@@ -82,6 +90,17 @@ func (c *Core) governTenant(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		return err
 	}
 	if err := c.entryStep(ctx, tx, now, cat, tv.Name); err != nil {
+		return err
+	}
+	// From v0.3: the forecasts are scored, the waiting departures for links go at their pace,
+	// and the admins learn when accountability can be switched on (COM-16, GOV-36, GOV-42).
+	if err := c.scoreStep(ctx, tx, now, cat, tv); err != nil {
+		return err
+	}
+	if err := c.departureStep(ctx, tx, now, cat, tv.Name); err != nil {
+		return err
+	}
+	if err := c.readyStep(ctx, tx, now, cat, tv); err != nil {
 		return err
 	}
 	return c.caseStep(ctx, tx, now, cat, tv)
@@ -186,6 +205,14 @@ func (c *Core) successOf(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 	// and roles without a model do not (GOV-14).
 	if !slices.Contains(functionaryProfiles, profileOf(cat, b.Role)) || !hasModel(cat, b.Role) {
 		return "", "", nil
+	}
+	if claimsV03() {
+		// A bot that left a seat for a link gets no trigger for 180 days (GOV-42).
+		if at, err := unseatedRecently(ctx, tx, now, botID); err != nil {
+			return "", "", err
+		} else if at != nil {
+			return botID, "after_unseat", nil
+		}
 	}
 	d := mmapAny(p.Rec["decision"])
 	switch {
@@ -387,7 +414,27 @@ func (c *Core) eligible(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cata
 	if err != nil || b == nil || b.State != "active" || b.Mode != "worker" {
 		return false, err
 	}
-	if now.Sub(b.CreatedAt) < govDuration(cat, tenant, "promotion", "min_tenure", govMinTenure) {
+	tenure := b.CreatedAt
+	var skipTenure bool
+	if err := tx.QueryRow(ctx, `SELECT coalesce((SELECT skip_tenure FROM promotion_entries WHERE tenant = $1 AND bot = $2), false)`, tenant, botID).Scan(&skipTenure); err != nil {
+		return false, err
+	}
+	if claimsV03() && !skipTenure {
+		// After leaving a seat for a link: no case for 180 days, and the tenure counts from the
+		// departure; a bot returned after a canceled link waits for no min_tenure (GOV-42).
+		at, err := unseatedRecently(ctx, tx, now, botID)
+		if err != nil || at != nil {
+			return false, err
+		}
+		var left *time.Time
+		if err := tx.QueryRow(ctx, `SELECT max(done_at) FROM link_departures WHERE bot = $1 AND state = 'done'`, botID).Scan(&left); err != nil {
+			return false, err
+		}
+		if left != nil && left.After(tenure) {
+			tenure = *left
+		}
+	}
+	if !skipTenure && now.Sub(tenure) < govDuration(cat, tenant, "promotion", "min_tenure", govMinTenure) {
 		return false, nil
 	}
 	if held, err := botHeld(ctx, tx, now, b); err != nil || held {
@@ -395,7 +442,7 @@ func (c *Core) eligible(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cata
 	}
 	var dirty bool
 	err = tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM attributions a JOIN proposals p ON p.id = a.proposal
-		WHERE a.tenant = $1 AND a.state = 'confirmed' AND p.record->'origin'->>'acting_bot' = $2 AND (a.record->'answer'->>'at')::timestamptz >= $3)`,
+		WHERE a.tenant = $1 AND a.kind = 'change' AND a.state = 'confirmed' AND p.record->'origin'->>'acting_bot' = $2 AND (a.record->'answer'->>'at')::timestamptz >= $3)`,
 		tenant, botID, now.AddDate(0, 0, -govCleanDays)).Scan(&dirty)
 	return !dirty, err
 }
@@ -714,6 +761,9 @@ func (c *Core) openCase(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cata
 	figures := []any{}
 	holders := map[string]any{}
 	upheld := map[string]any{}
+	var proposed any
+	var tiedSeats []any
+	flags := []any{}
 	if mode == "removal" {
 		for _, s := range seats.list {
 			list = append(list, s.id)
@@ -725,11 +775,36 @@ func (c *Core) openCase(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cata
 			figures = append(figures, f)
 			holders[s.id], upheld[s.id] = s.holder, up
 		}
+		if claimsV03() {
+			// From v0.3 the card shows the accuracy of every seat of L, and with accountability
+			// on code proposes the leaver (COM-17, GOV-43).
+			lv, err := c.proposeLeaver(ctx, tx, now, cat, tv.Name, seats.list)
+			if err != nil {
+				return err
+			}
+			for _, f := range figures {
+				fm := f.(map[string]any)
+				a := lv.acc[asString(fm["seat"])]
+				fm["accuracy"], fm["scored_forecasts"] = a.view(), a.N
+			}
+			if lv.proposed != "" {
+				proposed = lv.proposed
+			}
+			for _, t := range lv.tied {
+				tiedSeats = append(tiedSeats, t)
+			}
+			if lv.onlyScoredVeto {
+				flags = append(flags, "evicts_only_scored_veto")
+			}
+		}
 	}
 	rec := map[string]any{"id": id, "tenant": tv.Name, "kind": "promotion", "state": "opened", "hold": false,
 		"trigger":  map[string]any{"proposal": head.trigger, "realized_at": fmtTime(realized), "probation_until": fmtTime(realized.Add(govDuration(cat, tv.Name, "promotion", "probation", govProbation)))},
 		"subject":  map[string]any{"candidate": head.bot, "mode": mode},
-		"snapshot": map[string]any{"list": list, "seats": figures, "proposed": nil}, "flags": []any{}, "outcome": nil, "confirmation": nil}
+		"snapshot": map[string]any{"list": list, "seats": figures, "proposed": proposed}, "flags": flags, "outcome": nil, "confirmation": nil}
+	if len(tiedSeats) > 0 {
+		rec["snapshot"].(map[string]any)["tied"] = tiedSeats
+	}
 	if err := c.spec.Validate("urn:botaru:schema:governance-case:1", rec); err != nil {
 		return fmt.Errorf("case record: %w", err)
 	}
@@ -750,8 +825,14 @@ func (c *Core) openCase(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cata
 	}
 	// The list L with the figures of its seats goes into audit as ids and numbers (GOV-21).
 	if err := c.govAudit(ctx, tx, now, tv.Name, "governance.case.opened", "governance_case", id, "", map[string]any{
-		"candidate": head.bot, "mode": mode, "trigger": head.trigger, "list": list, "seats": figures, "vacancy": nullable(vacancy), "card": promotionCard}); err != nil {
+		"candidate": head.bot, "mode": mode, "trigger": head.trigger, "list": list, "seats": figures, "vacancy": nullable(vacancy), "card": promotionCard,
+		"proposed": proposed}); err != nil {
 		return err
+	}
+	for _, f := range flags {
+		if err := c.govAudit(ctx, tx, now, tv.Name, "governance.flag.set", "governance_case", id, "", map[string]any{"flag": f, "seat": proposed}); err != nil {
+			return err
+		}
 	}
 	k, err := loadCase(ctx, tx, id, true)
 	if err != nil {
@@ -827,7 +908,7 @@ func seatFigures(ctx context.Context, tx pgx.Tx, now time.Time, tenant, holder s
 	rows, err := tx.Query(ctx, `SELECT (r->'result'->>'score')::int, coalesce((r->'result'->>'veto')::bool, false), coalesce(p.record->'trial'->>'outcome', ''),
 			coalesce((p.record->>'veto_overridden')::bool, false),
 			coalesce(p.record->'sample_answer'->>'answer' = 'would_not_accept' OR p.record ? 'sample' AND p.record->'decision'->>'decision' = 'reject', false),
-			EXISTS (SELECT 1 FROM attributions a WHERE a.proposal = p.id AND a.state = 'confirmed')
+			EXISTS (SELECT 1 FROM attributions a WHERE a.proposal = p.id AND a.kind = 'change' AND a.state = 'confirmed')
 		FROM proposals p, jsonb_array_elements(coalesce(p.record->'reviews', '[]')) r
 		WHERE p.tenant = $1 AND r->>'state' = 'done' AND r->>'executor' = 'seat' AND (p.record->'verdict'->>'computed_at')::timestamptz >= $2
 		AND EXISTS (SELECT 1 FROM leases l WHERE l.work_id = r->>'task' AND l.acting_bot = $3)`, tenant, now.AddDate(0, 0, -govFiguresDays), holder)
@@ -883,6 +964,12 @@ func (c *Core) caseCard(ctx context.Context, tx pgx.Tx, cat *Catalog, id string)
 		}
 		sm := mmapAny(s)
 		line := fmt.Sprintf("%v recommended %v vetoed %v confirmed %v refuted %v", sm["seat"], sm["recommended"], sm["vetoed"], sm["confirmed"], sm["refuted"])
+		if a, ok := sm["accuracy"]; ok {
+			line += fmt.Sprintf(" accuracy %v scored %v", a, sm["scored_forecasts"])
+		}
+		if sm["seat"] == mmapAny(k.Rec["snapshot"])["proposed"] {
+			line += " proposed"
+		}
 		if n, _ := toFloat(k.Upheld[asString(sm["seat"])]); n > 0 {
 			line += " evicts_upheld_veto"
 		}
@@ -1025,6 +1112,15 @@ func (c *Core) decideCase(ctx context.Context, w *Worker, ob OnBehalf, req Decid
 			seat = strings.TrimPrefix(req.Choice, "seat:")
 			if _, ok := k.Holders[seat]; !ok {
 				return deny("leaver_not_offered", "choose a seat of the list")
+			}
+			// A leaver code proposed is the only choice; with two tied worst seats the person
+			// chooses among them (GOV-43).
+			snap := mmapAny(k.Rec["snapshot"])
+			if p := asString(snap["proposed"]); p != "" && p != seat {
+				return deny("leaver_not_offered", "confirm the proposed seat or answer Not now")
+			}
+			if tied := strList(snap["tied"]); len(tied) > 0 && !slices.Contains(tied, seat) {
+				return deny("leaver_not_offered", "choose one of the tied seats")
 			}
 		} else if req.Choice != "" && strings.TrimPrefix(req.Choice, "seat:") != seat {
 			return deny("leaver_not_offered", "the case is about the vacant seat")
@@ -1216,4 +1312,112 @@ func (c *Core) GovernanceShow(ctx context.Context, op Operator, req IncidentRequ
 		return nil
 	})
 	return out, err
+}
+
+// leaverProposal is what code proposes for a case that frees a seat (GOV-43).
+type leaverProposal struct {
+	acc            map[string]accuracy
+	proposed       string
+	tied           []string
+	onlyScoredVeto bool
+}
+
+// proposeLeaver proposes the holder of L with the worst accuracy in its lens (GOV-43, COM-17),
+// only with commission.accountability on: a holder with fewer scored forecasts than
+// accountability_min_forecasts counts with the median of its lens, or as the worst once it has
+// held the seat for more than min_tenure plus 90 days by its last seat.assigned.v1 event; with no holder of L scored enough, or the
+// two worst tied, code proposes nobody (and with a tie the person chooses among the tied seats).
+// The reward protection of COM-18 is not built, so nobody is protected. The flag
+// evicts_only_scored_veto marks a proposed holder that is the only holder of a veto lens with
+// enough scored forecasts (GOV-19).
+func (c *Core) proposeLeaver(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tenant string, list []caseSeat) (leaverProposal, error) {
+	out := leaverProposal{acc: map[string]accuracy{}}
+	need := minForecasts(cat, tenant)
+	lenses := map[string]string{}
+	byLens := map[string][]float64{}
+	enough := false
+	rows, err := tx.Query(ctx, `SELECT id, coalesce(lens, ''), coalesce(holder, '') FROM seats WHERE tenant = $1 AND kind = 'commission' AND state = 'held' ORDER BY id`, tenant)
+	if err != nil {
+		return out, err
+	}
+	type held struct{ id, lens, holder string }
+	var all []held
+	for rows.Next() {
+		var h held
+		if err := rows.Scan(&h.id, &h.lens, &h.holder); err != nil {
+			rows.Close()
+			return out, err
+		}
+		all = append(all, h)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return out, err
+	}
+	scoredVeto := map[string]int{}
+	defs := c.lensDefs()
+	for _, h := range all {
+		a, err := lensAccuracy(ctx, tx, now, tenant, h.lens, h.holder)
+		if err != nil {
+			return out, err
+		}
+		out.acc[h.id], lenses[h.id] = a, h.lens
+		if a.N >= need && a.OK {
+			byLens[h.lens] = append(byLens[h.lens], a.Value)
+			if defs[h.lens].Veto {
+				scoredVeto[h.lens]++
+			}
+		}
+	}
+	if accountabilityMode(cat, tenant) != "on" || !claimsV03() {
+		return out, nil
+	}
+	if on, err := c.accountabilityOn(ctx, tx, cat, tenant); err != nil || on == nil {
+		return out, err
+	}
+	type cand struct {
+		seat string
+		acc  accuracy
+	}
+	var cands []cand
+	long := govDuration(cat, tenant, "promotion", "min_tenure", govMinTenure) + 90*24*time.Hour
+	for _, s := range list {
+		a := out.acc[s.id]
+		switch {
+		case a.N >= need && a.OK:
+			enough = true
+		default:
+			var since *time.Time
+			if err := tx.QueryRow(ctx, `SELECT max(time) FROM events WHERE tenant = $1 AND type = 'seat.assigned.v1' AND subject = $2 AND data->>'holder' = $3`,
+				tenant, s.id, s.holder).Scan(&since); err != nil {
+				return out, err
+			}
+			// A holder whose assignment event is gone (pruned) has no known tenure and counts
+			// with the median, not as the worst.
+			if since != nil && now.Sub(*since) > long {
+				a = accuracy{Lens: a.Lens, N: a.N, Value: -2, OK: true}
+			} else {
+				a = accuracy{Lens: a.Lens, N: a.N, Value: median(byLens[lenses[s.id]]), OK: true}
+			}
+		}
+		cands = append(cands, cand{seat: s.id, acc: a})
+	}
+	if !enough || len(cands) == 0 {
+		return out, nil
+	}
+	sort.SliceStable(cands, func(i, j int) bool { return cands[i].acc.Value < cands[j].acc.Value })
+	if len(cands) > 1 && tied(cands[0].acc, cands[1].acc) {
+		for _, x := range cands {
+			if tied(cands[0].acc, x.acc) {
+				out.tied = append(out.tied, x.seat)
+			}
+		}
+		return out, nil
+	}
+	out.proposed = cands[0].seat
+	l := lenses[out.proposed]
+	if a := out.acc[out.proposed]; defs[l].Veto && a.N >= need && a.OK && scoredVeto[l] == 1 {
+		out.onlyScoredVeto = true
+	}
+	return out, nil
 }

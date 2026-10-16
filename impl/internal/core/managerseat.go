@@ -192,6 +192,12 @@ func (c *Core) shiftManager(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		m.UnheldSince = nil
 	}
 	hadIncident := m.has("incident")
+	// A new holder or a vacant seat ends the restricted mode in every tenant (MGR-47).
+	if holder != m.Holder {
+		if err := c.endRestrictions(ctx, tx, now, m, cause, actor); err != nil {
+			return 0, err
+		}
+	}
 	m.Reasons = reasons
 	switch {
 	case !m.has("incident"):
@@ -213,8 +219,10 @@ func (c *Core) shiftManager(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 
 // leaveReason is the retirement trigger of a holder that people replace: after an incident stop
 // replaced_after_incident, otherwise replaced_by_human (IDN-11, GOV-22).
-func (m *managerSeat) leaveReason() string {
-	if m.has("incident") {
+func (m *managerSeat) leaveReason(v03 bool) string {
+	// A v0.3 core never applies replaced_after_incident: there is no stop on an incident
+	// (IDN-15, IDN-16, GOV-47).
+	if m.has("incident") && !v03 {
 		return "replaced_after_incident"
 	}
 	return "replaced_by_human"
@@ -231,7 +239,7 @@ func (c *Core) retireHolder(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		return err
 	}
 	if prev != nil {
-		if _, err := c.retireBot(ctx, tx, now, cat, prev, m.leaveReason(), successor, actor); err != nil {
+		if _, err := c.retireBot(ctx, tx, now, cat, prev, m.leaveReason(claimsV03()), successor, actor); err != nil {
 			return err
 		}
 	}
@@ -340,6 +348,8 @@ func (c *Core) managerVacate(ctx context.Context, op Operator) (*Done, error) {
 type SeatResumeRequest struct {
 	Seat     string `json:"seat"`
 	Incident string `json:"incident"`
+	// Tenant names the tenant whose restricted mode the operator lifts (from v0.3, MGR-47).
+	Tenant string `json:"tenant,omitempty"`
 }
 
 // SeatResume is P2 seat.resume: it removes only the reason incident, and only after people
@@ -351,6 +361,12 @@ func (c *Core) SeatResume(ctx context.Context, op Operator, req SeatResumeReques
 	}
 	if op.Tenant != farmTenant {
 		return nil, refuse("forbidden", "the farm manager seat is resumed with the operator credential of farm")
+	}
+	if req.Tenant != "" {
+		if !claimsV03() {
+			return nil, refuse("input_schema_invalid", "seat.resume takes a tenant from v0.3")
+		}
+		return c.seatResumeTenant(ctx, op, req.Tenant)
 	}
 	cat, err := c.Catalog(ctx)
 	if err != nil {
@@ -469,6 +485,11 @@ func (c *Core) syncHumanStop(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 // and, for a disk, MGR-33 and MGR-34 hold. Otherwise the record keeps the reason code why there
 // is no stop. A seat already stopped by an incident only gets the incident on its card.
 func (c *Core) incidentStop(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, ic incidentClass, r *incidentRow) error {
+	// From v0.3 no incident stops the seat: stops_manager is a field of v0.1 and v0.2 only, and a
+	// preventable incident restricts the seat instead (IDN-16, GOV-47, MGR-55).
+	if claimsV03() {
+		return c.incidentPreventable(ctx, tx, now, cat, ic, r)
+	}
 	if !truthy(ic.Spec["stops_manager"]) {
 		return nil
 	}
@@ -790,6 +811,9 @@ func (c *Core) managerLoop(ctx context.Context) error {
 			}
 		}
 		if err := c.repeatManagerStopped(ctx, tx, now, cat, m); err != nil {
+			return err
+		}
+		if err := c.repeatPreventable(ctx, tx, now, cat); err != nil {
 			return err
 		}
 		return c.managerAbsent(ctx, tx, now, cat, m)

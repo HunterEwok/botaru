@@ -18,7 +18,13 @@ import (
 const (
 	promotionCard   = "promotion_card"
 	attributionCard = "attribution_card"
+	// rejectionLinkCard asks a person whether a rejected proposal could have prevented an
+	// incident (GOV-40).
+	rejectionLinkCard = "rejection_link_card"
 )
+
+// attributionCards are the card kinds of the attribution subject.
+var attributionCards = []string{attributionCard, rejectionLinkCard, scriptLinkCard}
 
 // withinCeiling keeps the people whose data ceiling covers mark (DIG-2).
 func (c *Core) withinCeiling(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, people []string, mark string) ([]string, error) {
@@ -47,6 +53,11 @@ func (c *Core) planGovCards(ctx context.Context, tx pgx.Tx, now time.Time, tv *T
 			return 0, err
 		}
 	}
+	return c.planGovCardsTo(ctx, tx, now, tv, subjectKind, id, kind, people, extra)
+}
+
+// planGovCardsTo plans a card of a governance subject to the direct chat of each of people.
+func (c *Core) planGovCardsTo(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, subjectKind, id, kind string, people []string, extra map[string]any) (int, error) {
 	n := 0
 	for _, person := range people {
 		channel, chat, ok, err := cardChat(ctx, tx, tv, person)
@@ -150,9 +161,9 @@ func (c *Core) govDetails(ctx context.Context, w *Worker, ob OnBehalf, req CardO
 	}
 	var out map[string]any
 	err = c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
-		table, kind := "governance_cases", promotionCard
+		table, kinds := "governance_cases", []string{promotionCard}
 		if req.SubjectKind == "attribution" {
-			table, kind = "attributions", attributionCard
+			table, kinds = "attributions", attributionCards
 		}
 		var tenant string
 		var nonce *string
@@ -164,7 +175,7 @@ func (c *Core) govDetails(ctx context.Context, w *Worker, ob OnBehalf, req CardO
 		if deref(nonce) == "" || deref(nonce) != req.Nonce {
 			return refuse("forbidden", "the nonce is not the card's")
 		}
-		press, err := c.checkPress(ctx, tx, now, cat, w, ob, req.SubjectKind, req.ID, []string{kind})
+		press, err := c.checkPress(ctx, tx, now, cat, w, ob, req.SubjectKind, req.ID, kinds)
 		if err != nil {
 			return err
 		}

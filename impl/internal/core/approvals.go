@@ -1684,6 +1684,9 @@ func (c *Core) CardDetails(ctx context.Context, w *Worker, ob *OnBehalf, req Car
 	if req.SubjectKind == "governance_case" || req.SubjectKind == "attribution" {
 		return c.govDetails(ctx, w, *ob, req)
 	}
+	if req.SubjectKind == "script" {
+		return c.scriptDetails(ctx, w, *ob, req)
+	}
 	if req.SubjectKind != "approval" {
 		return nil, refuse("not_found", "this build has card details only for approvals and proposals")
 	}

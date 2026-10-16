@@ -236,9 +236,9 @@ func (c *Core) controlApply(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 			return &Done{OK: true, ID: id, State: "card"}, nil, nil
 		}
 		if p != nil {
-			// A conversion to a person's decision, or a person's hold, is not a refusal of the
-			// safeguard (MGR-32, MGR-37).
-			if p.Reason != "protected_target" && p.Reason != "approval_required" && p.Reason != "held" {
+			// A conversion to a person's decision, a person's hold or the restricted mode is not a
+			// refusal of the safeguard (MGR-32, MGR-37, MGR-47).
+			if p.Reason != "protected_target" && p.Reason != "approval_required" && p.Reason != "held" && p.Reason != restrictedReason {
 				if err := c.seatDenied(ctx, tx, now, cat, m); err != nil {
 					return nil, nil, err
 				}
@@ -363,6 +363,13 @@ func (c *Core) controlApply(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 func (c *Core) seatChecks(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tenant string, a controlActor, req ControlRequest, incOut **incidentRow, origin *string) (*Problem, error) {
 	if !managerEnabled(cat, tenant) {
 		return refuse("manager_disabled", "the farm manager is disabled in the tenant"), nil
+	}
+	// In restricted mode the seat only reads and sends notices, except for a new sev1 (MGR-47).
+	if restricted, err := seatRestricted(ctx, tx, tenant, req.Basis.Incident); err != nil || restricted {
+		if restricted {
+			return refuse(restrictedReason, "the farm manager seat is restricted in the tenant"), nil
+		}
+		return nil, err
 	}
 	// A person's no_control hold on the farm or the tenant stops the seat's operations there
 	// (MGR-15).
@@ -538,12 +545,13 @@ func (c *Core) targetExcluded(ctx context.Context, tx pgx.Tx, cat *Catalog, tena
 	return roles[role] || types[typ], nil
 }
 
-// stopWriters are the task types that publish the alarm of a class with stops_manager and the
-// roles that claim them: the manager may not blind the alarm that stops it (GOV-28, MGR-9).
+// stopWriters are the task types that publish the alarm of a class with stops_manager (from
+// v0.3 manager_accountable) and the roles that claim them: the manager may not blind the alarm
+// that answers for it (GOV-28, GOV-48, MGR-9).
 func stopWriters(cat *Catalog) (types, roles map[string]bool) {
 	alarms := map[string]bool{}
 	for _, ic := range incidentClasses(cat) {
-		if a := mstr(mmap(ic.Spec, "detect"), "alarm"); a != "" && truthy(ic.Spec["stops_manager"]) {
+		if a := mstr(mmap(ic.Spec, "detect"), "alarm"); a != "" && managerClass(ic.Spec) {
 			alarms[a] = true
 		}
 	}

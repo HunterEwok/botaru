@@ -62,7 +62,7 @@ commands:
   manager cost [TENANT] | manager reads [TENANT] [-after CURSOR]
                                             the manager line usage and the read log (MGR-28, MGR-41, AUD-7)
   seat assign SEAT BOT | seat vacate SEAT    a commission seat, for example commission:1 (IDN-10)
-  seat assign farm-manager | seat vacate farm-manager | seat resume farm-manager [--incident] INCIDENT
+  seat assign farm-manager | seat vacate farm-manager | seat resume farm-manager [--incident] INCIDENT | seat resume farm-manager --tenant <tenant>
                                          the farm manager seat, with the operator credential of farm (MGR-1, GOV-22)
   audit verify TENANT [-heads FILE]          FILE: the JSON array of heads from the monitoring history, oldest first
   audit query [-kind K] [-command C] [-actor P] [-target-kind K] [-from T] [-to T] [-limit N] [-after-seq N]
@@ -238,11 +238,14 @@ func run(c *client, args []string) error {
 			return c.print("seat.vacate", map[string]any{"seat": args[2]})
 		case len(args) == 4 && args[1] == "resume" && !strings.HasPrefix(args[3], "-"):
 			return c.print("seat.resume", map[string]any{"seat": args[2], "incident": args[3]})
+		case len(args) == 5 && args[1] == "resume" && args[3] == "--tenant":
+			// The form of the ready command on the manager_preventable notice (GOV-47, MGR-47).
+			return c.print("seat.resume", map[string]any{"seat": args[2], "tenant": args[4]})
 		case len(args) == 5 && args[1] == "resume" && args[3] == "--incident":
 			// The form of the ready command on the manager_stopped card (MGR-35).
 			return c.print("seat.resume", map[string]any{"seat": args[2], "incident": args[4]})
 		}
-		return errors.New("usage: farmctl seat assign SEAT [BOT] | seat vacate SEAT | seat resume farm-manager [--incident] INCIDENT")
+		return errors.New("usage: farmctl seat assign SEAT [BOT] | seat vacate SEAT | seat resume farm-manager [--incident] INCIDENT | seat resume farm-manager --tenant <tenant>")
 	case "hold":
 		return hold(c, args[1:])
 	case "secret":

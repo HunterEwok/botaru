@@ -26,6 +26,8 @@ const (
 	// one keeps its sealed data for seal_ttl.
 	defaultUnboundTTL = 30 * 24 * time.Hour
 	defaultSealTTL    = 30 * 24 * time.Hour
+	// parkedTTL is how long a parked bot waits for a worker of its role (IDN-15, GOV-42).
+	parkedTTL = 180 * 24 * time.Hour
 )
 
 // botRow is a bot identity as the store keeps it.
@@ -84,6 +86,10 @@ func (b *botRow) view() map[string]any {
 	}
 	if b.SealedUntil != nil {
 		out["sealed_until"] = fmtTime(*b.SealedUntil)
+	}
+	// A parked bot shows since when, its role and its former seat, to people only (GOV-42).
+	if pk := mmapAny(b.Record["parked"]); pk != nil {
+		out["parked"] = pk
 	}
 	return out
 }
@@ -173,7 +179,8 @@ func (c *Core) enrollBot(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 	} else if held {
 		state = "suspended"
 	}
-	if _, err := tx.Exec(ctx, `UPDATE bots SET state = $2, worker_id = $3, epoch = epoch + 1, unbound_at = NULL, updated_at = $4 WHERE id = $1`,
+	// Binding a parked bot ends its parking; its memory and track record stayed (GOV-42).
+	if _, err := tx.Exec(ctx, `UPDATE bots SET state = $2, worker_id = $3, epoch = epoch + 1, unbound_at = NULL, record = record - 'parked', updated_at = $4 WHERE id = $1`,
 		b.ID, state, w.ID, now); err != nil {
 		return "", err
 	}
@@ -525,6 +532,15 @@ func (c *Core) identityStep(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 			return err
 		}
 		if b.State == "unbound" {
+			// A bot parked after leaving a seat for a link never retires as worker_gone: after
+			// 180 days without a worker of its role it retires as parked_expired (IDN-15, GOV-42).
+			if pk := mmapAny(b.Record["parked"]); pk != nil {
+				if now.Sub(parseTime(asString(pk["since"]))) >= parkedTTL {
+					_, err := c.retireBot(ctx, tx, now, cat, b, "parked_expired", "", "")
+					return err
+				}
+				return nil
+			}
 			if b.UnboundAt != nil && now.Sub(*b.UnboundAt) >= charterDuration(cat, b.Tenant, "identity", "unbound_ttl", defaultUnboundTTL) {
 				_, err := c.retireBot(ctx, tx, now, cat, b, "worker_gone", "", "")
 				return err

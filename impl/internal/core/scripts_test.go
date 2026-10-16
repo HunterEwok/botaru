@@ -23,6 +23,12 @@ type scriptRunBench struct {
 
 func newScriptRunBench(t *testing.T) *scriptRunBench {
 	t.Helper()
+	return newScriptRunBenchWith(t, nil)
+}
+
+// newScriptRunBenchWith is the script bench with extra manifests.
+func newScriptRunBenchWith(t *testing.T, extra []map[string]any) *scriptRunBench {
+	t.Helper()
 	b := newActionBench(t, func(ms []map[string]any) []map[string]any {
 		campaignHosts(ms)
 		var child map[string]any
@@ -68,7 +74,7 @@ func newScriptRunBench(t *testing.T) *scriptRunBench {
 			"apiVersion": "botaru/v1alpha1", "kind": "Group", "metadata": map[string]any{"name": "runners", "tenant": "demo"},
 			"spec": map[string]any{"caps": []any{"script.run"}, "data": []any{"summary"}},
 		}
-		return append(ms, child, checker, runners)
+		return append(append(ms, child, checker, runners), extra...)
 	})
 	// script.run is privileged: the membership goes in directly, as the code flow would leave it.
 	if _, err := b.c.st.Pool.Exec(context.Background(), `INSERT INTO memberships (tenant, principal, grp, state, created_at) VALUES ('demo', $1, 'runners', 'active', now())`, b.alice); err != nil {

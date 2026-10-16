@@ -104,6 +104,14 @@ func (c *Core) attributionStep(ctx context.Context, tx pgx.Tx, now time.Time, ca
 	if err := c.createAttributions(ctx, tx, now, cat, tv); err != nil {
 		return err
 	}
+	if err := c.createScriptLinks(ctx, tx, now, cat, tv); err != nil {
+		return err
+	}
+	if claimsV03() {
+		if err := c.createRejectionLinks(ctx, tx, now, cat, tv); err != nil {
+			return err
+		}
+	}
 	if err := c.dismissedAttributions(ctx, tx, now, tv.Name, ""); err != nil {
 		return err
 	}
@@ -164,7 +172,7 @@ func (c *Core) createAttributions(ctx context.Context, tx pgx.Tx, now time.Time,
 			if !open {
 				continue
 			}
-			if err := c.createAttribution(ctx, tx, now, tv, i.id, p.ID, "direct", "system"); err != nil {
+			if err := c.createAttribution(ctx, tx, now, tv, i.id, p.ID, "change", "direct", "system"); err != nil {
 				return err
 			}
 		}
@@ -172,48 +180,97 @@ func (c *Core) createAttributions(ctx context.Context, tx pgx.Tx, now time.Time,
 	return nil
 }
 
-// createAttribution writes a candidate once per incident and change and sends its card.
-func (c *Core) createAttribution(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, incident, proposal, rule, by string) error {
+// createAttribution writes a candidate once per incident and proposal and sends its card: the
+// attribution card for a change, and from v0.3 the link card for a rejected proposal only with
+// commission.accountability on (GOV-36, GOV-40). A v0.3 core writes attribution.v2.
+func (c *Core) createAttribution(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, incident, proposal, kind, rule, by string) error {
 	id := ids.New(ids.Attribution)
 	rec := map[string]any{"id": id, "tenant": tv.Name, "incident": incident, "proposal": proposal, "rule": rule, "created_by": by,
 		"created_at": fmtTime(now), "state": "candidate", "answer": nil, "reminders": 0, "cancel_reason": nil}
-	if err := c.spec.Validate("urn:botaru:schema:attribution:1", rec); err != nil {
+	schema := "urn:botaru:schema:attribution:1"
+	if claimsV03() {
+		rec["kind"], schema = kind, "urn:botaru:schema:attribution:2"
+	}
+	if err := c.spec.Validate(schema, rec); err != nil {
 		return fmt.Errorf("attribution record: %w", err)
 	}
 	raw, err := json.Marshal(rec)
 	if err != nil {
 		return err
 	}
-	tag, err := tx.Exec(ctx, `INSERT INTO attributions (id, tenant, incident, proposal, state, record, nonce, presented_at, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, 'candidate', $5, $6, $7, $7, $7) ON CONFLICT (incident, proposal) DO NOTHING`, id, tv.Name, incident, proposal, raw, ids.Secret(16), now)
+	tag, err := tx.Exec(ctx, `INSERT INTO attributions (id, tenant, incident, proposal, state, record, nonce, presented_at, created_at, updated_at, kind)
+		VALUES ($1, $2, $3, $4, 'candidate', $5, $6, $7, $7, $7, $8) ON CONFLICT (incident, proposal) DO NOTHING`, id, tv.Name, incident, proposal, raw, ids.Secret(16), now, kind)
 	if err != nil || tag.RowsAffected() == 0 {
 		return err
 	}
 	if _, err := c.appendAudit(ctx, tx, now, Audit{
 		Tenant: tv.Name, Kind: "command", Actor: Actor{Principal: "system", Via: "core"}, Command: "attribution.create",
-		Target: &Target{Kind: "attribution", ID: id}, OK: true, After: map[string]any{"incident": incident, "proposal": proposal, "rule": rule, "state": "candidate"},
+		Target: &Target{Kind: "attribution", ID: id}, OK: true, After: map[string]any{"incident": incident, "proposal": proposal, "rule": rule, "state": "candidate", "kind": kind},
 	}); err != nil {
 		return err
 	}
-	_, err = c.planGovCards(ctx, tx, now, tv, "attribution", id, attributionCard, "governance.attribute", proposalMark(ctx, tx, proposal), nil)
+	card, err := c.attributionCardKind(ctx, tx, tv, kind)
+	if err != nil || card == "" {
+		return err
+	}
+	_, err = c.planGovCards(ctx, tx, now, tv, "attribution", id, card, "governance.attribute", proposalMark(ctx, tx, proposal), nil)
 	return err
 }
 
-// attributionRow is an attribution candidate under its lock.
+// attributionCardKind is the card of a candidate of a kind, or "" when none goes: a link to a
+// rejected proposal gets its card only with commission.accountability on; in shadow code finds
+// it for the statistics and sends nothing (GOV-36, GOV-40). A script link has its own card
+// (TRN-7).
+func (c *Core) attributionCardKind(ctx context.Context, tx pgx.Tx, tv *TenantView, kind string) (string, error) {
+	switch kind {
+	case "script_run":
+		return scriptLinkCard, nil
+	case "rejected_proposal":
+	default:
+		return attributionCard, nil
+	}
+	cat, err := c.Catalog(ctx)
+	if err != nil {
+		return "", err
+	}
+	on, err := c.accountabilityOn(ctx, tx, cat, tv.Name)
+	if err != nil || on == nil {
+		return "", err
+	}
+	return rejectionLinkCard, nil
+}
+
+// cardOfAttributionKind is the decision row of a candidate's card in decision-points.yaml,
+// whatever the mode: the row's details_required applies to every kind (APR-14).
+func cardOfAttributionKind(kind string) string {
+	switch kind {
+	case "script_run":
+		return scriptLinkCard
+	case "rejected_proposal":
+		return rejectionLinkCard
+	}
+	return attributionCard
+}
+
+// attributionRow is an attribution candidate under its lock; Kind is change, rejected_proposal
+// (GOV-38) or script_run (TRN-7), and ScriptRun names the run of a script link, which has no
+// proposal.
 type attributionRow struct {
 	ID, Tenant, Incident, Proposal, State, Nonce string
+	Kind, ScriptRun                              string
 	Rec                                          map[string]any
 	PresentedAt, RemindedAt                      *time.Time
 }
 
 func loadAttribution(ctx context.Context, tx pgx.Tx, id string, lock bool) (*attributionRow, error) {
-	q := `SELECT id, tenant, incident, proposal, state, record, coalesce(nonce, ''), presented_at, reminded_at FROM attributions WHERE id = $1`
+	q := `SELECT id, tenant, incident, coalesce(proposal, ''), state, record, coalesce(nonce, ''), presented_at, reminded_at, kind, coalesce(script_run, '')
+		FROM attributions WHERE id = $1`
 	if lock {
 		q += ` FOR UPDATE`
 	}
 	a := &attributionRow{}
 	var raw []byte
-	err := tx.QueryRow(ctx, q, id).Scan(&a.ID, &a.Tenant, &a.Incident, &a.Proposal, &a.State, &raw, &a.Nonce, &a.PresentedAt, &a.RemindedAt)
+	err := tx.QueryRow(ctx, q, id).Scan(&a.ID, &a.Tenant, &a.Incident, &a.Proposal, &a.State, &raw, &a.Nonce, &a.PresentedAt, &a.RemindedAt, &a.Kind, &a.ScriptRun)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -237,6 +294,9 @@ func (c *Core) moveAttribution(ctx context.Context, tx pgx.Tx, now time.Time, a 
 	after := map[string]any{"state": state}
 	if ans := mmapAny(a.Rec["answer"]); ans != nil {
 		after["decision"], after["response_ms"], after["details_opened"] = ans["decision"], ans["response_ms"], ans["details_opened"]
+	}
+	if a.Rec["self_assessment"] == true {
+		after["self_assessment"] = true
 	}
 	via := "core"
 	if strings.HasPrefix(actor, "human:") {
@@ -291,6 +351,10 @@ func (c *Core) dismissedAttributions(ctx context.Context, tx pgx.Tx, now time.Ti
 			if err := attributionCanceled(ctx, tx, a); err != nil {
 				return err
 			}
+			// A link canceled this way returns the members who left for it (GOV-42).
+			if err := c.linkCanceled(ctx, tx, now, a); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -342,6 +406,13 @@ func (c *Core) remindAttributions(ctx context.Context, tx pgx.Tx, now time.Time,
 		if int(n) >= attributionRemindMax || last == nil || now.Sub(*last) < attributionRemindEvery {
 			continue
 		}
+		card, err := c.attributionCardKind(ctx, tx, tv, a.Kind)
+		if err != nil {
+			return err
+		}
+		if card == "" {
+			continue
+		}
 		a.Rec["reminders"] = int(n) + 1
 		raw, err := json.Marshal(a.Rec)
 		if err != nil {
@@ -350,7 +421,13 @@ func (c *Core) remindAttributions(ctx context.Context, tx pgx.Tx, now time.Time,
 		if _, err := tx.Exec(ctx, `UPDATE attributions SET record = $2, reminded_at = $3, updated_at = $3 WHERE id = $1`, a.ID, raw, now); err != nil {
 			return err
 		}
-		if _, err := c.planGovCards(ctx, tx, now, tv, "attribution", a.ID, attributionCard, "governance.attribute", proposalMark(ctx, tx, a.Proposal), map[string]any{"reminder": true}); err != nil {
+		if a.Kind == "script_run" {
+			if err := c.planScriptLinkCards(ctx, tx, now, tv, a.ID, a.ScriptRun, map[string]any{"reminder": true}); err != nil {
+				return err
+			}
+			continue
+		}
+		if _, err := c.planGovCards(ctx, tx, now, tv, "attribution", a.ID, card, "governance.attribute", proposalMark(ctx, tx, a.Proposal), map[string]any{"reminder": true}); err != nil {
 			return err
 		}
 	}
@@ -363,6 +440,12 @@ func (c *Core) attributionCardFields(ctx context.Context, tx pgx.Tx, cat *Catalo
 	a, err := loadAttribution(ctx, tx, id, false)
 	if err != nil || a == nil {
 		return nil, err
+	}
+	switch a.Kind {
+	case "script_run":
+		return c.scriptLinkCardFields(ctx, tx, cat, a)
+	case "rejected_proposal":
+		return c.rejectionLinkCardFields(ctx, tx, cat, a)
 	}
 	var class, kind, subject string
 	var opened time.Time
@@ -429,7 +512,7 @@ func (c *Core) decideAttribution(ctx context.Context, w *Worker, ob OnBehalf, re
 		if a.Nonce == "" || a.Nonce != req.Nonce {
 			return refuse("forbidden", "the nonce is not the card's")
 		}
-		press, err := c.checkPress(ctx, tx, now, cat, w, ob, "attribution", a.ID, []string{attributionCard})
+		press, err := c.checkPress(ctx, tx, now, cat, w, ob, "attribution", a.ID, attributionCards)
 		if err != nil {
 			return err
 		}
@@ -451,6 +534,18 @@ func (c *Core) decideAttribution(ctx context.Context, w *Worker, ob OnBehalf, re
 		if !hasCap(press.tv, press.groups, "governance.attribute") {
 			return deny("forbidden", "the person has no governance.attribute")
 		}
+		if a.Kind == "script_run" {
+			// TRN-7: not the person who pressed "Run", unless nobody else may decide.
+			self, ok, err := c.scriptLinkDecider(ctx, tx, now, press.tv, a, press.principal)
+			if err != nil {
+				return err
+			}
+			if !ok {
+				return deny("forbidden", "the person who pressed Run does not decide the link of the run")
+			}
+			// Every answer sets the mark anew: a later answer by another person is not one.
+			a.Rec["self_assessment"] = self
+		}
 		switch a.State {
 		case "candidate", "unknown", "rejected":
 		case "canceled":
@@ -459,13 +554,24 @@ func (c *Core) decideAttribution(ctx context.Context, w *Worker, ob OnBehalf, re
 			return refuse("already_decided", "the attribution is decided")
 		}
 		if a.State != "candidate" {
-			p, err := readProposal(ctx, tx, a.Proposal)
-			if err != nil {
-				return err
-			}
-			open, err := attributionWindowOpen(ctx, tx, now, cat, a.Tenant, a.Proposal, parseTime(asString(mmapAny(p.Rec["realization"])["realized_at"])))
-			if err != nil {
-				return err
+			open := false
+			switch a.Kind {
+			case "script_run":
+				if open, err = scriptLinkWindowOpen(ctx, tx, now, a.ScriptRun); err != nil {
+					return err
+				}
+			case "rejected_proposal":
+				// A link to a rejected proposal has no realization: its answer may change for the
+				// attribution window from its creation.
+				open = now.Before(parseTime(asString(a.Rec["created_at"])).Add(charterDuration(cat, a.Tenant, "attribution", "window", defaultAttributionWindow)))
+			default:
+				p, err := readProposal(ctx, tx, a.Proposal)
+				if err != nil {
+					return err
+				}
+				if open, err = attributionWindowOpen(ctx, tx, now, cat, a.Tenant, a.Proposal, parseTime(asString(mmapAny(p.Rec["realization"])["realized_at"]))); err != nil {
+					return err
+				}
 			}
 			if !open {
 				return refuse("already_decided", "the attribution window is closed; the answer is final")
@@ -478,7 +584,7 @@ func (c *Core) decideAttribution(ctx context.Context, w *Worker, ob OnBehalf, re
 				return err
 			}
 		}
-		if c.missingDetails(attributionCard, req.Decision, opened) {
+		if c.missingDetails(cardOfAttributionKind(a.Kind), req.Decision, opened) {
 			return deny("details_not_opened", `open "Details" first`)
 		}
 		state := map[string]string{"yes": "confirmed", "no": "rejected", "unknown": "unknown"}[req.Decision]
@@ -488,7 +594,23 @@ func (c *Core) decideAttribution(ctx context.Context, w *Worker, ob OnBehalf, re
 			return err
 		}
 		if state == "confirmed" {
-			if err := c.attributionConfirmed(ctx, tx, now, a); err != nil {
+			if a.Kind == "change" {
+				if err := c.attributionConfirmed(ctx, tx, now, a); err != nil {
+					return err
+				}
+			}
+			// HLD-9: links of kinds change and script_run count for the role whose work it was.
+			if err := c.roleIncidents(ctx, tx, now, a); err != nil {
+				return err
+			}
+			// From v0.3 code finds who answers for a link to a proposal, and with
+			// accountability on they leave in this transaction or wait for the pace (GOV-41,
+			// GOV-42); a script link names no proposal and no seat answers for it.
+			if a.Kind == "script_run" {
+				out.State = state
+				return nil
+			}
+			if err := c.linkConfirmed(ctx, tx, now, cat, a); err != nil {
 				return err
 			}
 		}

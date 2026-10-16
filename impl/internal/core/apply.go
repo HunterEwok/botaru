@@ -273,6 +273,19 @@ func (c *Core) applyOnce(ctx context.Context, op Operator, req ApplyRequest) (*A
 		}
 		res.Errors = append(res.Errors, gate...)
 		res.Warnings = append(res.Warnings, warns...)
+		// accountability on needs every seat held with enough scored forecasts, on a core that
+		// claims v0.3 (GOV-36).
+		if claimsV03() {
+			current, err := c.Catalog(ctx)
+			if err != nil {
+				return nil, err
+			}
+			errs, err = c.accountabilityLint(ctx, docs, index, current)
+			if err != nil {
+				return nil, err
+			}
+			res.Errors = append(res.Errors, errs...)
+		}
 	}
 	if len(res.Errors) == 0 {
 		if _, err := buildCatalog(after); err != nil {
@@ -442,6 +455,9 @@ func (c *Core) applyOnce(ctx context.Context, op Operator, req ApplyRequest) (*A
 		if err := c.syncSeats(ctx, tx, now, next); err != nil {
 			return err
 		}
+		if err := c.applyV03(ctx, tx, now, next); err != nil {
+			return err
+		}
 		if err := recordMetadataPeriods(ctx, tx, now, next); err != nil {
 			return err
 		}
@@ -469,7 +485,7 @@ func (c *Core) applyOnce(ctx context.Context, op Operator, req ApplyRequest) (*A
 		}
 		// The texts go to every charter of the store that pins them, the ones applied earlier
 		// included.
-		if err := storePersonas(ctx, tx, now, after, req.Personas); err != nil {
+		if err := storePersonas(ctx, tx, now, after, req.Personas, claimsV03()); err != nil {
 			return err
 		}
 		if err := notifyWork(ctx, tx); err != nil {
@@ -590,13 +606,13 @@ func (c *Core) personaTexts(ctx context.Context, sent map[string]string) (person
 }
 
 // storePersonas keeps the texts of the personas the applied charters pin, each in its tenant.
-func storePersonas(ctx context.Context, tx pgx.Tx, now time.Time, docs []manifest.Doc, sent map[string]string) error {
+func storePersonas(ctx context.Context, tx pgx.Tx, now time.Time, docs []manifest.Doc, sent map[string]string, v03 bool) error {
 	for _, d := range docs {
 		if d.Kind != "Governance" {
 			continue
 		}
 		spec, _ := d.Value["spec"].(map[string]any)
-		for _, r := range charterPersonas(spec) {
+		for _, r := range charterPersonas(spec, v03) {
 			text, ok := sent[r.SHA256]
 			if !r.pinned() || !ok {
 				continue

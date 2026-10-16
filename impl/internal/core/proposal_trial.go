@@ -71,7 +71,7 @@ func (c *Core) trialStep(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 	author := asString(origin["worker"])
 	to := minTime(now, end)
 	broke := false
-	for _, g := range asList(t["guards"]) {
+	for _, g := range append(asList(t["guards"]), asList(t["farm_guards"])...) {
 		gm := mmapAny(g)
 		if gm["broken_at"] != nil {
 			continue

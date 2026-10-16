@@ -173,11 +173,13 @@ type scriptRec struct {
 	FanoutLists []scriptFanout  `json:"fanout_lists,omitempty"`
 	// Marks are the code marks of each step for the run card (SCR-6, TRN-2); NeedsRun says
 	// whether "Run" needs the privileged script.run.
-	Marks      map[string][]string `json:"marks,omitempty"`
-	NeedsRun   bool                `json:"needs_script_run"`
-	StepMicros map[string]int64    `json:"step_micros,omitempty"`
-	StepTree   map[string]int      `json:"step_tree,omitempty"`
-	Deadline   string              `json:"run_deadline"`
+	Marks    map[string][]string `json:"marks,omitempty"`
+	NeedsRun bool                `json:"needs_script_run"`
+	// Unnamed are, per step, the targets the typed text does not name (TRN-10).
+	Unnamed    map[string]*unnamedTargets `json:"unnamed_targets,omitempty"`
+	StepMicros map[string]int64           `json:"step_micros,omitempty"`
+	StepTree   map[string]int             `json:"step_tree,omitempty"`
+	Deadline   string                     `json:"run_deadline"`
 	// Assignment is the text the initiator typed, the goal of {assignment: true} (SCR-4).
 	Assignment   string  `json:"assignment,omitempty"`
 	Role         string  `json:"role,omitempty"`
@@ -864,6 +866,26 @@ func (c *Core) acceptScript(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		if s.hasAction() || s.Kind == "confirm" || slices.Contains(rec.Marks[s.ID], "may_control_services") {
 			rec.NeedsRun = true
 		}
+		if u := unnamedOf(cat, tv, resources, s, rec.fanoutList(s.ID), assignment); u != nil {
+			if rec.Unnamed == nil {
+				rec.Unnamed = map[string]*unnamedTargets{}
+			}
+			rec.Unnamed[s.ID] = u
+			rec.Marks[s.ID] = append(rec.Marks[s.ID], "targets_not_in_assignment")
+		}
+	}
+	// HLD-9, HLD-3: under a no_action hold on the author role, a draft that acts (an action, or
+	// a step that may control services or run monitoring scripts) is rejected; read-only
+	// drafts still pass.
+	if c.scriptActs(cat, steps) {
+		held, err := heldBy(ctx, tx, now, []string{"no_action"}, append(tenantScopes(g.Tenant), scopeRef{kind: "role", tenant: g.Tenant, name: g.Role},
+			scopeRef{kind: "worker", tenant: g.Tenant, name: strings.ToLower(g.Worker)})...)
+		if err != nil {
+			return nil, nil, err
+		}
+		if held != "" {
+			return nil, &scriptProblem{Reason: "held", Detail: "a hold stops the actions of the role"}, nil
+		}
 	}
 	rec.Estimate.Micros = total
 	rec.Estimate.EUR = float64(money.CentsUp(total)) / 100
@@ -1077,9 +1099,11 @@ func (c *Core) insertRun(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 	if err != nil {
 		return "", false, err
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO script_runs (id, tenant, anchor_task, initiator, state, plan_hash, record, idempotency_key, nonce, expires_at, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, 'proposed', $5, $6, $7, $8, $9, $10, $10)`,
-		id, g.Tenant, g.Task, g.Initiator, acc.planHash, raw, key, ids.Secret(16), now.Add(scriptCardTTL), now); err != nil {
+	// The role and the mark stay in columns past the purge of the record (TRN-7, HLD-9).
+	if _, err := tx.Exec(ctx, `INSERT INTO script_runs (id, tenant, anchor_task, initiator, state, plan_hash, record, idempotency_key, nonce, expires_at, created_at, updated_at,
+		role, data_mark)
+		VALUES ($1, $2, $3, $4, 'proposed', $5, $6, $7, $8, $9, $10, $10, $11, $12)`,
+		id, g.Tenant, g.Task, g.Initiator, acc.planHash, raw, key, ids.Secret(16), now.Add(scriptCardTTL), now, nullable(acc.rec.Role), nullable(acc.rec.DataMark)); err != nil {
 		return "", false, err
 	}
 	for i, s := range acc.steps {
@@ -1388,7 +1412,15 @@ func scriptScopes(r *scriptRun, steps []scriptStep) []scopeRef {
 	if r.Rec.Role != "" {
 		s = append(s, scopeRef{kind: "role", tenant: r.Tenant, name: r.Rec.Role})
 	}
-	return s
+	return append(s, runWorkerScope(r)...)
+}
+
+// runWorkerScope is the scope of the worker that drafted a run, so its own hold counts too.
+func runWorkerScope(r *scriptRun) []scopeRef {
+	if r.Rec.Worker == "" {
+		return nil
+	}
+	return []scopeRef{{kind: "worker", tenant: r.Tenant, name: strings.ToLower(r.Rec.Worker)}}
 }
 
 // runHoldEffects are the hold effects that forbid the release or the execution of a step, and so
@@ -1421,8 +1453,9 @@ func runHoldScopes(r *scriptRun, defs []scriptStep) []scopeRef {
 	return s
 }
 
-// runHeld is the hold that covers a run with an effect of runHoldEffects, or "".
-func runHeld(ctx context.Context, tx pgx.Tx, now time.Time, r *scriptRun) (string, error) {
+// runHeld is the hold that covers a run with an effect of runHoldEffects, or "" (SCR-10); a
+// read fanout's campaign still pauses by itself (ORC-11).
+func (c *Core) runHeld(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, r *scriptRun) (string, error) {
 	defs, err := parseSteps(r.Rec.Script)
 	if err != nil {
 		return "", err
@@ -1447,7 +1480,26 @@ func runHeld(ctx context.Context, tx pgx.Tx, now time.Time, r *scriptRun) (strin
 	if err := rows.Err(); err != nil {
 		return "", err
 	}
-	return heldBy(ctx, tx, now, runHoldEffects, scopes...)
+	return runHeldBy(ctx, tx, now, r, c.scriptActs(cat, defs), runHoldEffects, scopes)
+}
+
+// runHeldBy is heldBy for a run, with the exception of HLD-9: a no_action hold on the scope of
+// the role that wrote the draft does not cover a run that does not act by the catalog at the
+// check, so read-only scripts of a held role still run. no_action on every other scope (the farm,
+// the tenant, the worker, a type, an action, a machine or resource) covers it as SCR-10 says.
+func runHeldBy(ctx context.Context, tx pgx.Tx, now time.Time, r *scriptRun, acts bool, effects []string, scopes []scopeRef) (string, error) {
+	if acts || r.Rec.Role == "" || !slices.Contains(effects, "no_action") {
+		return heldBy(ctx, tx, now, effects, scopes...)
+	}
+	other := slices.DeleteFunc(slices.Clone(effects), func(e string) bool { return e == "no_action" })
+	if len(other) > 0 {
+		if held, err := heldBy(ctx, tx, now, other, scopes...); err != nil || held != "" {
+			return held, err
+		}
+	}
+	role := scopeRef{kind: "role", tenant: r.Tenant, name: r.Rec.Role}
+	rest := slices.DeleteFunc(slices.Clone(scopes), func(s scopeRef) bool { return s == role })
+	return heldBy(ctx, tx, now, []string{"no_action"}, rest...)
 }
 
 // pauseHeldRuns moves the running runs of a tenant (every tenant for "") that a hold covers to
@@ -1463,6 +1515,10 @@ func (c *Core) pauseHeldRuns(ctx context.Context, tx pgx.Tx, now time.Time, tena
 		var k key
 		return k, row.Scan(&k.id, &k.tenant)
 	})
+	if err != nil || len(list) == 0 {
+		return err
+	}
+	cat, err := c.Catalog(ctx)
 	if err != nil {
 		return err
 	}
@@ -1474,7 +1530,7 @@ func (c *Core) pauseHeldRuns(ctx context.Context, tx pgx.Tx, now time.Time, tena
 		if r.State != "running" {
 			continue
 		}
-		held, err := runHeld(ctx, tx, now, r)
+		held, err := c.runHeld(ctx, tx, now, cat, r)
 		if err != nil {
 			return err
 		}
@@ -1489,7 +1545,9 @@ func (c *Core) pauseHeldRuns(ctx context.Context, tx pgx.Tx, now time.Time, tena
 
 // setRunState moves a run and writes its event and card updates.
 func (c *Core) setRunState(ctx context.Context, tx pgx.Tx, now time.Time, r *scriptRun, state, reason string) error {
-	if _, err := tx.Exec(ctx, `UPDATE script_runs SET state = $2, reason = $3, updated_at = $4 WHERE id = $1`, r.ID, state, nullable(reason), now); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE script_runs SET state = $2, reason = $3, updated_at = $4,
+		ended_at = CASE WHEN $2 IN ('completed', 'failed', 'canceled') AND started_at IS NOT NULL THEN coalesce(ended_at, $4) ELSE ended_at END WHERE id = $1`,
+		r.ID, state, nullable(reason), now); err != nil {
 		return err
 	}
 	r.State, r.Reason = state, reason
@@ -1553,7 +1611,14 @@ func (c *Core) startRun(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cata
 		d = farmScriptRunDeadline
 	}
 	at := now.Add(d)
-	if _, err := tx.Exec(ctx, `UPDATE script_runs SET tree_left = $2, deadline_at = $3 WHERE id = $1`, r.ID, r.Rec.Estimate.TreeTasks, at); err != nil {
+	// The targets fixed at "Run" are what a script link looks at (TRN-7).
+	defs, err := parseSteps(r.Rec.Script)
+	if err != nil {
+		return "", err
+	}
+	targets := runTargets(c.campaignResources(cat, r.Tenant, r.Rec.Mark), defs, r.Rec)
+	if _, err := tx.Exec(ctx, `UPDATE script_runs SET tree_left = $2, deadline_at = $3, targets = $4, started_at = $5 WHERE id = $1`,
+		r.ID, r.Rec.Estimate.TreeTasks, at, targets, now); err != nil {
 		return "", err
 	}
 	r.TreeLeft = r.Rec.Estimate.TreeTasks
@@ -1592,7 +1657,7 @@ func (c *Core) releaseSteps(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 			return nil
 		}
 		// While a hold covers the run, nothing of it is released: it pauses (SCR-10).
-		if held, err := runHeld(ctx, tx, now, r); err != nil {
+		if held, err := c.runHeld(ctx, tx, now, cat, r); err != nil {
 			return err
 		} else if held != "" {
 			return c.setRunState(ctx, tx, now, r, "paused", "held")
@@ -1906,7 +1971,7 @@ func (c *Core) releaseActionStep(ctx context.Context, tx pgx.Tx, now time.Time, 
 	if c.rs.validate(schema, args) != nil {
 		return c.endStep(ctx, tx, now, r, s, "failed", "input_schema_invalid", nil, s.Untrusted)
 	}
-	if held, err := heldBy(ctx, tx, now, []string{"no_action", "pause_action"}, approvalScopes(r.Tenant, def.Action, r.Rec.Role, "")...); err != nil {
+	if held, err := heldBy(ctx, tx, now, []string{"no_action", "pause_action"}, append(approvalScopes(r.Tenant, def.Action, r.Rec.Role, ""), runWorkerScope(r)...)...); err != nil {
 		return err
 	} else if held != "" {
 		return c.endStep(ctx, tx, now, r, s, "failed", "held", nil, s.Untrusted)
@@ -2686,7 +2751,8 @@ func (c *Core) scriptCommand(ctx context.Context, w *Worker, ob OnBehalf, id, no
 			if err != nil {
 				return err
 			}
-			if held, err := heldBy(ctx, tx, now, []string{"no_enqueue", "no_action"}, scriptScopes(r, defs)...); err != nil {
+			// A read-only run still runs under no_action on its own role (HLD-9).
+			if held, err := runHeldBy(ctx, tx, now, r, c.scriptActs(cat, defs), []string{"no_enqueue", "no_action"}, scriptScopes(r, defs)); err != nil {
 				return err
 			} else if held != "" {
 				return deny("held", "a hold covers the script")
@@ -2760,7 +2826,7 @@ func (c *Core) resumeRun(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 		return deny("deadline_exceeded", "the run deadline has passed")
 	}
 	// A hold that still covers the run keeps it paused (SCR-10).
-	if held, err := runHeld(ctx, tx, now, r); err != nil {
+	if held, err := c.runHeld(ctx, tx, now, cat, r); err != nil {
 		return err
 	} else if held != "" {
 		return deny("held", "a hold covers the run")

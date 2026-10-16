@@ -407,7 +407,8 @@ func grantEnded(ctx context.Context, tx pgx.Tx, now time.Time, task string) erro
 // left before its expiry; the grant becomes active and spends one attempt (MGR-18, GW-7). A grant
 // of kind grant is bound to the role that asked and to that role's ladder as the tenant allows it
 // now: another role claiming the task runs on its own slot and the grant stays approved. A
-// takeover grant goes to the attempt of the new task whichever role claims its type (MGR-21).
+// takeover grant goes to the attempt of the new task whichever role claims its type (MGR-21),
+// from v0.3 only to the role its eval gate checked (MGR-48).
 func claimGrant(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tenant, task, role string) (string, bool, error) {
 	var id, kind, grantRole, profile string
 	err := tx.QueryRow(ctx, `SELECT id, kind, role, profile FROM model_grants WHERE task = $1 AND state = 'approved' AND attempts_left > 0 AND expires_at > $2
@@ -419,6 +420,10 @@ func claimGrant(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, ten
 		return "", false, err
 	}
 	if kind == "grant" && (grantRole != role || !slices.Contains(grantLadder(cat, tenant, cat.Roles[role]), profile)) {
+		return "", false, nil
+	}
+	// From v0.3 a takeover grant is bound to the role whose eval report passed (MGR-48).
+	if kind == "takeover" && claimsV03() && grantRole != role {
 		return "", false, nil
 	}
 	if _, err := tx.Exec(ctx, `UPDATE model_grants SET state = 'active', attempts_left = attempts_left - 1, updated_at = $2 WHERE id = $1`, id, now); err != nil {
@@ -700,6 +705,16 @@ func (c *Core) grantSeatToolCall(ctx context.Context, tx pgx.Tx, now time.Time, 
 			return nil, err
 		}
 		return toolAnswer(map[string]any{"tenant": g.Tenant, "requests": list}, false), nil
+	}
+	// grant_decide writes; the restricted mode leaves only the reading (MGR-47).
+	var rec []byte
+	if err := tx.QueryRow(ctx, `SELECT record FROM tasks WHERE id = $1`, g.Task).Scan(&rec); err != nil {
+		return nil, err
+	}
+	if restricted, err := seatTaskRestricted(ctx, tx, g.Tenant, rec); err != nil {
+		return nil, err
+	} else if restricted {
+		return toolAnswer(map[string]any{"code": restrictedReason}, true), nil
 	}
 	var tool catalogTool
 	for _, t := range grantSeatTools(cat, g) {

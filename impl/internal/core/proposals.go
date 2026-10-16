@@ -46,6 +46,8 @@ type proposalAuthor struct {
 	Untrusted bool
 	Sources   []string
 	Readable  []string
+	// Seat marks a proposal of the farm manager seat from v0.3 (MGR-51).
+	Seat bool
 }
 
 // rejection is the refusal of one proposal body: no record, an event with the reason (PRP-1).
@@ -107,6 +109,22 @@ func (c *Core) createProposals(ctx context.Context, tx pgx.Tx, now time.Time, ca
 		return err
 	}
 	a.Acting = acting
+	a.Seat = seatOfRecord(rec) == managerSeatID && claimsV03()
+	// In restricted mode the seat proposes nothing in the tenant, unless its basis is a sev1
+	// incident opened during it (MGR-47); the proposals are dropped.
+	if a.Seat && len(bodies) > 0 {
+		if restricted, err := seatTaskRestricted(ctx, tx, w.Tenant, rec); err != nil {
+			return err
+		} else if restricted {
+			c.log.Info("proposals of the restricted farm manager seat dropped", "tenant", w.Tenant, "task", task, "count", len(bodies))
+			_, err := c.appendAudit(ctx, tx, now, Audit{
+				Tenant: w.Tenant, Kind: "command", Actor: Actor{Principal: principalOr(acting.Bot), Via: "seat", Role: w.Role, Task: task},
+				Command: "proposal.create", Target: &Target{Kind: "task", ID: task}, OK: false, Reason: restrictedReason,
+				After: map[string]any{"dropped": len(bodies)},
+			})
+			return err
+		}
+	}
 	// An aggregator's proposal takes the mark and the untrusted flag of its task, which carry
 	// the highest mark and the logical OR of the inputs it read (AGG-4).
 	if cat.TaskTypes[typ].Purpose == "aggregate" {
@@ -118,6 +136,13 @@ func (c *Core) createProposals(ctx context.Context, tx pgx.Tx, now time.Time, ca
 		if errors.As(err, &rj) {
 			if err := c.proposalRejected(ctx, tx, now, a, body, fp, string(rj)); err != nil {
 				return err
+			}
+			// A change the manager may not propose reaches the farm operators only as a code
+			// notice for information (MGR-51).
+			if a.Seat && rj == "forbidden_change" {
+				if err := c.managerProposalInfo(ctx, tx, now, cat, a.Tenant, body); err != nil {
+					return err
+				}
 			}
 			continue
 		}
@@ -186,6 +211,11 @@ func (c *Core) createProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat
 	}
 	for _, s := range subjects {
 		kind, _, _ := strings.Cut(s, ":")
+		// From v0.3 the author's own tenant is a subject too, the subject of the farm guards
+		// and of tenant incidents a rejected proposal can be linked to (PRP-26, GOV-38).
+		if claimsV03() && s == "tenant:"+a.Tenant {
+			continue
+		}
 		if !c.subjectOfTenant(cat, a.Tenant, kind, s) {
 			return "", rejection("forbidden_change")
 		}
@@ -193,6 +223,10 @@ func (c *Core) createProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat
 	kind := b.Change.Kind
 	// Permissions and security only for information (PRP-3).
 	if b.Category == "security" && kind != "none" {
+		return "", rejection("forbidden_change")
+	}
+	// The manager never proposes a change of its own seat, limits or catalog (MGR-16, MGR-51).
+	if a.Seat && managerRecusal(cat, a.Tenant, b.Change) {
 		return "", rejection("forbidden_change")
 	}
 	// After untrusted text only none or a manifest change in the safe direction (PRP-7).
@@ -266,11 +300,25 @@ func (c *Core) createProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return fp, err
 	}
-	// The flow limits of the role and the tenant (INS-4, PRP-5).
+	// From v0.3 a fingerprint the commission rejected comes back as a resubmission, no earlier
+	// than 30 days after that verdict and once per 90 days (PRP-24).
+	resub, err := c.resubmission(ctx, tx, now, a.Tenant, fp, body)
+	if err != nil {
+		return fp, err
+	}
+	// The flow limits of the role and the tenant (INS-4, PRP-5), and the manager's 2 a month
+	// (MGR-51).
 	if limited, err := proposalLimited(ctx, tx, now, cat, a); err != nil {
 		return fp, err
 	} else if limited {
 		return fp, rejection("proposal_rate_limited")
+	}
+	if a.Seat {
+		if limited, err := managerProposalLimited(ctx, tx, now, cat, a.Tenant); err != nil {
+			return fp, err
+		} else if limited {
+			return fp, rejection("proposal_rate_limited")
+		}
 	}
 	influence, self, err := selfInfluence(ctx, tx, now, a, b.Evidence, series)
 	if err != nil {
@@ -285,15 +333,23 @@ func (c *Core) createProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat
 	if a.Acting.Bot != "" {
 		actingBot, botEpoch = a.Acting.Bot, a.Acting.BotEpoch
 	}
+	origin := map[string]any{"role": a.Role, "worker": a.Worker, "acting_bot": actingBot, "bot_epoch": botEpoch, "task": a.Task, "level": a.Level}
+	if a.Seat {
+		// The seat's proposals never make anyone answer for a link (GOV-41, MGR-51).
+		origin["seat"] = managerSeatID
+	}
 	record := map[string]any{
 		"id": id, "tenant": a.Tenant,
-		"origin":      map[string]any{"role": a.Role, "worker": a.Worker, "acting_bot": actingBot, "bot_epoch": botEpoch, "task": a.Task, "level": a.Level},
+		"origin":      origin,
 		"fingerprint": fp, "data_mark": a.Mark,
 		"untrusted_seen": map[string]any{"value": a.Untrusted, "sources": sources},
 		"self_influence": influence, "self_evidence": self, "conflicts_with": []any{}, "seen_count": 1,
 		"state": "screened", "state_reason": nil, "body": body, "reviews": []any{}, "verdict": nil, "decision": nil,
 		"realization": nil, "trial": nil,
 		"evidence_seen": seen, "guarded": chk.Guarded, "targets": chk.Targets, "created_at": fmtTime(now),
+	}
+	if resub != nil {
+		record["resubmission"] = resub
 	}
 	if chk.Times != nil {
 		record["schedule_times"] = chk.Times
@@ -631,4 +687,59 @@ func strAny(ss []string) []any {
 		out[i] = s
 	}
 	return out
+}
+
+const (
+	// resubmitAfter is the wait after a rejecting verdict before its fingerprint comes back, and
+	// resubmitEvery the window with at most one resubmission per fingerprint (PRP-24).
+	resubmitAfter = 30 * 24 * time.Hour
+	resubmitEvery = 90 * 24 * time.Hour
+)
+
+// resubmission marks a new proposal whose fingerprint equals that of a proposal the commission
+// dismissed or parked by score (PRP-24): from any bot, with the credit to the new author, no
+// earlier than 30 days after that verdict and at most once per fingerprint in 90 days, otherwise
+// rejected(resubmit_too_early). The mark says whether the values of the change are the same, so
+// the first round's forecasts are scored by the resubmission's trial (COM-16). Reviewers never
+// see it (COM-15). Before v0.3 nothing is marked.
+func (c *Core) resubmission(ctx context.Context, tx pgx.Tx, now time.Time, tenant, fp string, body map[string]any) (map[string]any, error) {
+	if !claimsV03() {
+		return nil, nil
+	}
+	var prev string
+	var verdictAt time.Time
+	var change []byte
+	err := tx.QueryRow(ctx, `SELECT id, (record->'verdict'->>'computed_at')::timestamptz, coalesce(record->'body'->'change', 'null') FROM proposals
+		WHERE tenant = $1 AND fingerprint = $2 AND record->'verdict'->>'outcome' = ANY($3) ORDER BY (record->'verdict'->>'computed_at')::timestamptz DESC, id DESC LIMIT 1`,
+		tenant, fp, rejectedVerdicts).Scan(&prev, &verdictAt, &change)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if now.Before(verdictAt.Add(resubmitAfter)) {
+		return nil, rejection("resubmit_too_early")
+	}
+	var recent bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM proposals WHERE tenant = $1 AND fingerprint = $2 AND record ? 'resubmission' AND created_at > $3)`,
+		tenant, fp, now.Add(-resubmitEvery)).Scan(&recent); err != nil {
+		return nil, err
+	}
+	if recent {
+		return nil, rejection("resubmit_too_early")
+	}
+	var old any
+	if err := json.Unmarshal(change, &old); err != nil {
+		return nil, err
+	}
+	a, err := jcs.Hash(old)
+	if err != nil {
+		return nil, err
+	}
+	b, err := jcs.Hash(body["change"])
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"of": prev, "verdict_at": fmtTime(verdictAt), "same_values": a == b}, nil
 }
