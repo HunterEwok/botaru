@@ -240,9 +240,9 @@ func (c *Core) taskMark(rec []byte, class string) string {
 	return c.higherMark(class, r.DataMark)
 }
 
-// revokeWorkOf ends the tasks a principal has in work once their access no longer covers
+// revokeWorkOf cancels the tasks a principal has in work once their access no longer covers
 // them: the lease and handles go in the same transaction, so the worker is fenced at its next
-// call and no more task data reaches the model in their name (PRM-8, FEN-4).
+// call and no more task data reaches the model in their name (PRM-3, PRM-8, FEN-4).
 func (c *Core) revokeWorkOf(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, principal string) error {
 	cat, err := c.Catalog(ctx)
 	if err != nil {
@@ -279,20 +279,21 @@ func (c *Core) revokeWorkOf(ctx context.Context, tx pgx.Tx, now time.Time, tv *T
 		if reason == "" {
 			continue
 		}
-		if _, err := tx.Exec(ctx, `DELETE FROM handles WHERE work_id = $1`, w.id); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx, `UPDATE leases SET state = 'revoked', reason = $3, closed_at = $2 WHERE work_id = $1 AND state = 'active'`, w.id, now, reason); err != nil {
-			return err
-		}
-		if err := c.settleMessages(ctx, tx, now, w.id); err != nil {
-			return err
-		}
-		if err := c.failTask(ctx, tx, now, tv.Name, w.id, principal, w.rec, reason); err != nil {
+		if err := c.cancelTaskIDs(ctx, tx, now, tv.Name, []string{w.id}, revokedReason(reason)); err != nil {
 			return err
 		}
 	}
 	return c.recheckApprovalsOf(ctx, tx, now, tv, principal)
+}
+
+// revokedReason is the cancellation reason of a task whose initiator lost access (PRM-3): a
+// disabled or unknown initiator gives person_inactive, a lost task:<type> or data:<class>
+// right gives rights_revoked.
+func revokedReason(reason string) string {
+	if reason == "person_inactive" {
+		return reason
+	}
+	return "rights_revoked"
 }
 
 // hasLabels says whether a worker has every label a task type requires.
@@ -519,7 +520,8 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		if reason, err := c.accessLost(ctx, tx, now, tv, accessPrincipal(initiator, rec), "task:"+typ, cat.TaskTypes[typ].DataClass); err != nil {
 			return nil, err
 		} else if reason != "" {
-			if err := c.failTask(ctx, tx, now, w.Tenant, id, initiator, rec, reason); err != nil {
+			// The task is canceled, not failed, without spending an attempt (PRM-3).
+			if err := c.cancelTaskIDs(ctx, tx, now, w.Tenant, []string{id}, revokedReason(reason)); err != nil {
 				return nil, err
 			}
 			continue
