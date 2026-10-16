@@ -264,9 +264,10 @@ type RuntimeDecl struct {
 
 // runtimeRefusal says why a runtime declaration blocks the worker, or "" if it does not.
 // A runtime that keeps sessions or memory in its own store must answer erase and match
-// (RT-5); this version of the core sends a runtime purge work (RET-11) but no match work yet,
-// so it cannot search such a store and blocks every runtime_internal declaration.
-func runtimeRefusal(kind string, r *RuntimeDecl) string {
+// (RT-5): the core sends it match work for a person's erase_match and erase work by the ids
+// it found (RET-11). A runtime that attributes the model per profile runs one attempt at a
+// time (RT-3).
+func runtimeRefusal(kind string, capacity int, r *RuntimeDecl) string {
 	if r == nil {
 		return ""
 	}
@@ -280,9 +281,17 @@ func runtimeRefusal(kind string, r *RuntimeDecl) string {
 		if !slices.Contains(r.Erasure, "erase") || !slices.Contains(r.Erasure, "match") {
 			return "runtime_internal without erase and match (RT-5)"
 		}
-		return "runtime_internal: this core does not yet send match work to a runtime (RT-5)"
+	}
+	if r.ModelAttribution == "per_profile" && capacity > 1 {
+		return "model_attribution per_profile with a capacity above 1 (RT-3)"
 	}
 	return ""
+}
+
+// perProfile says whether the worker's runtime declared model_attribution per_profile at
+// hello (RT-3).
+func perProfile(w *Worker) bool {
+	return w.Hello != nil && w.Hello.Runtime != nil && w.Hello.Runtime.ModelAttribution == "per_profile"
 }
 
 // DriverCaps are the capabilities a channel declares at hello.
@@ -323,7 +332,7 @@ func (c *Core) Hello(ctx context.Context, w *Worker, req HelloRequest) (*HelloRe
 	}
 	mismatch := req.Kind != w.Kind
 	why := "hello does not match the enroll record"
-	if r := runtimeRefusal(w.Kind, req.Runtime); r != "" {
+	if r := runtimeRefusal(w.Kind, req.Capacity, req.Runtime); r != "" {
 		mismatch, why = true, r
 	}
 	for k, v := range req.Labels {
@@ -374,6 +383,12 @@ func (c *Core) Hello(ctx context.Context, w *Worker, req HelloRequest) (*HelloRe
 		// A hello reports every plugin: one not reported down is ok again.
 		if w.Kind == "toolhost" && !mismatch {
 			if err := c.pluginHealth(ctx, tx, now, w, req.Health, true); err != nil {
+				return err
+			}
+		}
+		// A channel reports the time of its last successful poll (OBS-10).
+		if w.Kind == "channel" && !mismatch {
+			if err := channelUpstream(ctx, tx, w, req.Health); err != nil {
 				return err
 			}
 		}

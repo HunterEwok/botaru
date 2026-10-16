@@ -702,6 +702,7 @@ type ModelProfile struct {
 	Rank                  int      `json:"rank"`
 	Pool                  string   `json:"pool"`
 	Fallback              []string `json:"fallback"`
+	FallbackOn            []string `json:"fallback_on"`
 	MaxOutputTokens       int      `json:"max_output_tokens"`
 	TokensPerS            int      `json:"tokens_per_s"`
 	Price                 Price    `json:"price"`

@@ -2131,6 +2131,13 @@ def lint_deploy(topo, f, where):
             if shared:
                 f.note('listener_admin_worker_network', where,
                        f'machine {hname}: P2 network {shared} is among the worker networks (IDN-7)')
+    # SEC-6, TEN-3: a channel, a toolhost and a monitoring adapter act for one tenant and name it,
+    # so a revoked secret of theirs holds that tenant's scope.
+    for hname, h in hosts.items():
+        for pr in (h or {}).get('processes') or []:
+            if pr.get('kind') in ('channel', 'toolhost', 'monitor') and not pr.get('tenant'):
+                f.error('process_tenant_missing', where,
+                        f'machine {hname}: process {pr.get("name")} of kind {pr.get("kind")} names no tenant (SEC-6, TEN-3)')
     # D-88: farm on one server and without a monitoring system (MON-2, RET-5).
     core_hosts = {hn for hn, h in hosts.items() for pr in (h or {}).get('processes') or [] if pr.get('kind') == 'core'}
     production = any((hosts.get(hn) or {}).get('kind', 'production') == 'production' for hn in core_hosts)

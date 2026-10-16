@@ -518,10 +518,10 @@ func TestWorkerRevokeRuntimePurge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// This core blocks a runtime_internal runtime at hello (RT-5); the declaration stays.
+	// A runtime_internal runtime that answers erase and match passes hello (RT-5).
 	if _, err := b.c.Hello(ctx, w, HelloRequest{Kind: "agent", ProtocolVersions: []string{"v1"},
-		Runtime: &RuntimeDecl{Session: "runtime_internal", Erasure: []string{"erase", "match"}}}); err == nil {
-		t.Fatal("a runtime_internal runtime passed hello")
+		Runtime: &RuntimeDecl{Session: "runtime_internal", Erasure: []string{"erase", "match"}}}); err != nil {
+		t.Fatal(err)
 	}
 	if _, err := b.c.WorkerRevoke(ctx, b.op, WorkerRequest{Op: "worker.revoke", Worker: w.ID}); err != nil {
 		t.Fatal(err)

@@ -710,11 +710,13 @@ func TestActivityNeedsActiveChannel(t *testing.T) {
 	}
 }
 
-// TestHelloRuntimeDeclaration: the runtime declaration of an agent is kept, and a runtime that
-// keeps its own store, or one with built-in tools, blocks the worker (RT-1, RT-2, RT-5, INJ-9).
+// TestHelloRuntimeDeclaration: the runtime declaration of an agent is kept; a runtime that keeps
+// its own store without erase and match, one with built-in tools, or one with model_attribution
+// per_profile and a capacity above 1 blocks the worker (RT-1, RT-2, RT-3, RT-5, INJ-9).
 func TestHelloRuntimeDeclaration(t *testing.T) {
 	ctx := context.Background()
 	b := newBench(t)
+	capacity := 0
 	hello := func(rt *RuntimeDecl) error {
 		r, err := b.c.Enroll(ctx, b.op, EnrollRequest{Tenant: "demo", Role: "hello", Kind: "agent"})
 		if err != nil {
@@ -724,7 +726,7 @@ func TestHelloRuntimeDeclaration(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		_, err = b.c.Hello(ctx, w, HelloRequest{Kind: "agent", ProtocolVersions: []string{"v1"}, Runtime: rt})
+		_, err = b.c.Hello(ctx, w, HelloRequest{Kind: "agent", ProtocolVersions: []string{"v1"}, Runtime: rt, Capacity: capacity})
 		if err == nil {
 			again, aerr := b.c.AuthenticateWorker(ctx, r.Token)
 			if aerr != nil {
@@ -736,18 +738,29 @@ func TestHelloRuntimeDeclaration(t *testing.T) {
 		}
 		return err
 	}
-	if err := hello(&RuntimeDecl{Session: "farm", Memory: "farm"}); err != nil {
-		t.Fatalf("farm runtime: %v", err)
+	for _, rt := range []*RuntimeDecl{
+		{Session: "farm", Memory: "farm"},
+		{Session: "runtime_internal", Memory: "runtime_internal", Erasure: []string{"erase", "match"}},
+		{Session: "farm", Memory: "farm", ModelAttribution: "per_profile"},
+	} {
+		if err := hello(rt); err != nil {
+			t.Fatalf("runtime %+v: %v", rt, err)
+		}
 	}
 	for _, rt := range []*RuntimeDecl{
 		{Memory: "runtime_internal"},
-		{Session: "runtime_internal", Erasure: []string{"erase", "match"}},
+		{Session: "runtime_internal", Erasure: []string{"erase"}},
 		{Memory: "farm", BuiltInTools: []string{"web_search"}},
 	} {
 		var r *Problem
 		if err := hello(rt); !errors.As(err, &r) || r.Reason != "blocked" {
 			t.Fatalf("runtime %+v: want blocked, got %v", rt, err)
 		}
+	}
+	capacity = 2
+	var r *Problem
+	if err := hello(&RuntimeDecl{ModelAttribution: "per_profile"}); !errors.As(err, &r) || r.Reason != "blocked" {
+		t.Fatalf("per_profile with capacity 2: want blocked, got %v", err)
 	}
 }
 

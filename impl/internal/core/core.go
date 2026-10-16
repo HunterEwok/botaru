@@ -69,6 +69,19 @@ type Config struct {
 	// ExportKeys are the public keys of export sinks by their key_ref (x25519:<base64>), for a
 	// tenant export and for a person's copy without a key of its own request (LCY-2, SEC-10).
 	ExportKeys map[string]string
+	// DeployFile is the deployment description (DEP-10): linted at start and by doctor, the
+	// source of the farm nodes and of the secret uses of secret.revoke (SEC-6). Empty means
+	// none: doctor warns.
+	DeployFile string
+	// ProviderKeySecrets maps the name of a secret that is a provider key to the tenants whose
+	// workspace it serves (SEC-6): a compromised key holds those tenants.
+	ProviderKeySecrets map[string][]string
+	// CoreSecrets are the names of the farm's own secrets of the core (SEC-6): with a
+	// deployment description, each secret it gives the core is one of these or a provider key,
+	// and each provider key is among the core's secrets, or the core does not start.
+	CoreSecrets []string
+	// Workspaces are the provider workspace ceilings the deployment describes (GW-9).
+	Workspaces WorkspaceCeilings
 	// FreeSpace, when set, measures the store volume instead of Health.StoreVolume: free and
 	// total bytes. A test sets a mock measurement here.
 	FreeSpace func() (free, total uint64, err error)
@@ -122,6 +135,10 @@ type Core struct {
 	// answer then), from which a loop that never ticked counts its age (OBS-4).
 	running   atomic.Bool
 	startedAt atomic.Int64
+	// deploy is the deployment description read at start, nil without one (DEP-10).
+	deploy *DeployDescription
+	// fallbacks caches the eval attestations of fallback profiles per manifest set (GW-5).
+	fallbacks fallbackCache
 	// bench holds the faults the test-control port injected (teststand.go); zero elsewhere.
 	bench benchFaults
 }
@@ -144,6 +161,9 @@ func New(ctx context.Context, cfg Config, st *store.Store, sp *spec.Spec, tx *te
 	c := &Core{cfg: cfg, st: st, spec: sp, texts: tx, log: cfg.Logger, rs: newResultSchemas()}
 	c.epoch.Store(meta.Epoch)
 	c.wake = newWaker()
+	if err := c.loadDeploy(); err != nil {
+		return nil, err
+	}
 	cat, err := c.Catalog(ctx)
 	if err != nil {
 		return nil, err
