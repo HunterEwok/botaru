@@ -2321,12 +2321,15 @@ func managerLineShort(ts, farmManager, seatProfile map[string]any) []string {
 	return out
 }
 
+// reProviderName is the shape of a provider name that may name a binding note: one path segment.
+var reProviderName = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+
 // nonEURegion says whether a region of a provider is outside the EU by the provider binding's
 // table: a row of the "Region" section of spec/bindings/model-providers/<provider>.md whose
 // name does not start with eu, as ci/check_manifests.py reads it (D-86 (6), GW-14). A provider
 // without a binding note, such as the test providers of the examples, has no such region.
 func (c *Core) nonEURegion(provider, region string) bool {
-	if region == "" || provider == "" || strings.ContainsAny(provider, "/\\.") || provider == "README" || provider == "mock" {
+	if region == "" || !reProviderName.MatchString(provider) || provider == "README" || provider == "mock" {
 		return false
 	}
 	raw, err := os.ReadFile(filepath.Join(c.spec.Root, "spec", "bindings", "model-providers", provider+".md"))
