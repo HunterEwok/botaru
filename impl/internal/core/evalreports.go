@@ -3,10 +3,14 @@
 package core
 
 import (
+	"context"
 	"regexp"
 	"slices"
 	"sort"
 	"strings"
+	"time"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/HunterEwok/botaru/impl/internal/jcs"
 	"github.com/HunterEwok/botaru/impl/internal/manifest"
@@ -245,4 +249,31 @@ func lintTranslatorEvals(docs []manifest.Doc, S *lintSet, f *lintFindings) error
 // (APR-9).
 func productionTenant(tv *TenantView) bool {
 	return tv != nil && strings.TrimSpace(tv.Spec.Kind) != "test"
+}
+
+// seatProfile is the model profile the farm manager seat runs on: the farm charter's
+// model_profile, else the main slot of the seat's role (MGR-1).
+func seatProfile(cat *Catalog, role manifest.Role) string {
+	if mp := mstr(managerCharter(cat), "model_profile"); mp != "" {
+		return mp
+	}
+	_, p := mainSlot(role)
+	return p
+}
+
+// seatEvalWait says whether a seat task of a production tenant must wait for the eval of the
+// seat model profile, and sends the farm operators with admin:governance the notice
+// seat_eval_missing_notice once a day per profile (MGR-23).
+func (c *Core) seatEvalWait(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, waiting string, role manifest.Role) (bool, error) {
+	profile := seatProfile(cat, role)
+	if seatEvalPassed(catalogEvalReports(cat), profile) {
+		return false, nil
+	}
+	first, err := markOnce(ctx, tx, now, farmTenant, "seat_eval_missing:"+profile, 24*time.Hour)
+	if err != nil || !first {
+		return true, err
+	}
+	params := map[string]any{"profile": profile}
+	params["tenant"] = waiting
+	return true, c.noticeAdmins(ctx, tx, now, cat, []string{farmTenant}, "seat_eval_missing_notice", "notice.seat_eval_missing", params, "admin:governance")
 }

@@ -403,6 +403,19 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 				skip = append(skip, id)
 				continue
 			}
+			// The seat's tasks of a production tenant wait until the seat model profile has
+			// passed the mgr-inj set (MGR-23).
+			if seat == managerSeatID && productionTenant(tv) {
+				if wait, err := c.seatEvalWait(ctx, tx, now, cat, w.Tenant, role); err != nil {
+					return nil, err
+				} else if wait {
+					if err := markWaiting(ctx, tx, now, w.Tenant, nil, []string{id}, "seat_eval_missing"); err != nil {
+						return nil, err
+					}
+					skip = append(skip, id)
+					continue
+				}
+			}
 			acting = a
 		} else if own != nil {
 			acting = actingOf{Bot: own.ID, BotEpoch: own.Epoch}
