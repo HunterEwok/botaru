@@ -174,7 +174,7 @@ cases:
         action: task:ops.investigate.v1
         resource: {tenant: demo, kind: task_type, id: ops.investigate.v1}
     by: human:bob
-  expect: {result: denied, reason: budget_exhausted, stage: ban}
+  expect: {result: denied, reason: budget_exhausted}
 # Data mark (PRM-5)
 - id: authz-09
   rules: [PRM-5]

@@ -157,17 +157,20 @@ func (c *Core) newLease(ctx context.Context, tx pgx.Tx, now time.Time, w *Worker
 	if a.Seat != "" {
 		se = a.SeatEpoch
 	}
+	// One read of the epoch: the lease row and its token carry the same one, even if a test
+	// bench restore moves it meanwhile.
+	epoch := c.epoch.Load()
 	if _, err := tx.Exec(ctx, `INSERT INTO leases (work_id, lease_no, kind, tenant, worker_id, epoch, state, lease_until, run_id, created_at, acting_bot, bot_epoch, seat, seat_epoch)
 		VALUES ($1, $2, $3, $4, $5, $6, 'active', $7, $8, $9, $10, $11, $12, $13)`,
-		workID, leaseNo, kind, w.Tenant, w.ID, c.epoch, until, nullable(runID), now, nullable(a.Bot), be, nullable(a.Seat), se); err != nil {
+		workID, leaseNo, kind, w.Tenant, w.ID, epoch, until, nullable(runID), now, nullable(a.Bot), be, nullable(a.Seat), se); err != nil {
 		return nil, err
 	}
-	tok, err := c.issueToken(c.epoch, workID, leaseNo, w.ID, a)
+	tok, err := c.issueToken(epoch, workID, leaseNo, w.ID, a)
 	if err != nil {
 		return nil, err
 	}
 	return &WorkItem{
-		WorkID: workID, Kind: kind, LeaseNo: leaseNo, Epoch: c.epoch, Tenant: w.Tenant,
+		WorkID: workID, Kind: kind, LeaseNo: leaseNo, Epoch: epoch, Tenant: w.Tenant,
 		LeaseUntil: fmtTime(until), LeaseRemainingS: leaseS, Token: tok,
 	}, nil
 }
@@ -616,7 +619,7 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		h := "bh_" + ids.Secret(32)
 		if _, err := tx.Exec(ctx, `INSERT INTO handles (hash, kind, tenant, work_id, lease_no, epoch, worker_id, created_at)
 			VALUES ($1, 'tools', $2, $3, $4, $5, $6, $7)`,
-			c.hashSecret(h), w.Tenant, id, leaseNo, c.epoch, w.ID, now); err != nil {
+			c.hashSecret(h), w.Tenant, id, leaseNo, item.Epoch, w.ID, now); err != nil {
 			return nil, err
 		}
 		handles["tools"] = h
@@ -634,7 +637,7 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		h := "bh_" + ids.Secret(32)
 		if _, err := tx.Exec(ctx, `INSERT INTO handles (hash, kind, tenant, work_id, lease_no, epoch, worker_id, slot, profile, created_at)
 			VALUES ($1, 'model', $2, $3, $4, $5, $6, $7, $8, $9)`,
-			c.hashSecret(h), w.Tenant, id, leaseNo, c.epoch, w.ID, slot, profile, now); err != nil {
+			c.hashSecret(h), w.Tenant, id, leaseNo, item.Epoch, w.ID, slot, profile, now); err != nil {
 			return nil, err
 		}
 		handles["model"] = h

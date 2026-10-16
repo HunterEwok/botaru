@@ -326,7 +326,7 @@ func (c *Core) AuditQuery(ctx context.Context, op Operator, req AuditQueryReques
 		rows, err := tx.Query(ctx, `SELECT seq, record FROM audit WHERE tenant = $1 AND epoch = $2 AND seq > $3 AND at >= $4 AND at < $5
 			AND ($6 = '' OR record->>'kind' = $6) AND ($7 = '' OR record->'actor'->>'principal' = $7)
 			AND ($8 = '' OR record->>'command' = $8) AND ($9 = '' OR record->'target'->>'kind' = $9)
-			ORDER BY seq LIMIT $10`, op.Tenant, c.epoch, req.AfterSeq, from, to, req.Kind, req.Actor, req.Command, req.TargetKind, limit+1)
+			ORDER BY seq LIMIT $10`, op.Tenant, c.epoch.Load(), req.AfterSeq, from, to, req.Kind, req.Actor, req.Command, req.TargetKind, limit+1)
 		if err != nil {
 			return err
 		}
