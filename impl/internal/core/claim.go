@@ -131,7 +131,7 @@ func (c *Core) claimOnce(ctx context.Context, w *Worker, kinds []string) (*WorkI
 				item, err = c.claimAttempt(ctx, tx, now, cat, w)
 			case k == "toolcall" && w.Kind == "toolhost":
 				item, err = c.claimToolcall(ctx, tx, now, cat, w)
-			case k == "erasure" && (w.Kind == "sink" || w.Kind == "monitor"):
+			case k == "erasure" && (w.Kind == "sink" || w.Kind == "monitor" || w.Kind == "channel" || w.Kind == "agent"):
 				item, err = c.claimErasure(ctx, tx, now, w)
 			}
 			if err != nil || item != nil {
