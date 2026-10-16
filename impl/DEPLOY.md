@@ -418,7 +418,7 @@ The check is the same as section 8. For a real model, set `base_url` in `core.ya
 A farm built from the first version of this guide keeps its store, settings, secrets and worker tokens. The core changes the store by itself at its first start, and those migrations are not undone, so the steps keep a way back:
 
 1. Note the commit of the checkout (`git -C /opt/botaru/src rev-parse HEAD`), then stop the channel, the agent and the core, in this order.
-2. Back up the store while the farm is stopped, for example `pg_dump -Fc botaru > botaru-before-upgrade.dump` (for a store in a container, `docker exec <container> pg_dump -U <admin> -Fc botaru > ...`, without `-t`, which breaks the binary output). Copy `/opt/botaru/bin` and `/etc/botaru` aside as well.
+2. Back up the store while the farm is stopped, for example `sudo -u postgres pg_dump -Fc botaru > botaru-before-upgrade.dump` (for a store in a container, `docker exec <container> pg_dump -U <admin> -Fc botaru > ...`, without `-t`, which breaks the binary output; with compose, `docker compose exec -T`). Copy `/opt/botaru/bin` and `/etc/botaru` aside as well.
 3. Update the checkout and build again. The first version may have been checked out from a branch or a commit, so fetch and check out the commit you want rather than `git pull`:
 
    ```sh
@@ -428,12 +428,12 @@ A farm built from the first version of this guide keeps its store, settings, sec
 
    Run git as the owner of the checkout. If the build runs as another user (for example root on a checkout of `botaru`), add `-buildvcs=false`, or the build stops with `error obtaining VCS status`.
 4. The channel now reads its message texts from the checkout (`spec/bindings/channels/messages/`). It finds the checkout by itself when the programs are in `/opt/botaru/bin` and the checkout in `/opt/botaru/src`. Otherwise add `-spec-root /opt/botaru/src` to the `ExecStart` of its unit, or `Environment=BOTARU_SPEC_ROOT=/opt/botaru/src`, then run `systemctl daemon-reload`. Of the programs, the core (`spec_root` in its settings), the channel and `farmctl apply -drop-unsupported` read the checkout; `farmctl` finds it as a parent of the working directory, or takes `-spec-root`.
-5. The keys of the code text catalog have new names, and the notices have new parameters: `ai_notice` is now `notice.ai` and `privacy_notice` is `notice.privacy` (see `spec/bindings/channels/messages/en.yaml`). A locale file in `texts_dir` with the old keys still loads, but its old keys are not used, so those texts fall back to English. Rewrite such files with the keys of the catalog.
+5. The keys of the code text catalog have new names: `ai_notice` is now `notice.ai` and `privacy_notice` is `notice.privacy`, and both notices take new parameters such as `{tenant}`, `{operator}` and `{controller}` (see `spec/bindings/channels/messages/en.yaml`). A locale file in `texts_dir` with the old keys still loads, but its old keys are not used, so those texts fall back to English. Rewrite such files with the keys of the catalog.
 6. Add the new `operator` setting to `/etc/botaru/core.yaml` (section 5). It names the operator in the AI notice. Without it the notice says "the operator of this farm", and the core logs a warning at start.
 7. Start the core first. It applies the new store migrations by itself at start; they keep the old records and move planned notices to the new text names.
 8. Apply the manifests again (section 7) with `-drop-unsupported`, then start the agent and the channel.
 
-To go back: stop the farm, restore the store from the backup of step 2 into an empty database (`dropdb`, `createdb -O botaru botaru`, `pg_restore -d botaru`), check out the noted commit, put back the copied programs and settings, and start the core, the agent and the channel. An older core is not guaranteed to work on a store that a newer core has migrated, so never skip the restore.
+To go back: stop the farm, restore the store from the backup of step 2 into an empty database (`sudo -u postgres dropdb botaru`, `sudo -u postgres createdb -O botaru botaru`, `sudo -u postgres pg_restore -d botaru botaru-before-upgrade.dump`), check out the noted commit, put back the copied programs and settings, and start the core, the agent and the channel. An older core is not guaranteed to work on a store that a newer core has migrated, so never skip the restore. Go back only right after a failed upgrade: the restore drops everything the new core did since, including erasures it ran, and deliveries it made may be sent again. This is not the restore procedure of "Backups and restore" (`farmctl restore begin`), which the first version does not have.
 
 ## Troubleshooting
 
