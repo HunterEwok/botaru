@@ -850,11 +850,19 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 			}
 			if kind == cardUpdate && replaces == "" {
 				var sending bool
-				if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM deliveries WHERE id = $1 AND state IN ('planned', 'sending'))`, b["of"]).Scan(&sending); err != nil {
+				var cardAt *time.Time
+				err := tx.QueryRow(ctx, `SELECT true, run_at FROM deliveries WHERE id = $1 AND state IN ('planned', 'sending')`, b["of"]).Scan(&sending, &cardAt)
+				if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 					return nil, err
 				}
 				if sending {
-					if _, err := tx.Exec(ctx, `UPDATE deliveries SET run_at = $2 WHERE id = $1`, id, now.Add(5*time.Second)); err != nil {
+					// A card deferred by the card limit goes at its run_at; the update waits
+					// for it instead of asking again every few seconds (APR-15).
+					next := now.Add(5 * time.Second)
+					if cardAt != nil && cardAt.After(next) {
+						next = *cardAt
+					}
+					if _, err := tx.Exec(ctx, `UPDATE deliveries SET run_at = $2 WHERE id = $1`, id, next); err != nil {
 						return nil, err
 					}
 				} else if _, err := tx.Exec(ctx, `UPDATE deliveries SET state = 'withheld', reason = 'ref_invalid', updated_at = $2 WHERE id = $1`, id, now); err != nil {

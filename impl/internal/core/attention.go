@@ -27,8 +27,12 @@ func (c *Core) decisionPoint(kind string) map[string]any {
 }
 
 // detailsRequired says whether a decision on a card of this kind is accepted only after the
-// person opened "Details" of the card: details_required: true of its row (APR-14).
+// person opened "Details" of the card: details_required: true of its row (APR-14). When the
+// registry cannot be read it fails closed: every decision needs "Details".
 func (c *Core) detailsRequired(cardKind, decision string) bool {
+	if _, err := c.spec.Registry("spec/model/decision-points.yaml"); err != nil {
+		return true
+	}
 	d, _ := c.decisionPoint(cardKind)["decisions"].(map[string]any)
 	row, _ := d[decision].(map[string]any)
 	return row["details_required"] == true
@@ -74,7 +78,8 @@ const maxPause = 7 * 24 * time.Hour
 var pauseScopes = []string{"tenant", "role", "tasktype", "action", "host", "resource", "bot_group", "bot"}
 
 // approvalHoldScopes are the hold scopes of a pending approval: the farm, the tenant, the
-// action, the role and type of the request, the bot of the attempt that asked, and the machine
+// action, the role and type of the request, the bot of the attempt that asked and the bot groups
+// of its worker, and the machine
 // and catalog resource of the write call its arguments name (HLD-3, HLD-8, MON-9).
 func (c *Core) approvalHoldScopes(ctx context.Context, tx pgx.Tx, cat *Catalog, a *approvalRow) ([]scopeRef, error) {
 	typ, bot := "", ""
@@ -90,6 +95,23 @@ func (c *Core) approvalHoldScopes(ctx context.Context, tx pgx.Tx, cat *Catalog, 
 	scopes := approvalScopes(a.Tenant, a.Action, role, typ)
 	if bot != "" {
 		scopes = append(scopes, scopeRef{kind: "bot", tenant: a.Tenant, name: bot})
+	}
+	// The bot groups of the worker whose attempt asked, as they stand now (BGR-1).
+	if tv := cat.Tenants[a.Tenant]; tv != nil && a.SourceTask != "" && len(tv.BotGroups) > 0 {
+		var worker string
+		err := tx.QueryRow(ctx, `SELECT worker_id FROM leases WHERE work_id = $1 ORDER BY lease_no DESC LIMIT 1`, a.SourceTask).Scan(&worker)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return nil, err
+		}
+		if worker != "" {
+			_, groups, err := workerGroups(ctx, tx, tv, worker)
+			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+				return nil, err
+			}
+			for _, g := range groups {
+				scopes = append(scopes, scopeRef{kind: "bot_group", tenant: a.Tenant, name: g})
+			}
+		}
 	}
 	if act, ok := c.actionOf(cat, a.Action); ok && a.Action != serviceAction {
 		if pl, ok := cat.Plugins[act.Executor.Plugin]; ok {
@@ -124,10 +146,19 @@ func (c *Core) syncPause(ctx context.Context, tx pgx.Tx, now time.Time, a *appro
 		if a.PausedSince != nil {
 			return true, nil
 		}
-		if _, err := tx.Exec(ctx, `UPDATE approvals SET paused_since = $2, updated_at = $2 WHERE id = $1`, a.ID, now); err != nil {
+		// The pause starts with the hold, or with the approval when the hold is older.
+		var start time.Time
+		if err := tx.QueryRow(ctx, `SELECT created_at FROM holds WHERE id = $1`, held).Scan(&start); err != nil {
 			return false, err
 		}
-		a.PausedSince = &now
+		start = maxTime(start, a.CreatedAt)
+		if start.After(now) {
+			start = now
+		}
+		if _, err := tx.Exec(ctx, `UPDATE approvals SET paused_since = $2, updated_at = $3 WHERE id = $1`, a.ID, start, now); err != nil {
+			return false, err
+		}
+		a.PausedSince = &start
 		if err := c.appendEvent(ctx, tx, now, a.Tenant, Event{Type: "approval.paused", Subject: a.ID,
 			Data: map[string]any{"approval": a.ID, "action": a.Action, "hold": held}}); err != nil {
 			return false, err
@@ -137,20 +168,38 @@ func (c *Core) syncPause(ctx context.Context, tx pgx.Tx, now time.Time, a *appro
 	if a.PausedSince == nil {
 		return false, nil
 	}
-	// The pause lasted until the last pause_action hold on the scopes ended, by its until or
-	// by a release, and never past now.
-	end := now
-	var last *time.Time
-	if err := tx.QueryRow(ctx, `SELECT max(least(coalesce(h.ended_at, h.until), $5)) FROM holds h
+	// The pause is the union of the intervals of the pause_action holds on the scopes since
+	// the pause began, each up to its until or release, and never past now.
+	rows, err := tx.Query(ctx, `SELECT greatest(h.created_at, $4), least(coalesce(h.ended_at, h.until, $5), coalesce(h.until, $5), $5) FROM holds h
 		JOIN unnest($1::text[], $2::text[], $3::text[]) AS s(k, t, n) ON h.scope_kind = s.k AND h.scope_tenant = s.t AND h.scope_name = s.n
-		WHERE 'pause_action' = ANY(h.effects) AND coalesce(h.ended_at, h.until) > $4`,
-		scopeCols(scopes, 0), scopeCols(scopes, 1), scopeCols(scopes, 2), *a.PausedSince, now).Scan(&last); err != nil {
+		WHERE 'pause_action' = ANY(h.effects) AND coalesce(h.ended_at, h.until, $5) > $4 AND h.created_at < $5 ORDER BY 1`,
+		scopeCols(scopes, 0), scopeCols(scopes, 1), scopeCols(scopes, 2), *a.PausedSince, now)
+	if err != nil {
 		return false, err
 	}
-	if last != nil && last.Before(end) {
-		end = *last
+	var d time.Duration
+	var curStart, curEnd time.Time
+	for rows.Next() {
+		var from, to time.Time
+		if err := rows.Scan(&from, &to); err != nil {
+			rows.Close()
+			return false, err
+		}
+		if !to.After(from) {
+			continue
+		}
+		if curEnd.IsZero() || from.After(curEnd) {
+			d += curEnd.Sub(curStart)
+			curStart, curEnd = from, to
+		} else if to.After(curEnd) {
+			curEnd = to
+		}
 	}
-	d := max(end.Sub(*a.PausedSince), 0)
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return false, err
+	}
+	d += curEnd.Sub(curStart)
 	if left := maxPause - time.Duration(a.PausedTotalS)*time.Second; d > left {
 		d = max(left, 0)
 	}
@@ -265,6 +314,10 @@ func (c *Core) cardLimit(ctx context.Context, tx pgx.Tx, now time.Time, tv *Tena
 		limit = *p
 	}
 	day := tenantDay(tv, now)
+	// One count per person at a time, so two claims cannot both pass the limit.
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 7300107))`, tv.Name+"/"+recipient); err != nil {
+		return false, err
+	}
 	var got int
 	if err := tx.QueryRow(ctx, `SELECT count(*) FROM deliveries WHERE tenant = $1 AND recipient = $2 AND handed_at >= $3 AND kind = ANY($4)`,
 		tv.Name, recipient, day, c.decisionKinds()).Scan(&got); err != nil {
@@ -321,8 +374,9 @@ func (c *Core) subjectExpiry(ctx context.Context, tx pgx.Tx, tv *TenantView, sub
 
 // firstCardDelivery rewrites, once, the expiry of a subject of a non-urgent card in the
 // transaction of the first delivery of its card to any recipient, so the deadline counts from
-// it (APR-15): the presentation time of a proposal, and the deadline of a memory record or a
-// person's request moved by the time since it was created.
+// it (APR-15): the presentation time of a proposal, the deadline of a memory record set to the
+// first delivery plus its card TTL, and the deadline of a person's request moved by the time
+// since it was created.
 func (c *Core) firstCardDelivery(ctx context.Context, tx pgx.Tx, now time.Time, subjectKind, id string) error {
 	tag, err := tx.Exec(ctx, `INSERT INTO card_first_deliveries (subject_kind, subject_id, delivered_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
 		subjectKind, id, now)
@@ -331,9 +385,12 @@ func (c *Core) firstCardDelivery(ctx context.Context, tx pgx.Tx, now time.Time, 
 	}
 	switch subjectKind {
 	case "proposal":
+		// The decide_ttl counts from the presentation, which becomes this first delivery; a
+		// proposal taken back from presentation (presented_at NULL) keeps none.
 		_, err = tx.Exec(ctx, `UPDATE proposals SET presented_at = $2 WHERE id = $1 AND presented_at IS NOT NULL`, id, now)
 	case "memory_record":
-		_, err = tx.Exec(ctx, `UPDATE memory_items SET decide_by = decide_by + ($2 - created_at) WHERE id = $1 AND decide_by IS NOT NULL AND $2 > created_at`, id, now)
+		_, err = tx.Exec(ctx, `UPDATE memory_items SET decide_by = $2::timestamptz + $3::interval WHERE id = $1 AND decide_by IS NOT NULL`,
+			id, now, memoryCardTTL)
 	case "subject_request":
 		_, err = tx.Exec(ctx, `UPDATE subject_requests SET deadline_at = deadline_at + ($2 - created_at) WHERE id = $1 AND $2 > created_at`, id, now)
 	}

@@ -126,6 +126,20 @@ func TestTwoApprovers(t *testing.T) {
 	if by := upd.body["card"].(map[string]any)["approved_by"].([]any); len(by) != 1 || by[0] != b.bob {
 		t.Fatalf("the card shows %v", upd.body["card"])
 	}
+	// A reminder goes only to the approver who has not voted.
+	b.alarmTx(t, func(tx pgx.Tx, now time.Time) error {
+		cat, err := b.c.Catalog(ctx)
+		if err != nil {
+			return err
+		}
+		if n, err := b.c.remindApprovers(ctx, tx, now, cat.Tenants["demo"], a); err != nil || n != 1 {
+			t.Fatalf("reminded %d %v", n, err)
+		}
+		return nil
+	})
+	if got := b.drain(t); slices.ContainsFunc(got, func(s sent) bool { return s.chat == "direct:1002" && s.kind == approvalCard }) {
+		t.Fatalf("a voter was reminded %+v", got)
+	}
 	res, err = b.c.Decide(ctx, b.channel, press("telegram:1003", "direct:1003", carolCard.external), req)
 	if err != nil || res.State != "executing" {
 		t.Fatalf("the second approval %+v %v", res, err)
@@ -507,12 +521,20 @@ func TestDigestPace(t *testing.T) {
 		t.Fatalf("next free slot %v", slot)
 	}
 	ins("dl_wait", nil, *slot, "planned")
+	// One the person's preferences deferred is never replaced (DLV-10).
+	ins("dl_quiet", nil, slot.Add(time.Minute), "planned")
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE deliveries SET paced = true WHERE id = 'dl_wait'`); err != nil {
+		t.Fatal(err)
+	}
 	if again := pace(); again == nil || !again.Equal(*slot) {
 		t.Fatalf("the newer digest takes the slot %v", again)
 	}
 	var state, reason string
 	if err := b.c.st.Pool.QueryRow(ctx, `SELECT state, reason FROM deliveries WHERE id = 'dl_wait'`).Scan(&state, &reason); err != nil || state != "withheld" || reason != "superseded" {
 		t.Fatalf("the waiting digest %s %s %v", state, reason, err)
+	}
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT state FROM deliveries WHERE id = 'dl_quiet'`).Scan(&state); err != nil || state != "planned" {
+		t.Fatalf("the deferred digest %s %v", state, err)
 	}
 }
 
@@ -618,22 +640,90 @@ func TestScheduleChangeTimes(t *testing.T) {
 	now := time.Date(2027, 1, 10, 12, 0, 0, 0, time.UTC)
 	op := manifestOp{Op: "set", Field: "spec.cron", Value: "30 2 * * *"}
 	op.Target.Kind, op.Target.Name = "Schedule", "morning"
-	times, err := b.c.checkScheduleTimes(now, cat, tv, op)
+	times, err := b.c.checkScheduleTimes(now, cat, tv, "morning", []manifestOp{op})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if d, r := times["times_disappear"], times["times_repeat"]; fmt.Sprint(d) != "[2027-03-28 02:30]" || fmt.Sprint(r) != "[2027-10-31 02:30]" {
 		t.Fatalf("times %v", times)
 	}
-	if times, _ := b.c.checkScheduleTimes(now, cat, tv, manifestOp{Op: "set", Target: op.Target, Field: "spec.cron", Value: "0 5 * * *"}); times != nil {
+	clear := op
+	clear.Value = "0 5 * * *"
+	if times, _ := b.c.checkScheduleTimes(now, cat, tv, "morning", []manifestOp{clear}); times != nil {
 		t.Fatalf("a time clear of the transitions %v", times)
+	}
+	// A zone apply does not take, and both ops of one proposal checked together.
+	zone := op
+	zone.Field, zone.Value = "spec.timezone", "Local"
+	if _, err := b.c.checkScheduleTimes(now, cat, tv, "morning", []manifestOp{zone}); err != rejection("forbidden_change") {
+		t.Fatalf("zone Local: %v", err)
+	}
+	zone.Value = "UTC"
+	if times, _ := b.c.checkScheduleTimes(now, cat, tv, "morning", []manifestOp{op, zone}); times != nil {
+		t.Fatalf("a cron in UTC has no transitions %v", times)
 	}
 	backup := *cat
 	backup.TaskTypes = maps.Clone(cat.TaskTypes)
 	tt := backup.TaskTypes["hello.greet.v1"]
 	tt.MakesBackup = true
 	backup.TaskTypes["hello.greet.v1"] = tt
-	if _, err = b.c.checkScheduleTimes(now, &backup, tv, op); err != rejection("schedule_time_invalid") {
+	if _, err = b.c.checkScheduleTimes(now, &backup, tv, "morning", []manifestOp{op}); err != rejection("schedule_time_invalid") {
 		t.Fatalf("a backup schedule that loses a slot: %v", err)
 	}
+}
+
+// A campaign approval is one press, so an action with approvals: 2 is not run as a campaign
+// (APR-16).
+func TestTwoApproversNoCampaign(t *testing.T) {
+	b := newActionBench(t, func(ms []map[string]any) []map[string]any {
+		campaignHosts(ms)
+		for _, m := range ms {
+			s := m["spec"].(map[string]any)
+			switch {
+			case m["kind"] == "Role":
+				s["profile"] = "manager"
+				s["campaigns"] = map[string]any{"propose": "action"}
+			case m["kind"] == "Action" && m["metadata"].(map[string]any)["name"] == "fix_web":
+				s["approvals"] = 2
+				s["campaign"] = map[string]any{"allowed": true, "max_items": 3, "max_in_flight": 1, "canary_min": 1, "after_canary": "manual", "max_failures_max": 0}
+			}
+		}
+		return ms
+	})
+	_, h := b.attemptTools(t, "1", false)
+	if !containsString(toolNames(t, b.bench, h), proposeCampaignName) {
+		return
+	}
+	tmpl := map[string]any{"kind": "action", "action": "fix_web", "args": map[string]any{}}
+	if r := proposeCall(t, b.bench, h, map[string]any{"template": tmpl, "items": map[string]any{"resources": []any{"web1"}}}); r.State != "rejected" {
+		t.Fatalf("a campaign of a two approver action %+v", r)
+	}
+}
+
+// A pause_action hold on a bot group of the worker that asked pauses its approvals (HLD-8).
+func TestPauseActionBotGroup(t *testing.T) {
+	ctx := context.Background()
+	b := newActionBench(t, func(ms []map[string]any) []map[string]any {
+		return append(ms, map[string]any{"apiVersion": "botaru/v1alpha1", "kind": "BotGroup", "metadata": map[string]any{"name": "pool", "tenant": "demo"},
+			"spec": map[string]any{"select": map[string]any{"roles": []any{b0Role(ms)}}}})
+	})
+	a, _ := b.pendingCards(t, "1")
+	if _, err := b.c.HoldSet(ctx, OperatorActor(b.op), HoldSetRequest{Scope: HoldScope{Kind: "bot_group", Tenant: "demo", Name: "pool"},
+		Effects: []string{"pause_action"}, Reason: "manual"}); err != nil {
+		t.Fatal(err)
+	}
+	b.tick(t, "approval-expiry")
+	if got := b.approval(t, a.ID); got.PausedSince == nil {
+		t.Fatalf("the approval under a bot group hold is not paused: %+v", got)
+	}
+}
+
+// b0Role is the name of the first Role of a manifest set.
+func b0Role(ms []map[string]any) string {
+	for _, m := range ms {
+		if m["kind"] == "Role" {
+			return m["metadata"].(map[string]any)["name"].(string)
+		}
+	}
+	return ""
 }

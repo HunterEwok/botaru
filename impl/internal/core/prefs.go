@@ -126,7 +126,7 @@ func (c *Core) prefsDefer(ctx context.Context, tx pgx.Tx, now time.Time, cat *Ca
 		s := "daily:" + until.UTC().Format(time.RFC3339)
 		mark = &s
 	}
-	if _, err := tx.Exec(ctx, `UPDATE deliveries SET run_at = $2, digest_of = $3, updated_at = $4 WHERE id = $1`, id, until, mark, now); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE deliveries SET run_at = $2, digest_of = $3, paced = false, updated_at = $4 WHERE id = $1`, id, until, mark, now); err != nil {
 		return false, err
 	}
 	return true, nil

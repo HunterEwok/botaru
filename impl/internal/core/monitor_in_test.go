@@ -509,6 +509,12 @@ func TestMaintenanceWindow(t *testing.T) {
 	if hs = holds(); len(hs) != 0 {
 		t.Fatalf("a released window set a new hold %+v", hs)
 	}
+	// The release stays remembered for the window id after its end (MON-9).
+	poll(70, "ended", 0)
+	poll(71, "active", 120*time.Second)
+	if hs = holds(); len(hs) != 0 {
+		t.Fatalf("a released window set a new hold after its end %+v", hs)
+	}
 	b.c.cfg.FarmHosts = []string{"web1.example.org"}
 	defer func() { b.c.cfg.FarmHosts = nil }()
 	poll(8, "ended", 0)

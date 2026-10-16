@@ -821,6 +821,10 @@ func (c *Core) remindApprovers(ctx context.Context, tx pgx.Tx, now time.Time, tv
 	}
 	n := 0
 	for _, p := range people {
+		// One who already voted on a two approver request is not reminded (APR-16).
+		if slices.ContainsFunc(a.Votes, func(v approvalVote) bool { return v.By == p }) {
+			continue
+		}
 		var had bool
 		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM deliveries WHERE subject_kind = 'approval' AND subject_id = $1 AND kind = 'approval_card' AND recipient = $2)`,
 			a.ID, p).Scan(&had); err != nil {

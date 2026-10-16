@@ -466,7 +466,8 @@ func campaignActions(cat *Catalog, g *toolsGrant) []string {
 	}
 	var out []string
 	for _, a := range requestableActions(cat, g) {
-		if act, ok := cat.Actions[a]; ok && act.Campaign != nil && act.Campaign.Allowed {
+		// An action with two approvers is not offered: a campaign card takes one press (APR-16).
+		if act, ok := cat.Actions[a]; ok && act.Campaign != nil && act.Campaign.Allowed && act.Approvals < 2 {
 			out = append(out, a)
 		}
 	}
@@ -904,7 +905,9 @@ func (c *Core) admitCampaign(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 	var actCampaign *manifest.ActionCampaign
 	if p.Kind == "action" {
 		a, ok := cat.Actions[p.Action]
-		if !ok || a.Campaign == nil || !a.Campaign.Allowed {
+		// The campaign approval is one press; an action that needs two approvers is never
+		// run under it (APR-16).
+		if !ok || a.Campaign == nil || !a.Campaign.Allowed || a.Approvals >= 2 {
 			return no("campaign_policy_exceeded")
 		}
 		act, actCampaign = a, a.Campaign

@@ -36,6 +36,9 @@ ALTER TABLE deliveries ADD COLUMN handed_at timestamptz;
 ALTER TABLE deliveries ADD COLUMN card_expires_at timestamptz;
 -- A delivery collected into a person's daily digest names the digest delivery (DLV-10).
 ALTER TABLE deliveries ADD COLUMN digest_of text;
+-- A digest that waits for the pace of its chat; only such a digest is replaced by a newer one
+-- (REP-10), never one that a person's preferences deferred (DLV-10).
+ALTER TABLE deliveries ADD COLUMN paced boolean NOT NULL DEFAULT false;
 CREATE INDEX deliveries_handed ON deliveries (tenant, recipient, handed_at) WHERE handed_at IS NOT NULL;
 
 -- The digest pace of a chat binding (REP-10).
@@ -50,6 +53,7 @@ CREATE TABLE maintenance_windows (
     hold           text NOT NULL,
     released       boolean NOT NULL DEFAULT false,
     created_at     timestamptz NOT NULL,
+    ended_at       timestamptz,            -- the last ended event; the row is removed 30 days later
     PRIMARY KEY (node, maintenance_id)
 );
 

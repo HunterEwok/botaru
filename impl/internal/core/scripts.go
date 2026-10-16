@@ -622,6 +622,11 @@ func (c *Core) acceptScript(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 			if !ok || act.Script == nil || !act.Script.Allowed {
 				return unknown("the action is not allowed in a script")
 			}
+			// The script gate is one press; an action that needs two approvers is not a
+			// script step (APR-16).
+			if act.Approvals >= 2 {
+				return nil, &scriptProblem{Step: n, Reason: "script_invalid", Detail: "the action needs two approvers"}, nil
+			}
 		}
 		if a := s.approversOf(); a != "" {
 			if _, ok := cat.Actions[a]; !ok {

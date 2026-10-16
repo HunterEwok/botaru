@@ -23,6 +23,8 @@ const (
 	// maxMaintenanceUntil bounds the until of one event: two poll intervals of at most 300
 	// seconds each, so an adapter cannot hold a machine for long with one poll.
 	maxMaintenanceUntil = 600 * time.Second
+	// maintenanceKeep is how long the row of an ended window is kept.
+	maintenanceKeep = 30 * 24 * time.Hour
 )
 
 type maintenanceEvent struct {
@@ -74,10 +76,15 @@ func (c *Core) maintenanceSignal(ctx context.Context, w *Worker, cat *Catalog, d
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return err
 		}
+		// Windows that ended long ago are forgotten.
+		if _, err := tx.Exec(ctx, `DELETE FROM maintenance_windows WHERE ended_at < $1`, now.Add(-maintenanceKeep)); err != nil {
+			return err
+		}
 		if ev.State == "ended" {
 			// The window is over: the hold ends at its until; a later active event of the same
-			// id (a periodic window) is a new period (MON-9).
-			_, err := tx.Exec(ctx, `DELETE FROM maintenance_windows WHERE node = $1 AND maintenance_id = $2`, host.Node, ev.MaintenanceID)
+			// id (a periodic window) is a new period. The row stays, so a release by a person
+			// is remembered for the window id (MON-9).
+			_, err := tx.Exec(ctx, `UPDATE maintenance_windows SET ended_at = $3 WHERE node = $1 AND maintenance_id = $2`, host.Node, ev.MaintenanceID, now)
 			return err
 		}
 		if until.After(now.Add(maxMaintenanceUntil)) {
@@ -89,6 +96,9 @@ func (c *Core) maintenanceSignal(ctx context.Context, w *Worker, cat *Catalog, d
 		if found {
 			if released {
 				return nil
+			}
+			if _, err := tx.Exec(ctx, `UPDATE maintenance_windows SET ended_at = NULL WHERE node = $1 AND maintenance_id = $2`, host.Node, ev.MaintenanceID); err != nil {
+				return err
 			}
 			h, err := loadHold(ctx, tx, holdID, true)
 			if err != nil {
@@ -128,7 +138,7 @@ func (c *Core) maintenanceSignal(ctx context.Context, w *Worker, cat *Catalog, d
 			return err
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO maintenance_windows (node, maintenance_id, tenant, hold, created_at) VALUES ($1, $2, $3, $4, $5)
-			ON CONFLICT (node, maintenance_id) DO UPDATE SET hold = $4, released = false, created_at = $5`,
+			ON CONFLICT (node, maintenance_id) DO UPDATE SET hold = $4, created_at = $5, ended_at = NULL`,
 			host.Node, ev.MaintenanceID, w.Tenant, id, now); err != nil {
 			return err
 		}

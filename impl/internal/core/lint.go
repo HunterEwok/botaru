@@ -2158,15 +2158,17 @@ func (c *Core) lintTwoApprovers(f *lintFindings, S *lintSet) {
 			}
 			requested := grants("action.request:" + a.name)
 			if n == 1 {
+				// A role of the tenant, or one without a tenant, that lists the action.
 				for _, r := range S.each("Role") {
-					if slices.Contains(mstrs(r.spec, "actions_may_request"), a.name) {
+					if (r.tenant == "" || r.tenant == t.name) && slices.Contains(mstrs(r.spec, "actions_may_request"), a.name) {
 						requested = true
 					}
 				}
 				if requested {
-					f.add(t, "high_risk_one_approver", "")
+					f.add(a, "high_risk_one_approver", "/approvals")
 				}
-			} else if requested && !grants("action.approve:"+a.name) {
+			} else if !grants("action.approve:" + a.name) {
+				// The note does not depend on who may request the action (APR-16).
 				c.log.Warn("apply: no group grants action.approve for a high risk action with two approvers", "code", "approvers_fewer_than_two",
 					"tenant", t.name, "action", a.name)
 			}

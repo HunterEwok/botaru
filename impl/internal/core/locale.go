@@ -117,15 +117,10 @@ func tenantLocale(cat *Catalog, tenant string) string {
 }
 
 // replyLocale is the reply_locale of an attempt (DLV-18): the same order for the recipient of
-// the task result, which is the schedule's addresses for a task of a schedule, the bound chat
-// for a request from a group chat, and the initiator otherwise. The model does not choose it.
+// the task result: its own locale (the bound chat for a request from a group chat, the
+// initiator otherwise), then the schedule's for a task of a schedule, the tenant's, en. The
+// model does not choose it.
 func (c *Core) replyLocale(ctx context.Context, tx pgx.Tx, cat *Catalog, tenant, task, initiator string, r treeRecord) (string, error) {
-	tl := tenantLocale(cat, tenant)
-	if s, err := taskSchedule(ctx, tx, cat, tenant, task); err != nil {
-		return "", err
-	} else if s != nil {
-		return c.pickLocale(s.locale, tl), nil
-	}
 	own := ""
 	var err error
 	if o := r.Origin; o != nil && o.Chat.Kind == "group" {
@@ -136,5 +131,11 @@ func (c *Core) replyLocale(ctx context.Context, tx pgx.Tx, cat *Catalog, tenant,
 	if err != nil {
 		return "", err
 	}
-	return c.pickLocale(own, tl), nil
+	sched := ""
+	if s, err := taskSchedule(ctx, tx, cat, tenant, task); err != nil {
+		return "", err
+	} else if s != nil {
+		sched = s.locale
+	}
+	return c.pickLocale(own, sched, tenantLocale(cat, tenant)), nil
 }

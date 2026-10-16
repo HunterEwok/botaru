@@ -577,7 +577,7 @@ func (c *Core) deliverDigest(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 		if err != nil || runAt == nil {
 			return err
 		}
-		_, err = tx.Exec(ctx, `UPDATE deliveries SET run_at = $2 WHERE id = $1`, id, *runAt)
+		_, err = tx.Exec(ctx, `UPDATE deliveries SET run_at = $2, paced = true WHERE id = $1`, id, *runAt)
 		return err
 	}
 	name, err := scheduleOf(ctx, tx, r.treeRecord, task)

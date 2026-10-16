@@ -40,7 +40,7 @@ func (c *Core) digestPace(ctx context.Context, tx pgx.Tx, now time.Time, tenant,
 	var waiting string
 	var slot time.Time
 	err := tx.QueryRow(ctx, `SELECT id, run_at FROM deliveries WHERE tenant = $1 AND kind = 'digest' AND exec_name = $2 AND target_id = $3
-		AND state = 'planned' AND run_at > $4 ORDER BY run_at LIMIT 1 FOR UPDATE`, tenant, channel, target, now).Scan(&waiting, &slot)
+		AND state = 'planned' AND paced AND run_at > $4 ORDER BY run_at LIMIT 1 FOR UPDATE`, tenant, channel, target, now).Scan(&waiting, &slot)
 	if err == nil {
 		if _, err := tx.Exec(ctx, `UPDATE deliveries SET state = 'withheld', reason = 'superseded', updated_at = $2 WHERE id = $1`, waiting, now); err != nil {
 			return nil, err
