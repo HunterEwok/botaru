@@ -146,6 +146,13 @@ func (c *Core) reapWith(ctx context.Context, reason string, spends bool) error {
 			if mark != nil && *mark == "core_unavailable" {
 				reason, spends = "core_unavailable", false
 			}
+			// A lease of a draining worker that expires after its drain deadline is not
+			// spent (LCY-4).
+			if drained, err := drainedLease(ctx, tx, &l); err != nil {
+				return err
+			} else if drained {
+				reason, spends = "worker_drain", false
+			}
 			if _, err := tx.Exec(ctx, `UPDATE leases SET state = 'expired', reason = $3, closed_at = $4 WHERE work_id = $1 AND lease_no = $2`,
 				l.WorkID, l.LeaseNo, reason, now); err != nil {
 				return err

@@ -338,7 +338,8 @@ func (c *Core) Hello(ctx context.Context, w *Worker, req HelloRequest) (*HelloRe
 		if err != nil {
 			return err
 		}
-		if _, err := tx.Exec(ctx, `UPDATE workers SET hello = $2, state = CASE WHEN state = 'draining' AND $4 THEN state ELSE $3 END WHERE id = $1`,
+		if _, err := tx.Exec(ctx, `UPDATE workers SET hello = $2, state = CASE WHEN state = 'draining' AND $4 THEN state ELSE $3 END,
+			drain_deadline = CASE WHEN state = 'draining' AND $4 THEN drain_deadline END WHERE id = $1`,
 			w.ID, raw, state, drain != ""); err != nil {
 			return err
 		}

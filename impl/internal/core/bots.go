@@ -337,6 +337,8 @@ func (c *Core) retireBot(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 type WorkerRequest struct {
 	Op     string `json:"op"`
 	Worker string `json:"worker"`
+	// Deadline is the drain deadline of worker.drain (LCY-4).
+	Deadline string `json:"deadline,omitempty"`
 }
 
 // WorkerRevoke is P2 worker.revoke (IDN-4, IDN-8): the token stops working, the running
@@ -367,6 +369,10 @@ func (c *Core) WorkerRevoke(ctx context.Context, op Operator, req WorkerRequest)
 		}
 		// Its own inbox and its state values go with it (MSG-14, STA-2).
 		if err := c.workerGone(ctx, tx, now, tenant, req.Worker); err != nil {
+			return err
+		}
+		// A runtime that keeps sessions or memory in its own store is cleared (LCY-4).
+		if err := c.purgeRuntimeStore(ctx, tx, now, tenant, req.Worker, op.Principal); err != nil {
 			return err
 		}
 		b, err := scanBot(tx.QueryRow(ctx, `SELECT `+botCols+` FROM bots WHERE worker_id = $1 AND mode = 'worker' AND state IN ('active', 'suspended') FOR UPDATE`, req.Worker))

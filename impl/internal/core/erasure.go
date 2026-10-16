@@ -42,6 +42,7 @@ type ErasureScope struct {
 	Tenant  string   `json:"tenant"`
 	Subject string   `json:"subject,omitempty"`
 	Bot     string   `json:"bot,omitempty"`
+	Worker  string   `json:"worker,omitempty"`
 	IDs     []string `json:"ids,omitempty"`
 }
 
@@ -51,6 +52,8 @@ func (s ErasureScope) kind() string {
 		return "tenant_subject"
 	case s.Bot != "":
 		return "bot"
+	case s.Worker != "":
+		return "worker"
 	case len(s.IDs) > 0:
 		return "ids"
 	}
@@ -139,6 +142,16 @@ func addErasureSteps(ctx context.Context, tx pgx.Tx, now time.Time, tenant strin
 	}
 	type step struct{ store, kind, target string }
 	var steps []step
+	if reason == "worker_revoke" {
+		// A revoked worker's runtime profile store is the only store of the request (LCY-4).
+		var worker string
+		if err := tx.QueryRow(ctx, `SELECT scope->>'worker' FROM erasure_requests WHERE id = $1`, id).Scan(&worker); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, `INSERT INTO erasure_steps (id, request, tenant, store, kind, target, state, updated_at) VALUES ($1, $2, $3, $4, 'runtime', $5, 'pending', $6)`,
+			ids.New(ids.Step), id, tenant, storeKey("runtime", strings.ToLower(worker)), worker, now)
+		return err
+	}
 	for _, st := range coreStores {
 		if reason == "forget" && st != "sessions" && st != "memory" {
 			continue
@@ -282,7 +295,7 @@ func (c *Core) erasureLoop(ctx context.Context) error {
 // declared_none; the erase of a channel cache arrives in v0.2, so any other channel fails
 // (SEC-11, RET-11).
 func (c *Core) runCoreSteps(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, r *erasureRow) error {
-	rows, err := tx.Query(ctx, `SELECT store, kind, target FROM erasure_steps WHERE request = $1 AND state = 'pending' AND kind IN ('core', 'channel') ORDER BY id`, r.ID)
+	rows, err := tx.Query(ctx, `SELECT store, kind, target FROM erasure_steps WHERE request = $1 AND state = 'pending' AND kind IN ('core', 'channel', 'runtime') ORDER BY id`, r.ID)
 	if err != nil {
 		return err
 	}
@@ -306,6 +319,16 @@ func (c *Core) runCoreSteps(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		return err
 	}
 	for _, s := range steps {
+		if s.kind == "runtime" {
+			state, basis, reason, err := runtimeStepOutcome(ctx, tx, s.target)
+			if err != nil {
+				return err
+			}
+			if err := set(s.store, state, basis, reason); err != nil {
+				return err
+			}
+			continue
+		}
 		if s.kind == "channel" {
 			var none bool
 			if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM workers WHERE tenant = $1 AND kind = 'channel' AND target = $2 AND state <> 'revoked'
