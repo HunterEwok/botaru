@@ -4,6 +4,7 @@
   "title": "Delivery",
   "description": "Delivery record: send this content to this recipient. The core creates it in the transaction of the transition that produces it (DLV-2), and the channel, sink or monitoring adapter that takes it through P1 claim sends it. The address comes only from a closed list (DLV-6); the core computes the target from the address, and the addressee's worker does not compute it. A delivery has its own leases, retries and final outcome; its failure does not touch the task (DLV-3). Delivery lifecycle: spec/lifecycles/delivery.md.",
   "x-botaru-direction": "record",
+  "x-botaru-retention": "content",
   "x-botaru-rules": [
     "DLV-1",
     "DLV-2",

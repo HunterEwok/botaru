@@ -101,11 +101,13 @@ func (c *Core) ProgramEnqueue(ctx context.Context, p *Program, req EnqueueReques
 			})
 			return err
 		}
-		// The request only lowers the type's class (DSP-5).
-		prio := 0
-		if req.Priority != 0 {
-			prio = max(req.Priority, cat.TaskTypes[typ].Dispatch.PriorityClass)
+		// The request only lowers the type's class, and class 2 is only a person's direct
+		// request: a program's task takes the type's class, 3 by default (DSP-5).
+		prio := cat.TaskTypes[typ].Dispatch.PriorityClass
+		if prio == 0 {
+			prio = 3
 		}
+		prio = max(req.Priority, prio)
 		res, err := c.enqueue(ctx, tx, now, cat, enqueueInput{
 			Tenant: p.Tenant, Type: typ, Body: req.Body, IdempotencyKey: req.IdempotencyKey, Initiator: p.Principal,
 			EnqueuedBy: "program:api:" + p.KeyID, Priority: prio, Source: "interactive", Refs: req.Refs, OwnRefs: true,

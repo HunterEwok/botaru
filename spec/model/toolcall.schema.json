@@ -4,6 +4,7 @@
   "title": "Tool call",
   "description": "A tool call record that the core writes: a model call through P3 tools/call, the single write call of an approved approval, a campaign item call or a call of the built-in service/control. The core computes the target (TEN-3a); a call that no toolhost of the target took within start_by ends with error(no_executor), and for a target without a live toolhost at once with error(plugin_unavailable) (DLV-16). A call is not handed out again (DLV-1). Call lifecycle: spec/lifecycles/toolcall.md.",
   "x-botaru-direction": "record",
+  "x-botaru-retention": "content",
   "x-botaru-rules": [
     "TEN-3a",
     "DLV-16",

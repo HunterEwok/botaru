@@ -1384,6 +1384,34 @@ def governance_name(n, incidents=True):
     return isinstance(n, str) and (n.startswith(('governance.', 'attribution.', 'seat.')) or (incidents and n.startswith('incident.')))
 
 
+# Durations of a tenant charter that only rise from their default (GOV-33).
+CHARTER_FLOORS = (('promotion', 'probation', '14d'), ('promotion', 'min_tenure', '30d'), ('promotion', 'swap_cooldown', '30d'),
+                  ('removal', 'protect_new', '60d'), ('attribution', 'window', '14d'), ('confirmation', 'ttl', '7d'),
+                  ('identity', 'unbound_ttl', '30d'), ('memory', 'seal_ttl', '30d'))
+
+
+def lint_charter_bounds(tenant, gname, where, gs, f):
+    """What the charter schema cannot check (GOV-33): a seat twice, farm_manager outside farm, durations against their direction."""
+    seen = set()
+    for s in (gs.get('commission') or {}).get('seats') or []:
+        sid = s.get('id') if isinstance(s, dict) else None
+        if sid in seen:
+            f.error('charter_seat_twice', where, f'charter {gname}: seat {sid} is declared twice (GOV-33)')
+        seen.add(sid)
+    if not (tenant == 'farm' or (not tenant and gname == 'farm')) and 'farm_manager' in gs:
+        f.error('charter_farm_manager', where, f'charter {gname}: only the farm charter declares the manager seat (GOV-33)')
+    for block, field, floor in CHARTER_FLOORS:
+        v = (gs.get(block) or {}).get(field)
+        if v is not None and duration_s(v) < duration_s(floor):
+            f.error('charter_direction', where, f'charter {gname}: {block}.{field} {v} is below its default {floor} (GOV-33)')
+    kinds = (gs.get('promotion') or {}).get('exclude_change_kinds')
+    if kinds is not None and 'none' not in kinds:
+        f.error('charter_direction', where, f'charter {gname}: promotion.exclude_change_kinds leaves out none (GOV-33)')
+    dw = ((gs.get('farm_manager') or {}).get('incident_stop') or {}).get('decide_within')
+    if dw is not None and duration_s(dw) > duration_s('7d'):
+        f.error('charter_direction', where, f'charter {gname}: incident_stop.decide_within {dw} is above 7d (GOV-33)')
+
+
 def lint_governance(S, f):
     """Personas of the charters (GOV-4, COM-19), unawareness of bot texts (GOV-29) and no bot reference to governance (GOV-6, GOV-13)."""
     import hashlib
@@ -1394,6 +1422,7 @@ def lint_governance(S, f):
             lens = s.get('lens')
             if lens and not (((com.get('lenses') or {}).get(lens) or {}).get('persona') or {}).get('ref'):
                 f.error('lens_persona_missing', where, f'charter {gname}: seat {s.get("id")} names lens {lens} without a persona addendum (COM-19)')
+        lint_charter_bounds(tenant, gname, where, gs, f)
         refs = []
         for pos, pv in (gs.get('positions') or {}).items():
             if isinstance(pv, dict) and isinstance(pv.get('persona'), dict):

@@ -185,7 +185,7 @@ func (c *Core) enqueueInspect(ctx context.Context, tx pgx.Tx, now time.Time, cat
 	body := map[string]any{"type": inspectType, "goal": "Read the tenant for the incident and hand in findings.", "params": map[string]any{"input": input}}
 	sev := mstr(inc.Record, "severity")
 	res, err := c.enqueue(ctx, tx, now, cat, enqueueInput{Tenant: g.Tenant, Type: inspectType, Body: body,
-		IdempotencyKey: "inspect:" + g.Task + ":" + strconv.Itoa(n+1), Initiator: "system", EnqueuedBy: "system:inspect",
+		IdempotencyKey: "system:inspect:" + g.Task + ":" + strconv.Itoa(n+1), Initiator: "system", EnqueuedBy: "system:inspect",
 		Source: seatSource, SourceID: inc.ID, Priority: 1, Sev1: sev == "sev1"})
 	if err != nil {
 		return "", "", err
