@@ -16,6 +16,7 @@ import (
 
 	"github.com/HunterEwok/botaru/impl/internal/ids"
 	"github.com/HunterEwok/botaru/impl/internal/manifest"
+	"github.com/HunterEwok/botaru/impl/internal/money"
 	"github.com/HunterEwok/botaru/impl/internal/store"
 )
 
@@ -381,6 +382,7 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 	fallback := ""
 	// A lens review goes only to its executor role and never to the author's worker (COM-2).
 	for picked := false; !picked; {
+		fallback = ""
 		err := tx.QueryRow(ctx, `SELECT id, type, body, record, lease_no, initiator FROM tasks
 			WHERE tenant = $1 AND state = 'submitted' AND body IS NOT NULL AND type = ANY($2) AND (run_at IS NULL OR run_at <= $3) AND (deadline_at IS NULL OR deadline_at > $3)
 			AND NOT id = ANY($4)
@@ -433,6 +435,30 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 					continue
 				}
 				fallback = fb
+				// The analysis takes its tree budget from the rest of the day's ceiling, or
+				// waits for the next day (MGR-53).
+				if typ == postmortemType {
+					budget, ok, err := postmortemClaimBudget(ctx, tx, now, cat, tv, id)
+					if err != nil {
+						return nil, err
+					}
+					if !ok {
+						if _, err := tx.Exec(ctx, `UPDATE tasks SET run_at = $2 WHERE id = $1`, id, tenantDay(tv, now).AddDate(0, 0, 1)); err != nil {
+							return nil, err
+						}
+						if err := markWaiting(ctx, tx, now, w.Tenant, nil, []string{id}, "budget_exhausted"); err != nil {
+							return nil, err
+						}
+						skip = append(skip, id)
+						continue
+					}
+					if typeMax := money.FromEUR(cat.TaskTypes[typ].TreeBudgetEUR); typeMax > 0 && typeMax < budget {
+						budget = typeMax
+					}
+					if _, err := tx.Exec(ctx, `UPDATE tasks SET record = record || jsonb_build_object('tree_budget_micros', $2::bigint) WHERE id = $1`, id, budget); err != nil {
+						return nil, err
+					}
+				}
 			}
 			acting = a
 		} else if own != nil {
@@ -509,6 +535,8 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 			if _, err := tx.Exec(ctx, `UPDATE tasks SET record = record || '{"seat_fallback": true}'::jsonb WHERE id = $1`, id); err != nil {
 				return nil, err
 			}
+		} else if _, err := tx.Exec(ctx, `UPDATE tasks SET record = record - 'seat_fallback' WHERE id = $1 AND record ? 'seat_fallback'`, id); err != nil {
+			return nil, err
 		}
 	}
 	mark, _ := record["data_mark"].(string)

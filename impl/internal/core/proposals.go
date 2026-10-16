@@ -110,6 +110,16 @@ func (c *Core) createProposals(ctx context.Context, tx pgx.Tx, now time.Time, ca
 	}
 	a.Acting = acting
 	a.Seat = seatOfRecord(rec) == managerSeatID && claimsV03()
+	// In restricted mode the seat proposes nothing in the tenant, unless its basis is a sev1
+	// incident opened during it (MGR-47); the proposals are dropped.
+	if a.Seat && len(bodies) > 0 {
+		if restricted, err := seatTaskRestricted(ctx, tx, w.Tenant, rec); err != nil {
+			return err
+		} else if restricted {
+			c.log.Info("proposals of the restricted farm manager seat dropped", "tenant", w.Tenant, "task", task, "count", len(bodies))
+			return nil
+		}
+	}
 	// An aggregator's proposal takes the mark and the untrusted flag of its task, which carry
 	// the highest mark and the logical OR of the inputs it read (AGG-4).
 	if cat.TaskTypes[typ].Purpose == "aggregate" {

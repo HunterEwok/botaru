@@ -77,7 +77,8 @@ func (c *Core) incidentPreventable(ctx context.Context, tx pgx.Tx, now time.Time
 		Severity: "page", Values: map[string]any{"class": r.Class, "sign": sign}}); err != nil {
 		return err
 	}
-	tag, err := tx.Exec(ctx, `INSERT INTO manager_restrictions (tenant, incident, holder, since) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
+	tag, err := tx.Exec(ctx, `INSERT INTO manager_restrictions (tenant, incident, holder, since) VALUES ($1, $2, $3, $4)
+		ON CONFLICT (tenant) WHERE until IS NULL DO NOTHING`,
 		r.Tenant, r.ID, m.Holder, now)
 	if err != nil {
 		return err
@@ -116,8 +117,13 @@ func (c *Core) restrictionChanged(ctx context.Context, tx pgx.Tx, now time.Time,
 		return err
 	}
 	restricted := event == "seat.stopped.v1"
+	// A restriction the core set or lifted by itself is the system's; seat.resume is farmctl.
+	via := "farmctl"
+	if actor == "" || actor == "system" {
+		via = "system"
+	}
 	_, err := c.appendAudit(ctx, tx, now, Audit{
-		Tenant: farmTenant, Kind: "command", Actor: Actor{Principal: principalOr(actor), Via: "farmctl"},
+		Tenant: farmTenant, Kind: "command", Actor: Actor{Principal: principalOr(actor), Via: via},
 		Command: cause, Target: &Target{Kind: "seat", ID: managerSeatID}, OK: true,
 		Before: withTenant(map[string]any{"restricted": !restricted}, tenant), After: withTenant(map[string]any{"restricted": restricted, "epoch": m.Epoch}, tenant),
 	})
@@ -127,7 +133,7 @@ func (c *Core) restrictionChanged(ctx context.Context, tx pgx.Tx, now time.Time,
 // endRestrictions lifts the restrictions of the seat in every tenant when the holder changes or
 // the seat is vacated (MGR-47).
 func (c *Core) endRestrictions(ctx context.Context, tx pgx.Tx, now time.Time, m *managerSeat, cause, actor string) error {
-	rows, err := tx.Query(ctx, `DELETE FROM manager_restrictions RETURNING tenant`)
+	rows, err := tx.Query(ctx, `UPDATE manager_restrictions SET until = $1 WHERE until IS NULL RETURNING tenant`, now)
 	if err != nil {
 		return err
 	}
@@ -152,7 +158,7 @@ func seatRestricted(ctx context.Context, tx pgx.Tx, tenant, incident string) (bo
 		return false, nil
 	}
 	var since time.Time
-	err := tx.QueryRow(ctx, `SELECT since FROM manager_restrictions WHERE tenant = $1`, tenant).Scan(&since)
+	err := tx.QueryRow(ctx, `SELECT since FROM manager_restrictions WHERE tenant = $1 AND until IS NULL`, tenant).Scan(&since)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
 	}
@@ -190,8 +196,9 @@ func (c *Core) preventableSign(ctx context.Context, tx pgx.Tx, now time.Time, ca
 		if m.ResponsibleSince == nil || m.ResponsibleSince.After(start) {
 			return false, nil
 		}
+		// A restriction in force at any time of the window, lifted or not, breaks it.
 		var restricted bool
-		err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM manager_restrictions WHERE tenant = $1 AND since <= $2)`, r.Tenant, start).Scan(&restricted)
+		err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM manager_restrictions WHERE tenant = $1 AND (until IS NULL OR until > $2))`, r.Tenant, start).Scan(&restricted)
 		return !restricted, err
 	}
 	if r.SubjectKind != "resource" {
@@ -313,7 +320,7 @@ func preventableRepeats(since, now time.Time) int {
 // missed is not sent twice (GOV-47).
 func (c *Core) repeatPreventable(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog) error {
 	rows, err := tx.Query(ctx, `SELECT r.tenant, r.incident, coalesce(i.class, ''), r.since, r.repeats FROM manager_restrictions r
-		LEFT JOIN incidents i ON i.id = r.incident ORDER BY r.tenant FOR UPDATE OF r`)
+		LEFT JOIN incidents i ON i.id = r.incident WHERE r.until IS NULL ORDER BY r.tenant FOR UPDATE OF r`)
 	if err != nil {
 		return err
 	}
@@ -334,7 +341,7 @@ func (c *Core) repeatPreventable(ctx context.Context, tx pgx.Tx, now time.Time, 
 		if n <= d.repeats {
 			continue
 		}
-		if _, err := tx.Exec(ctx, `UPDATE manager_restrictions SET repeats = $2 WHERE tenant = $1`, d.tenant, n); err != nil {
+		if _, err := tx.Exec(ctx, `UPDATE manager_restrictions SET repeats = $2 WHERE tenant = $1 AND until IS NULL`, d.tenant, n); err != nil {
 			return err
 		}
 		if err := c.noticePreventable(ctx, tx, now, cat, d.incident, d.class, d.tenant, "", d.since, "notice.manager_preventable_repeat"); err != nil {
@@ -356,7 +363,7 @@ func (c *Core) seatResumeTenant(ctx context.Context, op Operator, tenant string)
 		if m == nil {
 			return refuse("not_found", "no farm manager seat")
 		}
-		tag, err := tx.Exec(ctx, `DELETE FROM manager_restrictions WHERE tenant = $1`, tenant)
+		tag, err := tx.Exec(ctx, `UPDATE manager_restrictions SET until = $2 WHERE tenant = $1 AND until IS NULL`, tenant, now)
 		if err != nil {
 			return err
 		}

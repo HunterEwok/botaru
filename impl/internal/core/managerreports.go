@@ -4,11 +4,13 @@ package core
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -69,10 +71,24 @@ func (c *Core) attentionTool(cat *Catalog, g *toolsGrant) *catalogTool {
 		"properties": map[string]any{
 			"sees": map[string]any{"enum": codes("sees")}, "threat": map[string]any{"enum": codes("threat")}, "object": id,
 			"proposal": map[string]any{"type": "object", "additionalProperties": false, "minProperties": 1, "maxProperties": 1,
-				"properties": map[string]any{"op": map[string]any{"type": "string", "pattern": "^[a-z][a-z0-9_]*$", "maxLength": 64}, "ref": id}},
+				"properties": map[string]any{"op": map[string]any{"enum": attentionOps()}, "ref": id}},
 		}}
 	desc := "Tell the people of this tenant who have rights on an object what you see, what it threatens and what you propose, in codes only."
 	return &catalogTool{Name: attentionToolName, Builtin: true, Tool: toolspec.Tool{Description: desc}, Schema: schema}
+}
+
+// attentionOps is the closed list of operation codes a notice may propose: the control
+// operations the core serves and the service verbs (MGR-52). The skeleton schema of the tool
+// leaves the field open; this build closes it so no free model text reaches people.
+func attentionOps() []any {
+	out := []any{}
+	for _, op := range controlOpsServed {
+		out = append(out, op)
+	}
+	for _, v := range []string{"start", "stop", "restart"} {
+		out = append(out, "service_"+v)
+	}
+	return out
 }
 
 // attentionObject finds an object of the tenant by its id and the capabilities that give a
@@ -162,37 +178,49 @@ func (c *Core) attentionToolCall(ctx context.Context, tx pgx.Tx, now time.Time, 
 	if err != nil {
 		return nil, err
 	}
+	// The per-person count is taken under the tenant's notice lock, so two attempts at once
+	// never both pass the limit.
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(7300552, hashtext($1))`, g.Tenant); err != nil {
+		return nil, err
+	}
 	limit, day := noticesPerPersonDay(tv), tenantDay(tv, now)
 	params := map[string]any{"sees": mstr(args, "sees"), "object": object, "threat": mstr(args, "threat"), "op": mstr(prop, "op"), "ref": mstr(prop, "ref")}
+	// sent is true for a person reached by this notice, false for one over the limit.
 	sent := map[string]bool{}
 	for _, ch := range chats {
-		if !sent[ch.Principal] {
-			var n int
-			if err := tx.QueryRow(ctx, `SELECT count(*) FROM manager_feedback WHERE tenant = $1 AND recipient = $2 AND kind = $3 AND created_at >= $4`,
-				g.Tenant, ch.Principal, attentionNotice, day).Scan(&n); err != nil {
+		ok, seen := sent[ch.Principal]
+		if !seen {
+			n, err := feedbackCount(ctx, tx, g.Tenant, ch.Principal, attentionNotice, day)
+			if err != nil {
 				return nil, err
 			}
-			if n >= limit {
-				continue
+			ok = n < limit
+		}
+		if ok {
+			if err := c.feedbackCard(ctx, tx, now, g.Tenant, attentionNotice, g.Task, ch, "notice.manager_attention", params, !seen, nil); err != nil {
+				return nil, err
 			}
 		}
-		if err := c.feedbackCard(ctx, tx, now, g.Tenant, attentionNotice, g.Task, ch, "notice.manager_attention", params, !sent[ch.Principal]); err != nil {
-			return nil, err
+		sent[ch.Principal] = ok
+	}
+	reached := 0
+	for _, ok := range sent {
+		if ok {
+			reached++
 		}
-		sent[ch.Principal] = true
 	}
 	if _, err := c.appendAudit(ctx, tx, now, Audit{
 		Tenant: g.Tenant, Kind: "command", Actor: Actor{Principal: acting.Bot, Via: "seat", Role: g.Role, Task: g.Task},
-		Command: attentionToolName, Target: &Target{Kind: "object", ID: object}, OK: true, After: map[string]any{"sees": params["sees"], "threat": params["threat"], "people": len(sent)},
+		Command: attentionToolName, Target: &Target{Kind: "object", ID: object}, OK: true, After: map[string]any{"sees": params["sees"], "threat": params["threat"], "people": reached},
 	}); err != nil {
 		return nil, err
 	}
-	return toolAnswer(map[string]any{"people": len(sent)}, false), nil
+	return toolAnswer(map[string]any{"people": reached}, false), nil
 }
 
 // feedbackCard plans a notice with the buttons "Useful" and "Not needed" to one chat; a new
 // person gets a feedback record, which the limits count and P1 card.feedback answers once.
-func (c *Core) feedbackCard(ctx context.Context, tx pgx.Tx, now time.Time, tenant, kind, task string, ch adminChat, textKey string, params map[string]any, record bool) error {
+func (c *Core) feedbackCard(ctx context.Context, tx pgx.Tx, now time.Time, tenant, kind, task string, ch adminChat, textKey string, params map[string]any, record bool, runAt *time.Time) error {
 	id, nonce := "", ""
 	if record {
 		id, nonce = ids.New(ids.Notice), ids.Secret(16)
@@ -210,12 +238,24 @@ func (c *Core) feedbackCard(ctx context.Context, tx pgx.Tx, now time.Time, tenan
 	}
 	card := map[string]any{"card": kind, "id": id, "nonce": nonce, "title": cut(c.texts.Render("en", textKey, params), 1000), "buttons": buttons,
 		"untrusted_seen": false, "urgent": false}
-	_, err := c.planDelivery(ctx, tx, now, plannedDelivery{
+	did, err := c.planDelivery(ctx, tx, now, plannedDelivery{
 		Tenant: tenant, Kind: kind, Addr: "admins", TargetKind: "chat", TargetID: Chat{Kind: "direct", ExternalID: ch.ExternalID}.ID(),
 		ExecKind: "channel", ExecName: ch.Channel, Recipient: ch.Principal, DataOrigin: "code", Task: task,
 		Body: map[string]any{"form": "card", "card": card},
 	})
+	if err != nil || runAt == nil || did == "" {
+		return err
+	}
+	_, err = tx.Exec(ctx, `UPDATE deliveries SET run_at = $2 WHERE id = $1`, did, *runAt)
 	return err
+}
+
+// feedbackCount is how many notices of a kind a person got in the tenant since a time.
+func feedbackCount(ctx context.Context, tx pgx.Tx, tenant, recipient, kind string, since time.Time) (int, error) {
+	var n int
+	err := tx.QueryRow(ctx, `SELECT count(*) FROM manager_feedback WHERE tenant = $1 AND recipient = $2 AND kind = $3 AND created_at >= $4`,
+		tenant, recipient, kind, since).Scan(&n)
+	return n, err
 }
 
 // CardFeedbackRequest is p1-card-feedback-request.
@@ -252,7 +292,7 @@ func (c *Core) CardFeedback(ctx context.Context, w *Worker, ob *OnBehalf, req Ca
 		if err != nil {
 			return err
 		}
-		if recipient != principal || nonce != req.Nonce {
+		if recipient != principal || subtle.ConstantTimeCompare([]byte(nonce), []byte(req.Nonce)) != 1 {
 			return refuse("forbidden", "the notice went to someone else")
 		}
 		out = map[string]any{"ok": true, "id": req.ID, "value": req.Value}
@@ -291,6 +331,13 @@ func (c *Core) enqueuePostmortem(ctx context.Context, tx pgx.Tx, now time.Time, 
 	if _, ok := cat.TaskTypes[postmortemType]; !ok {
 		return nil
 	}
+	// One analysis per incident: a reopened and again resolved incident gets none, whatever
+	// became of the first task (IDM-2).
+	key := "system:postmortem:" + r.ID
+	var exists bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM tasks WHERE tenant = $1 AND idempotency_key = $2)`, r.Tenant, key).Scan(&exists); err != nil || exists {
+		return err
+	}
 	links, err := linkCandidates(ctx, tx, r.Tenant, r.ID)
 	if err != nil {
 		return err
@@ -313,35 +360,63 @@ func (c *Core) enqueuePostmortem(ctx context.Context, tx pgx.Tx, now time.Time, 
 	// The input has the table only: no link states, no one for or against (MGR-54).
 	input := map[string]any{"view": "postmortem/v1", "table": table, "paragraph": paragraph}
 	body := map[string]any{"type": postmortemType, "goal": "Analyse the resolved incident from the table.", "params": map[string]any{"input": input}}
-	res, err := c.enqueue(ctx, tx, now, cat, enqueueInput{Tenant: r.Tenant, Type: postmortemType, Body: body,
-		IdempotencyKey: "system:postmortem:" + r.ID, Initiator: "system", EnqueuedBy: "system:postmortem", Source: seatSource, SourceID: r.ID, Priority: 5})
+	// The enqueue runs in a savepoint: a refusal means no analysis and never fails the move to
+	// resolved.
+	sp, err := tx.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = sp.Rollback(ctx) }()
+	res, err := c.enqueue(ctx, sp, now, cat, enqueueInput{Tenant: r.Tenant, Type: postmortemType, Body: body,
+		IdempotencyKey: key, Initiator: "system", EnqueuedBy: "system:postmortem", Source: seatSource, SourceID: r.ID, Priority: 5})
+	if p, ok := AsProblem(err); ok {
+		c.log.Warn("no analysis of a resolved incident: the enqueue was refused", "tenant", r.Tenant, "incident", r.ID, "reason", p.Reason)
+		return nil
+	}
 	if err != nil {
 		return err
 	}
 	if res.Rejected != nil || res.Existing {
-		return nil
+		if res.Rejected != nil {
+			c.log.Warn("no analysis of a resolved incident: the enqueue was rejected", "tenant", r.Tenant, "incident", r.ID, "reason", res.Rejected.Reason)
+		}
+		return sp.Commit(ctx)
 	}
-	ceiling := money.FromEUR(postmortemDayEUR(fm))
-	day := tenantDay(tv, now)
-	var spent int64
-	if err := tx.QueryRow(ctx, `SELECT coalesce(sum(s.eur_micros + coalesce(s.correction_eur_micros, 0)), 0) FROM spend s JOIN tasks t ON t.id = s.task
-		WHERE s.tenant = $1 AND s.line = 'manager' AND s.unit <> 'task' AND s.time >= $2 AND t.type = $3`, r.Tenant, day, postmortemType).Scan(&spent); err != nil {
-		return err
-	}
-	extra := map[string]any{"seat": managerSeatID, "executor_role": role, "postmortem": r.ID, "paragraph": paragraph, "reading_off": readingOff}
-	var runAt any
-	if left := ceiling - spent; left > 0 {
-		extra["tree_budget_micros"] = left
-	} else {
-		extra["tree_budget_micros"] = ceiling
-		runAt = day.AddDate(0, 0, 1)
-	}
-	raw, err := json.Marshal(extra)
+	// The tree budget is set at claim from the rest of the day's analysis ceiling
+	// (postmortemClaimBudget), so open analyses never pass it together.
+	raw, err := json.Marshal(map[string]any{"seat": managerSeatID, "executor_role": role, "postmortem": r.ID, "paragraph": paragraph, "reading_off": readingOff})
 	if err != nil {
 		return err
 	}
-	_, err = tx.Exec(ctx, `UPDATE tasks SET record = record || $2::jsonb, run_at = coalesce($3, run_at) WHERE id = $1`, res.TaskID, raw, runAt)
-	return err
+	if _, err := sp.Exec(ctx, `UPDATE tasks SET record = record || $2::jsonb WHERE id = $1`, res.TaskID, raw); err != nil {
+		return err
+	}
+	return sp.Commit(ctx)
+}
+
+// postmortemClaimBudget is the tree budget of an analysis task at its claim: what the task
+// spent so far plus the rest of the tenant's daily analysis ceiling after today's analysis
+// spend and the whole tree budgets of the other analyses running now, under the tenant's
+// budget lock. ok false means nothing is left today: the task waits for the next day (MGR-53).
+func postmortemClaimBudget(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tv *TenantView, task string) (int64, bool, error) {
+	if err := lockTenantBudget(ctx, tx, tv.Name); err != nil {
+		return 0, false, err
+	}
+	var spent, running, own int64
+	if err := tx.QueryRow(ctx, `SELECT
+		coalesce((SELECT sum(s.eur_micros + coalesce(s.correction_eur_micros, 0)) FROM spend s JOIN tasks t ON t.id = s.task
+			WHERE s.tenant = $1 AND s.line = 'manager' AND s.unit <> 'task' AND s.time >= $2 AND t.type = $3), 0)::bigint,
+		coalesce((SELECT sum(coalesce((t.record->>'tree_budget_micros')::bigint, 0)) FROM tasks t
+			WHERE t.tenant = $1 AND t.type = $3 AND t.state = 'working' AND t.id <> $4), 0)::bigint,
+		coalesce((SELECT sum(s.eur_micros + coalesce(s.correction_eur_micros, 0)) FROM spend s WHERE s.task = $4 AND s.unit <> 'task'), 0)::bigint`,
+		tv.Name, tenantDay(tv, now), postmortemType, task).Scan(&spent, &running, &own); err != nil {
+		return 0, false, err
+	}
+	left := money.FromEUR(postmortemDayEUR(managerCharter(cat))) - spent - running
+	if left <= 0 {
+		return 0, false, nil
+	}
+	return own + left, true, nil
 }
 
 // linkCandidates are the attribution candidates code found for an incident (GOV-13); only
@@ -413,19 +488,45 @@ func (c *Core) cancelPostmortem(ctx context.Context, tx pgx.Tx, now time.Time, t
 
 var reNumber = regexp.MustCompile(`\d+(?:\.\d+)?`)
 
-// paragraphChecked says whether every number of a model paragraph is a number of the table
-// (MGR-53).
-func paragraphChecked(paragraph string, table map[string]any) bool {
-	raw, err := json.Marshal(table)
-	if err != nil {
-		return false
+// paragraphChecked says whether a model paragraph keeps to the table: each of its numbers is a
+// number value of the table or the count of one of its lists (never a digit of an id or a
+// time), and each source it cites is a row of the table (alarms, operations, implicated) or an
+// id the table holds (MGR-53).
+func paragraphChecked(paragraph string, sources []string, table map[string]any) bool {
+	known, refs := map[string]bool{}, map[string]bool{"alarms": true, "operations": true, "implicated": true}
+	var walk func(v any)
+	walk = func(v any) {
+		switch x := v.(type) {
+		case map[string]any:
+			for k, e := range x {
+				if k == "id" || k == "incident" {
+					if id, ok := e.(string); ok {
+						refs[id] = true
+					}
+				}
+				walk(e)
+			}
+		case []any:
+			known[strconv.Itoa(len(x))] = true
+			for _, e := range x {
+				walk(e)
+			}
+		case float64:
+			known[strconv.FormatFloat(x, 'f', -1, 64)] = true
+		case int:
+			known[strconv.Itoa(x)] = true
+		case int64:
+			known[strconv.FormatInt(x, 10)] = true
+		}
 	}
-	known := map[string]bool{}
-	for _, n := range reNumber.FindAllString(string(raw), -1) {
-		known[n] = true
-	}
+	walk(table)
 	for _, n := range reNumber.FindAllString(paragraph, -1) {
 		if !known[n] {
+			return false
+		}
+	}
+	for _, src := range sources {
+		if !refs[src] {
 			return false
 		}
 	}
@@ -460,7 +561,7 @@ func (c *Core) postmortemDone(ctx context.Context, tx pgx.Tx, now time.Time, cat
 	switch p := mstr(result, "paragraph"); {
 	case r.ReadingOff:
 		params["paragraph"] = c.texts.Render("en", "notice.postmortem.reading_off", nil)
-	case r.Paragraph && p != "" && paragraphChecked(p, table):
+	case r.Paragraph && p != "" && paragraphChecked(p, mstrs(result, "sources"), table):
 		params["paragraph"] = c.texts.Render("en", "notice.postmortem.paragraph", map[string]any{
 			"text": cut(p, 600), "sources": cut(strings.Join(mstrs(result, "sources"), ", "), 200)})
 	}
@@ -476,8 +577,14 @@ func (c *Core) postmortemDone(ctx context.Context, tx pgx.Tx, now time.Time, cat
 	if v, ok := mnum(mmap(mmap(tv.Raw, "spec"), "attention"), "noncritical_per_day"); ok && v >= 0 {
 		limit = int(v)
 	}
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(7300552, hashtext($1))`, tenant); err != nil {
+		return err
+	}
 	day := tenantDay(tv, now)
-	seen := map[string]bool{}
+	next := day.AddDate(0, 0, 1)
+	// later is the person's choice for this report: nil sends now, else the next day; every
+	// chat of the person follows it.
+	later := map[string]*time.Time{}
 	for _, ch := range chats {
 		p := map[string]any{}
 		for k, v := range params {
@@ -492,29 +599,25 @@ func (c *Core) postmortemDone(ctx context.Context, tx pgx.Tx, now time.Time, cat
 				p["links"] = c.texts.Render("en", "notice.postmortem.links", map[string]any{"links": strings.Join(links, ", ")})
 			}
 		}
-		first := !seen[ch.Principal]
-		if first {
-			var n int
-			if err := tx.QueryRow(ctx, `SELECT count(*) FROM manager_feedback WHERE tenant = $1 AND recipient = $2 AND kind = $3 AND created_at >= $4`,
-				tenant, ch.Principal, postmortemReport, day).Scan(&n); err != nil {
+		runAt, seen := later[ch.Principal]
+		if !seen {
+			n, err := feedbackCount(ctx, tx, tenant, ch.Principal, postmortemReport, day)
+			if err != nil {
 				return err
 			}
-			seen[ch.Principal] = true
+			// The excess waits for the next day.
 			if n >= limit {
-				// The excess waits for the next day.
-				if err := c.feedbackCard(ctx, tx, now, tenant, postmortemReport, task, ch, "notice.postmortem_report", p, true); err != nil {
-					return err
-				}
-				if _, err := tx.Exec(ctx, `UPDATE deliveries SET run_at = $2 WHERE id = (SELECT id FROM deliveries WHERE task = $1 AND kind = $3 AND recipient = $4
-					ORDER BY created_at DESC, id DESC LIMIT 1)`, task, day.AddDate(0, 0, 1), postmortemReport, ch.Principal); err != nil {
-					return err
-				}
-				continue
+				runAt = &next
 			}
+			later[ch.Principal] = runAt
 		}
-		if err := c.feedbackCard(ctx, tx, now, tenant, postmortemReport, task, ch, "notice.postmortem_report", p, first); err != nil {
+		if err := c.feedbackCard(ctx, tx, now, tenant, postmortemReport, task, ch, "notice.postmortem_report", p, !seen, runAt); err != nil {
 			return err
 		}
+	}
+	// The farm operators get numbers only, for incidents of farm.
+	if tenant != farmTenant {
+		return nil
 	}
 	return c.noticeAdmins(ctx, tx, now, cat, []string{farmTenant}, postmortemReport, "notice.postmortem_report_farm",
 		map[string]any{"incident": r.Incident, "alarms": len(alarms), "ops": len(ops), "implicated": len(implicated)}, "admin:governance")

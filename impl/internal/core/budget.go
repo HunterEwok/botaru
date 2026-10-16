@@ -202,6 +202,26 @@ func (c *Core) checkBudget(ctx context.Context, tx pgx.Tx, now time.Time, tv *Te
 	if line == "manager" && claimsV03() {
 		if ask.sev1 || ask.fallback {
 			windows[2].limit = nil
+			// Once the month is spent, sev1 runs only from the day's reserve: 30% of the day
+			// above what work outside sev1 spent today.
+			if ask.sev1 && lb.MonthEUR != nil {
+				used, err := windowUsed(ctx, tx, tv.Name, spendFilter{line: line}, month, ask.ownRoot)
+				if err != nil {
+					return refuse("not_ready", "store")
+				}
+				if used >= money.FromEUR(*lb.MonthEUR) {
+					var other int64
+					if err := tx.QueryRow(ctx, `SELECT coalesce(sum(s.eur_micros + coalesce(s.correction_eur_micros, 0)), 0)::bigint FROM spend s LEFT JOIN tasks t ON t.id = s.task
+						WHERE s.tenant = $1 AND s.line = $2 AND s.time >= $3 AND coalesce(t.record->>'severity', '') <> 'sev1'`, tv.Name, line, day).Scan(&other); err != nil {
+						return refuse("not_ready", "store")
+					}
+					reserve := float64(other) / 1e6
+					if lb.DayEUR != nil {
+						reserve += *lb.DayEUR * (1 - managerNonSev1Share)
+					}
+					windows = append(windows, window{&reserve, day, spendFilter{line: line}, "the manager line is spent but for the sev1 reserve", ""})
+				}
+			}
 		} else if lb.MonthEUR != nil {
 			v := *lb.MonthEUR * managerNonSev1Share
 			windows = append(windows, window{&v, month, spendFilter{line: line}, "the manager line keeps its sev1 reserve", ""})

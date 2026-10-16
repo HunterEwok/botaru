@@ -144,6 +144,10 @@ func TestManagerPreventableV03(t *testing.T) {
 	}
 	_, err = b.c.SeatResume(ctx, b.farmOp(), SeatResumeRequest{Seat: managerSeatID, Tenant: "demo"})
 	wantReason(t, err, "conflict")
+	var lifted int
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM manager_restrictions WHERE tenant = 'demo' AND until IS NOT NULL`).Scan(&lifted); err != nil || lifted != 1 {
+		t.Fatalf("lifted restriction kept %d %v", lifted, err)
+	}
 	if countEvents(t, b, "seat.stopped.v1", managerSeatID) < 1 || countEvents(t, b, "seat.resumed.v1", managerSeatID) < 1 {
 		t.Fatal("no seat events of the restriction")
 	}
@@ -252,6 +256,18 @@ func TestManagerMonthLineV03(t *testing.T) {
 	if p := check(budgetAsk{subject: "system", line: "manager", extra: 1000, fallback: true}); p != nil {
 		t.Fatalf("fallback: %v", p)
 	}
+	// Once the month is spent, sev1 runs only from the day's 30% reserve above today's other
+	// work: 10 + 30 EUR.
+	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO spend (id, tenant, line, unit, state, eur_micros, time)
+		VALUES ('spd_mgr2', 'demo', 'manager', 'tokens', 'committed', 2500000, botaru_now())`); err != nil {
+		t.Fatal(err)
+	}
+	if p := check(budgetAsk{subject: "system", line: "manager", extra: money.FromEUR(29), sev1: true}); p != nil {
+		t.Fatalf("sev1 within the reserve: %v", p)
+	}
+	if p := check(budgetAsk{subject: "system", line: "manager", extra: money.FromEUR(31), sev1: true}); p == nil {
+		t.Fatal("sev1 past the reserve with the month spent")
+	}
 	err := b.c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
 		spent, err := managerMonthSpent(ctx, tx, now, tv)
 		if err != nil || !spent {
@@ -338,6 +354,11 @@ func TestManagerAttentionV03(t *testing.T) {
 	if out := seatCall(t, b, handle, attentionToolName, map[string]any{"sees": "free text", "object": d.ID, "threat": "x", "proposal": map[string]any{}}); out["code"] != "input_schema_invalid" {
 		t.Fatalf("free text %v", out)
 	}
+	// The operation is a closed code, never free words.
+	if out := seatCall(t, b, handle, attentionToolName, map[string]any{"sees": "disk_growth", "object": d.ID, "threat": "disk_full_soon",
+		"proposal": map[string]any{"op": "call_the_admin_now"}}); out["code"] != "input_schema_invalid" {
+		t.Fatalf("a free operation %v", out)
+	}
 	first := seatCall(t, b, handle, attentionToolName, args)
 	if n, _ := first["people"].(float64); n < 1 {
 		t.Fatalf("nobody reached %v", first)
@@ -374,12 +395,147 @@ func TestManagerAttentionV03(t *testing.T) {
 	if out["code"] != restrictedReason {
 		t.Fatalf("a write in restricted mode: %v", out)
 	}
+	if out := seatCall(t, b, handle, takeoverToolName, map[string]any{"task": d.ID}); out["code"] != restrictedReason {
+		t.Fatalf("a takeover in restricted mode: %v", out)
+	}
 }
 
 // A model paragraph may only use the numbers of the table (MGR-53).
 func TestParagraphChecked(t *testing.T) {
 	table := map[string]any{"alarm_values": []any{map[string]any{"free_pct": 3}}, "ops": 2}
-	if !paragraphChecked("Free space fell to 3 percent after 2 operations.", table) || paragraphChecked("Free space fell to 4 percent.", table) {
+	table["incident"] = "inc_01J9Z8"
+	if !paragraphChecked("Free space fell to 3 percent after 2 operations.", []string{"alarms", "inc_01J9Z8"}, table) ||
+		paragraphChecked("Free space fell to 4 percent.", nil, table) || paragraphChecked("Free space fell to 3.", []string{"wk_unknown"}, table) ||
+		paragraphChecked("Incident 9 was bad.", nil, table) {
 		t.Fatal("paragraph check")
+	}
+}
+
+// postmortemDoc is a manager.postmortem.v1 type for the tests; no example declares one.
+func postmortemDoc() map[string]any {
+	return map[string]any{"apiVersion": "botaru/v1alpha1", "kind": "TaskType", "metadata": map[string]any{"name": postmortemType},
+		"spec": map[string]any{"title": "Analysis after an incident", "worker_kind": "agent", "purpose": "manage", "tier": 1, "data_class": "internal",
+			"instruction": "Analyse the table in the input block.", "params_schema": map[string]any{"type": "object", "additionalProperties": false, "properties": map[string]any{}},
+			"timeouts": map[string]any{"start_by": "6h", "lease": "60s", "heartbeat": "20s", "attempt": "10m", "deadline": "48h"},
+			"retry":    map[string]any{"max_attempts": 1, "max_runs": 1}, "tree_budget_eur": 0.40, "max_children": 0, "proposable": false}}
+}
+
+func claimPostmortem(ms []map[string]any) {
+	for _, m := range ms {
+		md, _ := m["metadata"].(map[string]any)
+		spec, _ := m["spec"].(map[string]any)
+		switch {
+		case m["kind"] == "Role" && md["name"] == "farm-manager":
+			spec["claims"] = append(spec["claims"].([]any), postmortemType)
+		case m["kind"] == "Group" && md["name"] == "farm-manager-ops":
+			spec["caps"] = append(spec["caps"].([]any), "task:"+postmortemType)
+		}
+	}
+}
+
+// A resolved incident gets one analysis; reopened and resolved again it gets none and the
+// resolve goes through. Analyses share the day's ceiling at claim (MGR-53).
+func TestPostmortemOnceV03(t *testing.T) {
+	ctx := context.Background()
+	b := newManagerBenchWith(t, nil, []map[string]any{postmortemDoc()}, claimPostmortem)
+	withV03(t)
+	cycle := func(free float64) {
+		b.diskAlarm(t, true, free)
+		b.advance(t, 6*60)
+		b.loop(t, "incident")
+		b.diskAlarm(t, false, 50)
+		b.advance(t, 11*60)
+		b.loop(t, "incident")
+		b.advance(t, 11*60)
+		b.loop(t, "incident")
+	}
+	cycle(3)
+	list := incidentsOf(t, b, "disk_full")
+	if len(list) != 1 || list[0].State != "resolved" {
+		t.Fatalf("incidents %+v", list)
+	}
+	count := func() int {
+		var n int
+		if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM tasks WHERE type = $1 AND idempotency_key = $2`, postmortemType, "system:postmortem:"+list[0].ID).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	if count() != 1 {
+		t.Fatal("no analysis")
+	}
+	cycle(2)
+	if again := incidentsOf(t, b, "disk_full"); len(again) != 1 || again[0].State != "resolved" || count() != 1 {
+		t.Fatalf("after the reopen %+v %d", again, count())
+	}
+	// The ceiling at claim: 0.40 EUR minus the whole tree budget of a running analysis.
+	cat, err := b.c.Catalog(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	budget := func(task string) (int64, bool) {
+		var v int64
+		var ok bool
+		err := b.c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+			var err error
+			v, ok, err = postmortemClaimBudget(ctx, tx, now, cat, cat.Tenants["demo"], task)
+			return err
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return v, ok
+	}
+	if v, ok := budget("t_none"); !ok || v != money.FromEUR(0.40) {
+		t.Fatalf("the whole ceiling %d %v", v, ok)
+	}
+	// The two incidents of the bench (disk_full and spend_storm on the same alarm) have one
+	// analysis each; the first runs with 0.30 EUR, the second gets the rest.
+	var first, second string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT min(id), max(id) FROM tasks WHERE type = $1`, postmortemType).Scan(&first, &second); err != nil || first == second {
+		t.Fatalf("two analyses %s %s %v", first, second, err)
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE tasks SET state = 'working', record = record || '{"tree_budget_micros": 300000}' WHERE id = $1`, first); err != nil {
+		t.Fatal(err)
+	}
+	if v, ok := budget(second); !ok || v != 100000 {
+		t.Fatalf("beside a running analysis %d %v", v, ok)
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE tasks SET record = record || '{"tree_budget_micros": 400000}' WHERE id = $1`, first); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := budget(second); ok {
+		t.Fatal("past the ceiling")
+	}
+}
+
+// From v0.3 a takeover grant goes only to the role its eval gate checked (MGR-48).
+func TestTakeoverGrantRoleV03(t *testing.T) {
+	ctx := context.Background()
+	b := newManagerBench(t)
+	withV03(t)
+	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO model_grants (id, tenant, task, role, kind, line, profile, attempts, attempts_left, estimate_micros, cap_micros, expires_at,
+		decided_at, state, created_at, updated_at) VALUES ('mg_x', 'demo', 't_x', 'hello', 'takeover', 'manager', 'manager-std', 1, 1, 1000, 1000, botaru_now() + interval '1 hour',
+		botaru_now(), 'approved', botaru_now(), botaru_now())`); err != nil {
+		t.Fatal(err)
+	}
+	cat, err := b.c.Catalog(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claim := func(role string) bool {
+		var ok bool
+		err := b.c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+			var err error
+			_, ok, err = claimGrant(ctx, tx, now, cat, "demo", "t_x", role)
+			return err
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ok
+	}
+	if claim("other") || !claim("hello") {
+		t.Fatal("takeover grant role")
 	}
 }

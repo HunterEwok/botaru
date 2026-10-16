@@ -290,7 +290,7 @@ func (r *takeoverRow) card() map[string]any {
 		"card": takeoverCard, "subject_kind": "takeover", "id": r.ID, "nonce": r.Nonce,
 		"title": cut("Farm manager takeover: "+r.Type+" "+r.Task, 200), "state": r.State, "buttons": buttons,
 		"context": map[string]any{"task": r.Task, "type": r.Type, "profile": r.Profile, "attempts": 1, "estimate_eur": money.CentsUp(r.Estimate),
-			"line": "takeover", "label": "farm manager request for a person's decision"},
+			"line": takeoverLine(), "label": "farm manager request for a person's decision"},
 		"untrusted_seen": false,
 		"footer":         map[string]any{"why_you": "model_grant.manage", "on_silence": "no takeover, the original task continues"},
 	}
@@ -431,6 +431,21 @@ func (c *Core) runTakeover(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 	if p := c.checkBudget(ctx, tx, now, tv, budgetAsk{subject: "system", extra: r.Estimate + open, line: line}); p != nil {
 		return "", "takeover_not_allowed", nil
 	}
+	// From v0.3 the eval gate of the functionary role is checked again at the decision, and
+	// that role is pinned on the new task (MGR-48).
+	v03Role := ""
+	if claimsV03() {
+		var orig []byte
+		if err := tx.QueryRow(ctx, `SELECT record FROM tasks WHERE id = $1`, r.Task).Scan(&orig); err != nil {
+			return "", "", err
+		}
+		v03Role = takeoverRole(cat, typ, orig)
+		if ok, err := takeoverEvalPassed(cat, r.Tenant, v03Role, r.Profile); err != nil {
+			return "", "", err
+		} else if !ok {
+			return "", "takeover_not_allowed", nil
+		}
+	}
 	var b map[string]any
 	if err := json.Unmarshal(body, &b); err != nil {
 		return "", "", err
@@ -456,10 +471,9 @@ func (c *Core) runTakeover(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 			FROM tasks o, takeovers k JOIN tasks s ON s.id = k.seat_task WHERE o.id = $1 AND k.id = $2`, r.Task, r.ID).Scan(&orig, &untrusted); err != nil {
 			return "", "", err
 		}
-		if role == "" {
-			role = takeoverRole(cat, typ, orig)
-		}
-		inherit := map[string]any{"takeover_of": r.Task}
+		// The role whose eval report passed runs the new task, and only it gets the grant.
+		role = v03Role
+		inherit := map[string]any{"takeover_of": r.Task, "executor_role": role}
 		if untrusted {
 			inherit["untrusted_seen"], inherit["untrusted_source"] = true, "continues"
 		}
