@@ -366,6 +366,13 @@ func (s *Server) p2(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		out, err = s.c.LinkCommit(ctx, oper, req)
+	case "commission.status":
+		req, derr := decode[core.TenantRequest](m)
+		if derr != nil {
+			s.fail(w, derr)
+			return
+		}
+		out, err = s.c.CommissionStatus(ctx, oper, req)
 	case "obs.series":
 		req, derr := decode[core.ObsQueryRequest](m)
 		if derr != nil {

@@ -35,6 +35,7 @@ const (
 	Subject    = "sr"
 	Step       = "es"
 	Proposal   = "prp"
+	Sample     = "smp"
 	Fact       = "fct"
 	FactOffer  = "fo"
 	Incident   = "inc"

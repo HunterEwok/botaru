@@ -37,7 +37,7 @@ var errNoTrial = errors.New("no trial")
 // the card. "Accept" creates exactly one object of the ordinary path on behalf of that person
 // and the trial record in the same transaction (PRP-4, PRP-18, PRP-21).
 func (c *Core) decideProposal(ctx context.Context, w *Worker, ob OnBehalf, req DecideRequest) (*DecideResult, error) {
-	if req.Decision != "accept" && req.Decision != "reject" && req.Decision != "defer" {
+	if req.Decision != "accept" && req.Decision != "reject" && req.Decision != "defer" && !slices.Contains(sampleDecisions, req.Decision) {
 		return nil, refuse("input_schema_invalid", "a proposal is accepted, rejected or postponed")
 	}
 	cat, err := c.Catalog(ctx)
@@ -59,11 +59,46 @@ func (c *Core) decideProposal(ctx context.Context, w *Worker, ob OnBehalf, req D
 		if p.Nonce == "" || p.Nonce != req.Nonce {
 			return refuse("forbidden", "the nonce is not the card's")
 		}
-		press, err := c.checkPress(ctx, tx, now, cat, w, ob, "proposal", p.ID, []string{proposalCard})
+		press, err := c.checkPress(ctx, tx, now, cat, w, ob, "proposal", p.ID, []string{proposalCard, proposalSampleCard})
 		if err != nil {
 			return err
 		}
 		out = &DecideResult{SubjectKind: "proposal", ID: p.ID, Decision: req.Decision}
+		deny := func(reason, detail string) error {
+			if _, err := c.appendAudit(ctx, tx, now, Audit{
+				Tenant: p.Tenant, Kind: "decision", Actor: Actor{Principal: press.principal, Via: "channel"},
+				Command: "decide", Target: &Target{Kind: "proposal", ID: p.ID}, OK: false, Reason: reason,
+				After: map[string]any{"decision": req.Decision},
+			}); err != nil {
+				return err
+			}
+			return &committed{p: refuse(reason, "%s", detail)}
+		}
+		var views int
+		if err := tx.QueryRow(ctx, `SELECT count(*) FROM card_views WHERE subject_kind = 'proposal' AND subject_id = $1 AND principal = $2`, p.ID, press.principal).Scan(&views); err != nil {
+			return err
+		}
+		if _, sampled := mmapAny(p.Rec["sample"])["month"]; sampled {
+			// An item of the audit sample has its own branch (DIG-6).
+			before := p.State
+			state, err := c.decideSample(ctx, tx, now, cat, press, p, req, views, deny)
+			if err != nil || state == before {
+				out.State = state
+				return err
+			}
+			if _, err := c.appendAudit(ctx, tx, now, Audit{
+				Tenant: p.Tenant, Kind: "decision", Actor: Actor{Principal: press.principal, Via: "channel"},
+				Command: "decide", Target: &Target{Kind: "proposal", ID: p.ID}, OK: true,
+				After: map[string]any{"decision": req.Decision, "state": state},
+			}); err != nil {
+				return err
+			}
+			out.State = state
+			return c.planProposalCardUpdates(ctx, tx, now, p)
+		}
+		if slices.Contains(sampleDecisions, req.Decision) {
+			return refuse("input_schema_invalid", "the proposal is not an item of the audit sample")
+		}
 		if p.State != "presented" {
 			// A repeat of the same decision by the same person gets the same answer (IDM-3).
 			d := mmapAny(p.Rec["decision"])
@@ -78,16 +113,6 @@ func (c *Core) decideProposal(ctx context.Context, w *Worker, ob OnBehalf, req D
 			return refuse("already_decided", "the proposal is decided")
 		}
 		b := p.body()
-		deny := func(reason, detail string) error {
-			if _, err := c.appendAudit(ctx, tx, now, Audit{
-				Tenant: p.Tenant, Kind: "decision", Actor: Actor{Principal: press.principal, Via: "channel"},
-				Command: "decide", Target: &Target{Kind: "proposal", ID: p.ID}, OK: false, Reason: reason,
-				After: map[string]any{"decision": req.Decision},
-			}); err != nil {
-				return err
-			}
-			return &committed{p: refuse(reason, "%s", detail)}
-		}
 		if !hasCap(press.tv, press.groups, "proposal.decide:"+b.Category) {
 			return deny("forbidden", "the person has no proposal.decide for this category")
 		}
@@ -99,10 +124,6 @@ func (c *Core) decideProposal(ctx context.Context, w *Worker, ob OnBehalf, req D
 				return err
 			}
 			return &committed{p: refuse("expired", "the card has expired")}
-		}
-		var views int
-		if err := tx.QueryRow(ctx, `SELECT count(*) FROM card_views WHERE subject_kind = 'proposal' AND subject_id = $1 AND principal = $2`, p.ID, press.principal).Scan(&views); err != nil {
-			return err
 		}
 		prev := mmapAny(p.Rec["decision"])
 		defers, _ := toFloat(prev["defer_count"])

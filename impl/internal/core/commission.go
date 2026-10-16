@@ -202,7 +202,7 @@ func (c *Core) proposalLoop(ctx context.Context) error {
 	}
 	var ids []string
 	if err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
-		rows, err := tx.Query(ctx, `SELECT id FROM proposals WHERE state IN ('screened', 'in_review', 'recommended', 'parked', 'presented', 'realizing')
+		rows, err := tx.Query(ctx, `SELECT id FROM proposals WHERE state IN ('screened', 'in_review', 'recommended', 'parked', 'presented', 'realizing', 'sample_presented', 'sample_judged')
 			OR state = 'realized' AND record->'trial'->>'outcome' IS NULL ORDER BY created_at, id`)
 		if err != nil {
 			return err
@@ -217,6 +217,10 @@ func (c *Core) proposalLoop(ctx context.Context) error {
 		if err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error { return c.stepProposal(ctx, tx, now, cat, id) }); err != nil {
 			errs = append(errs, fmt.Errorf("proposal %s: %w", id, err))
 		}
+	}
+	// The audit sample of the last month is drawn before the digest that presents it (DIG-5).
+	if err := c.sampleDraws(ctx, cat); err != nil {
+		errs = append(errs, err)
 	}
 	// The digest goes after the moves, so a proposal recommended in this pass can be in it.
 	if err := c.digestLoop(ctx, cat); err != nil {
@@ -323,6 +327,8 @@ func (c *Core) stepProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		return c.reviewProposal(ctx, tx, now, cat, tv, p)
 	case "presented":
 		return c.presentedStep(ctx, tx, now, tv, p)
+	case "sample_presented", "sample_judged":
+		return c.sampleStep(ctx, tx, now, tv, p)
 	case "realizing":
 		return c.realizingStep(ctx, tx, now, tv, p)
 	case "realized":
