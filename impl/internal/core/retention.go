@@ -24,8 +24,6 @@ const (
 	retentionBatch          = 500
 	retentionMaxBatchesTick = 20
 	day                     = 24 * time.Hour
-	// ingressKeepFor is how long a source channel's delivery key is kept against repeats.
-	ingressKeepFor = day
 )
 
 // retentionPeriods are the periods of one tenant (RET-9): content, the file period (never
@@ -218,11 +216,12 @@ func (c *Core) retentionLoop(ctx context.Context) error {
 		}
 	}
 	steps := []func(tx pgx.Tx, now time.Time) (int64, error){
-		// The delivery keys of source channels after a day: a signed delivery older than its
-		// tolerance (at most 5 minutes) is refused by the driver anyway (ING-1, ING-3).
+		// The delivery keys of source channels at their keep_until: a day for a signed source,
+		// whose deliveries the driver refuses after the tolerance anyway, and the default content
+		// period for a tls_token source (ING-1, ING-3).
 		func(tx pgx.Tx, now time.Time) (int64, error) {
 			tag, err := tx.Exec(ctx, `DELETE FROM ingress_deliveries WHERE (tenant, key) IN (SELECT tenant, key FROM ingress_deliveries
-				WHERE created_at <= $1 LIMIT $2 FOR UPDATE SKIP LOCKED)`, start.Add(-ingressKeepFor), retentionBatch)
+				WHERE keep_until <= $1 LIMIT $2 FOR UPDATE SKIP LOCKED)`, start, retentionBatch)
 			return tag.RowsAffected(), err
 		},
 		exec(`DELETE FROM activity_outcomes WHERE (tenant, key) IN (SELECT a.tenant, a.key FROM activity_outcomes a LEFT JOIN p ON p.tenant = a.tenant

@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/HunterEwok/botaru/impl/internal/spec"
 )
 
 // Routes on events (on: event, MSG-16): a route from git enqueues a task of system in the
@@ -52,13 +54,13 @@ type routedEvent struct {
 // the closed fields of the event and never the untrusted body (INJ-7). The goal comes from the
 // route or the type, never from the event (ING-2). A route the guards stop and a refusal of the
 // enqueue each write an authorize record with the decision deny and leave the event as it is.
-// Routes on events run only while the build claims the profile ingress, the part of this build
-// that brings them; until then a route with on: event enqueues nothing.
+// Routes on events run only while the build claims the profile of their events (routesClaimed);
+// until then a route with on: event enqueues nothing.
 //
 // It returns the tasks the routes enqueued, in route name order.
 func (c *Core) eventRoutes(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tenant string, ev routedEvent) ([]string, error) {
 	tv := cat.Tenants[tenant]
-	if !ingressOn() || tv == nil || ev.Hops >= eventHopsMax {
+	if !routesClaimed(ev.Type) || tv == nil || ev.Hops >= eventHopsMax {
 		return nil, nil
 	}
 	var tasks []string
@@ -145,6 +147,20 @@ func (c *Core) eventRoutes(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 		}
 	}
 	return tasks, nil
+}
+
+// routesClaimed says whether the routes on an event of this type run: those on a problem of the
+// monitoring system with the profile monitor (MON-5), those on another external event with the
+// profile ingress (ING-4), and those on an event a job publishes with the profile messaging of
+// MSG-16 and IDM-4. This build claims none of them yet, so each turns on with its claim.
+func routesClaimed(typ string) bool {
+	switch {
+	case strings.HasPrefix(typ, "ext.monitor."):
+		return spec.Claims("monitor")
+	case strings.HasPrefix(typ, "ext."):
+		return spec.Claims("ingress")
+	}
+	return spec.Claims("messaging")
 }
 
 // denyRoute writes the authorize record of a route on an event that enqueued nothing, as the

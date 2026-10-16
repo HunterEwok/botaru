@@ -86,7 +86,9 @@ type ingressBench struct {
 
 func newIngressBench(t *testing.T) *ingressBench {
 	t.Helper()
-	ingressOnT(t)
+	// The routes on job events are of the profile messaging (MSG-16).
+	prev := spec.SetProfileOverride("ingress", "messaging")
+	t.Cleanup(func() { spec.SetProfileOverride(prev...) })
 	var ms []map[string]any
 	b := newToolBenchWith(t, &ms, func(ms []map[string]any) []map[string]any {
 		for _, m := range ms {
@@ -112,6 +114,7 @@ func newIngressBench(t *testing.T) *ingressBench {
 			routeDoc("ping", map[string]any{"event": "ext.tokensrc.ping.v1"}, "pipeline.react.v1", nil),
 			routeDoc("done", map[string]any{"event": "run.finished.v1", "subject": "web1-logs", "match": map[string]any{"outcome": []any{"failed", "partial"}}},
 				"pipeline.emit.v1", nil),
+			routeDoc("monprob", map[string]any{"event": "ext.monitor.problem.v1"}, "pipeline.react.v1", nil),
 			routeDoc("pingemit", map[string]any{"event": "ext.tokensrc.ping.v1"}, "pipeline.emit.v1", nil),
 			routeDoc("deepdone", map[string]any{"event": "run.finished.v1", "subject": "web-checks"}, "pipeline.deep.v1", nil),
 		)
@@ -588,8 +591,9 @@ func TestEventRouteJobEvent(t *testing.T) {
 	if n := len(routeTasks(t, b.bench, "deepdone")); n != 1 {
 		t.Fatalf("deepdone tasks %d", n)
 	}
-	// Without the ingress claim a job event starts no route (MAN-11).
-	prev := spec.SetProfileOverride()
+	// Without the messaging claim a job event starts no route, the ingress claim
+	// notwithstanding (MAN-11).
+	prev := spec.SetProfileOverride("ingress")
 	emit("r4", "web1-logs", "failed")
 	spec.SetProfileOverride(prev...)
 	if n := len(routeTasks(t, b.bench, "done")); n != 1 {
@@ -662,6 +666,94 @@ func TestIngressTokenChain(t *testing.T) {
 	if n := b.count(t, `SELECT count(*) FROM tasks WHERE id = $1 AND (record->>'event_token')::bool AND (record->>'event_hops')::int = 2`, done[0]); n != 1 {
 		t.Fatal("the second hop lost the token mark")
 	}
+	// A redriven route task keeps its step and the mark (DLV-4).
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE tasks SET state = 'failed', reason = 'attempts_exhausted' WHERE id = $1`, done[0]); err != nil {
+		t.Fatal(err)
+	}
+	again, err := b.c.Redrive(ctx, b.op, RedriveRequest{Op: "task.redrive", ID: done[0]})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := b.count(t, `SELECT count(*) FROM tasks WHERE id = $1 AND (record->>'event_token')::bool AND (record->>'event_hops')::int = 2`, again.ID); n != 1 {
+		t.Fatal("the redriven task lost its route step")
+	}
+}
+
+// Each family of routes on events runs with the claim of its profile: ext.* of a source with
+// ingress, ext.monitor.* with monitor, job events with messaging; without it nothing is enqueued
+// (MAN-11, MSG-16, MON-5, ING-4).
+func TestEventRoutesClaims(t *testing.T) {
+	ctx := context.Background()
+	b := newIngressBench(t)
+	cat, err := b.c.Catalog(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := func(profiles []string, ev routedEvent) int {
+		t.Helper()
+		prev := spec.SetProfileOverride(profiles...)
+		defer spec.SetProfileOverride(prev...)
+		var n int
+		if err := b.c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+			tasks, err := b.c.eventRoutes(ctx, tx, now, cat, "demo", ev)
+			n = len(tasks)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	pipe := routedEvent{Type: "ext.pipeline.run_failed.v1", ID: "ev_c1", Source: "s", Data: map[string]any{"status": "failed"}}
+	mon := routedEvent{Type: "ext.monitor.problem.v1", ID: "ev_c2", Source: "s"}
+	job := routedEvent{Type: runFinishedType, ID: "ev_c3", Source: "s", Subject: "web1-logs", Data: map[string]any{"outcome": "failed"}}
+	for _, c := range []struct {
+		profiles []string
+		ev       routedEvent
+		want     int
+	}{
+		{[]string{"monitor", "messaging"}, pipe, 0},
+		{[]string{"ingress", "messaging"}, mon, 0},
+		{[]string{"ingress", "monitor"}, job, 0},
+		{[]string{"ingress"}, pipe, 2},
+		{[]string{"monitor"}, mon, 1},
+		{[]string{"messaging"}, job, 1},
+	} {
+		if got := run(c.profiles, c.ev); got != c.want {
+			t.Fatalf("%v %s: %d tasks, want %d", c.profiles, c.ev.Type, got, c.want)
+		}
+	}
+}
+
+// Only a body this delivery put is dropped: a file older than the put window, or one a task
+// already names, stays (ING-3).
+func TestIngressDropOnlyOwnBody(t *testing.T) {
+	ctx := context.Background()
+	b := newIngressBench(t)
+	src := b.source(t, "pipeline")
+	put := func() string {
+		t.Helper()
+		ref, err := b.putBody(t, src, "pipeline", []byte(`{"run":{"status":"failed"}}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ref
+	}
+	own, old, named := put(), put(), put()
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE files SET created_at = created_at - interval '1 hour' WHERE file_ref = $1`, old); err != nil {
+		t.Fatal(err)
+	}
+	task := b.hello(t, "1")
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE tasks SET body = jsonb_set(body, '{attachments}', jsonb_build_array(jsonb_build_object('file_ref', $2::text))) WHERE id = $1`, task, named); err != nil {
+		t.Fatal(err)
+	}
+	for _, ref := range []string{own, old, named} {
+		if _, err := b.c.SubmitActivity(ctx, src, ingressSignal("pipeline", "pipeline", "ext.pipeline.run_failed.v1", "x1", map[string]any{"log": "x"}, ref)); err == nil {
+			t.Fatal("a field outside the mapping was accepted")
+		}
+	}
+	if fileState(t, b.bench, own) != "expired" || fileState(t, b.bench, old) != "stored" || fileState(t, b.bench, named) != "stored" {
+		t.Fatalf("own %s old %s named %s", fileState(t, b.bench, own), fileState(t, b.bench, old), fileState(t, b.bench, named))
+	}
 }
 
 // The body of a delivery is an upload of the service principal hook:<source>: in a production
@@ -712,15 +804,32 @@ func TestIngressDeliveriesPurge(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE ingress_deliveries SET created_at = created_at - interval '25 hours' WHERE key = 'system:ingress:pipeline:old1'`); err != nil {
+	tok := b.source(t, "tokens")
+	if _, err := b.c.SubmitActivity(ctx, tok, ingressSignal("tokens", "tokensrc", "ext.tokensrc.ping.v1", "t1", nil)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE ingress_deliveries SET created_at = created_at - interval '25 hours', keep_until = keep_until - interval '25 hours'
+		WHERE key IN ('system:ingress:pipeline:old1', 'system:ingress:tokensrc:t1')`); err != nil {
 		t.Fatal(err)
 	}
 	b.loop(t, "retention")
 	if n := b.count(t, `SELECT count(*) FROM ingress_deliveries WHERE key = 'system:ingress:pipeline:old1'`); n != 0 {
-		t.Fatal("a delivery key older than a day was kept")
+		t.Fatal("a signed delivery key older than a day was kept")
 	}
-	if n := b.count(t, `SELECT count(*) FROM ingress_deliveries WHERE key = 'system:ingress:pipeline:new1'`); n != 1 {
-		t.Fatal("a fresh delivery key was deleted")
+	// A tls_token delivery can be replayed at any time: its key outlives a day (ING-3).
+	if n := b.count(t, `SELECT count(*) FROM ingress_deliveries WHERE key = 'system:ingress:tokensrc:t1'`); n != 1 {
+		t.Fatal("a token delivery key was deleted after a day")
+	}
+	b.advance(t, 30*24*3600)
+	b.loop(t, "retention")
+	if n := b.count(t, `SELECT count(*) FROM ingress_deliveries WHERE key = 'system:ingress:tokensrc:t1'`); n != 0 {
+		t.Fatal("a token delivery key outlived the content period")
+	}
+	if n := b.count(t, `SELECT count(*) FROM ingress_deliveries WHERE tenant = 'demo'`); n != 0 {
+		t.Fatal("a signed key outlived the content period")
+	}
+	if _, err := b.c.SubmitActivity(ctx, src, ingressSignal("pipeline", "pipeline", "ext.pipeline.run_failed.v1", "new2", map[string]any{"status": "failed"})); err != nil {
+		t.Fatal(err)
 	}
 	if _, err := b.c.TenantLifecycle(ctx, b.op, TenantLifecycleRequest{Op: "tenant.offboard", Tenant: "demo", ExportWindow: "1d"}); err != nil {
 		t.Fatal(err)
