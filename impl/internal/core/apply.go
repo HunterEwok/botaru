@@ -61,6 +61,9 @@ type ApplyResult struct {
 	SetHash string        `json:"set_hash,omitempty"`
 	Changes []ApplyChange `json:"changes"`
 	Errors  []ApplyError  `json:"errors"`
+	// Warnings are findings that do not fail the set, such as eval_report_missing in a test
+	// tenant (PRV-3); an extension field of the answer (MAN-3).
+	Warnings []ApplyError `json:"warnings,omitempty"`
 }
 
 type kindInfo struct {
@@ -249,6 +252,13 @@ func (c *Core) applyOnce(ctx context.Context, op Operator, req ApplyRequest) (*A
 			return nil, err
 		}
 		res.Errors = append(res.Errors, errs...)
+		// The quality gate on a static fingerprint change (PRV-3).
+		gate, warns, err := c.evalGate(after, lintIndex, stored)
+		if err != nil {
+			return nil, err
+		}
+		res.Errors = append(res.Errors, gate...)
+		res.Warnings = append(res.Warnings, warns...)
 	}
 	if len(res.Errors) == 0 {
 		if _, err := buildCatalog(after); err != nil {
