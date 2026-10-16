@@ -450,8 +450,11 @@ func (c *Core) cancelTaskIDs(ctx context.Context, tx pgx.Tx, now time.Time, tena
 
 // mydataCommand is /mydata: without an argument what the farm keeps about the person in its
 // own memory; /mydata erase asks to erase all their data, which a person with admin:people
-// decides (SEC-11); the extract (/mydata export) arrives in v0.2.
+// decides (SEC-11); /mydata export <key> asks for a copy encrypted with the person's key (SEC-10).
 func (c *Core) mydataCommand(ctx context.Context, tx pgx.Tx, now time.Time, pc personCommand, rest string) (*ActivityResult, error) {
+	if arg, ok := strings.CutPrefix(strings.TrimSpace(rest), "export"); ok && (arg == "" || arg[0] == ' ') {
+		return c.mydataExport(ctx, tx, now, pc, strings.TrimSpace(arg))
+	}
 	switch strings.TrimSpace(rest) {
 	case "":
 		var records, sessions int
@@ -466,10 +469,31 @@ func (c *Core) mydataCommand(ctx context.Context, tx pgx.Tx, now time.Time, pc p
 			return nil, err
 		}
 		return pc.reply(c, "cmd.mydata.erase", map[string]any{"request": id, "days": subjectRequestDays(pc.tv)}), nil
-	case "export":
-		return pc.reply(c, "cmd.mydata.export", nil), nil
 	}
 	return pc.reply(c, "cmd.mydata.usage", nil), nil
+}
+
+// mydataExport is /mydata export <key>: a request of kind export with the person's public key,
+// decided on a card by another person with admin:people; the copy then goes only to the
+// tenant's export sink with recipient_ref self, encrypted with that key (SEC-10, SEC-11).
+func (c *Core) mydataExport(ctx context.Context, tx pgx.Tx, now time.Time, pc personCommand, key string) (*ActivityResult, error) {
+	if key == "" || len(key) > 8192 {
+		return pc.reply(c, "cmd.mydata.export_key", nil), nil
+	}
+	if _, err := exportPublicKey(key); err != nil {
+		return pc.reply(c, "cmd.mydata.export_key", nil), nil
+	}
+	if rec, _, err := exportSink(pc.cat, pc.tv.Name, pc.tv.Spec.Privacy.ExportSink); pc.tv.Spec.Privacy.ExportSink == "" || err != nil || rec != "self" {
+		return pc.reply(c, "cmd.mydata.export_unavailable", nil), nil
+	}
+	id, err := c.createSubjectRequest(ctx, tx, now, pc.tv, "export", pc.person, pc.person, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE subject_requests SET recipient_key = $2 WHERE id = $1 AND state = 'pending'`, id, key); err != nil {
+		return nil, err
+	}
+	return pc.reply(c, "cmd.mydata.export_recorded", map[string]any{"request": id, "days": subjectRequestDays(pc.tv)}), nil
 }
 
 // forgetCommand is /forget: the person's memory records and the sessions of their

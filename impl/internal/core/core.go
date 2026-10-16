@@ -66,6 +66,9 @@ type Config struct {
 	// SecretUses are the hold scopes of each named deployment secret, as the deployment
 	// description uses it (SEC-6): what secret.revoke stops besides the core's own credentials.
 	SecretUses map[string][]HoldScope
+	// ExportKeys are the public keys of export sinks by their key_ref (x25519:<base64>), for a
+	// tenant export and for a person's copy without a key of its own request (LCY-2, SEC-10).
+	ExportKeys map[string]string
 	// FreeSpace, when set, measures the store volume instead of Health.StoreVolume: free and
 	// total bytes. A test sets a mock measurement here.
 	FreeSpace func() (free, total uint64, err error)

@@ -227,6 +227,11 @@ func loadErasure(ctx context.Context, q store.Querier, id string, lock bool) (*e
 // each request; an open request past its deadline raises its alarm. It also runs the person's
 // requests: the reminder at half of the deadline and the overdue notice (SEC-11).
 func (c *Core) erasureLoop(ctx context.Context) error {
+	// The export tasks of the pass first, so an export queued before a deletion still runs
+	// (LCY-2).
+	if err := c.runExports(ctx); err != nil {
+		return err
+	}
 	var open []string
 	err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
 		open = open[:0]

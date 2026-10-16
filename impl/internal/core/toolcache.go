@@ -49,10 +49,11 @@ func catalogVersion(cat *Catalog, tenant string) string {
 }
 
 // toolCacheKey is the key of a call's entry.
-func toolCacheKey(cat *Catalog, tenant, right, defHash string, args map[string]any) (string, error) {
+func toolCacheKey(cat *Catalog, tn, right, defHash string, args map[string]any) (string, error) {
 	plugin, tool, _ := cutTool(right)
-	return jcs.Hash(map[string]any{"tenant": tenant, "plugin": plugin, "tool": tool, "args": args,
-		"catalog": catalogVersion(cat, tenant), "definition": defHash})
+	k := map[string]any{"plugin": plugin, "tool": tool, "args": args, "catalog": catalogVersion(cat, tn), "definition": defHash}
+	k["tenant"] = tn
+	return jcs.Hash(k)
 }
 
 // cachedOutput is an entry of the cache with the flags of the call that filled it.

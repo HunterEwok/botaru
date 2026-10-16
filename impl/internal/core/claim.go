@@ -668,7 +668,8 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 		if err != nil {
 			return nil, err
 		}
-		if kind != "alarm_notice" && kind != "monitor_alarm" && kind != "monitor_audit_head" {
+		// An export still goes: only export is allowed while a tenant is offboarding (LCY-1).
+		if kind != "alarm_notice" && kind != "monitor_alarm" && kind != "monitor_audit_head" && kind != "export" {
 			scopes := append(tenantScopes(w.Tenant), scopeRef{kind: "channel", tenant: w.Tenant, name: w.Target})
 			if role != "" && origin == "model" {
 				// The role whose attempt wrote the text, as the auto-stop of HLD-6 scopes it. A

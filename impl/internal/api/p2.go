@@ -155,6 +155,13 @@ func (s *Server) p2(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		out, err = s.c.TenantLifecycle(ctx, oper, req)
+	case "tenant.export", "principal.export":
+		req, derr := decode[core.ExportRequest](m)
+		if derr != nil {
+			s.fail(w, derr)
+			return
+		}
+		out, err = s.c.Export(ctx, oper, req)
 	case "secret.revoke":
 		req, derr := decode[core.SecretRevokeRequest](m)
 		if derr != nil {
