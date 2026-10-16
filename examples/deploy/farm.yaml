@@ -9,6 +9,9 @@ secrets:                                   # rotation method of each named secre
   backup-key:                   {rotation: overlap, window: 60d}
   health-key:                   {rotation: overlap, window: 1d}
   store-core:                   {rotation: overlap, window: 1d}
+  webhook-signing-pipeline:  {rotation: overlap, window: 1d}   # Standard Webhooks accepts two keys during a rotation
+  ingress-tls-demo:          {rotation: overlap, window: 7d}
+  worker-token-ingress-demo: {rotation: overlap, window: 7d}
   worker-token-channel-demo:    {rotation: overlap, window: 7d}
   worker-token-monitor-demo:    {rotation: overlap, window: 7d}
   worker-token-th-demo-act:     {rotation: overlap, window: 7d}
@@ -23,6 +26,8 @@ hosts:
       - {name: store, kind: store, user: botaru-store, networks: [store]}
       - {name: channel-demo, kind: channel, tenant: demo, user: botaru-ch-demo, networks: [core],
          secrets: [worker-token-channel-demo]}
+      - {name: ingress-demo, kind: channel, tenant: demo, user: botaru-ingress-demo, networks: [core, ingress-in],
+         secrets: [worker-token-ingress-demo, webhook-signing-pipeline, ingress-tls-demo]}   # source channel pipeline (SEC-2, ING-1)
       - {name: monitor-demo, kind: monitor, tenant: demo, user: botaru-mon-demo, networks: [core],
          secrets: [worker-token-monitor-demo]}
   backup1:
