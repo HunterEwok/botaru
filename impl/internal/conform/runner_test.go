@@ -422,10 +422,19 @@ cases:
 // TestVagueRefusal: a refusal checks an expected refusal only when the expectation names what is
 // refused and the refusal is at an object the fragment changed. A refusal for an unrelated
 // reason is never counted as a pass: without an error code it is unchecked, with the wrong code
-// it fails; the argv parameters of an example command keep their schemas, so only what the row
+// it fails; a given manifest refused for something else as well is unchecked; the argv parameters of an example command keep their schemas, so only what the row
 // writes is wrong; a later version of an example type is added under its name.
 func TestVagueRefusal(t *testing.T) {
 	r := testRunner(t)
+	// A fragment of the type ops.insight.v1 in the set of the role ops-reader: a worker kind of
+	// job is refused at the role that claims the type (worker_kind_mismatch), an object the
+	// fragment did not change, so the expected code is found only outside the changed object.
+	fragmentKinds["insight_type_yaml"] = true
+	lintObjects["insight_type_yaml"] = lintObject{files: opsReaderFiles, pick: byKindName("TaskType", "ops.insight.v1"), apply: specMerge}
+	defer func() {
+		delete(fragmentKinds, "insight_type_yaml")
+		delete(lintObjects, "insight_type_yaml")
+	}()
 	got := runYAML(t, r, `
 id: t-vague
 rules: [INJ-14]
@@ -444,17 +453,35 @@ cases:
   expect: {result: ok}
 - id: unrelated-object
   steps:
-  - lint: {groups_yaml: 'staff: task:ops.summary.v1', tool_yaml: {access: read, tier: 1, output_class: raw_logs, untrusted_output: null}}
-  expect: {result: rejected, stage: apply, error: cap_star}
+  - lint: {insight_type_yaml: {worker_kind: job}}
+  expect: {result: rejected, stage: apply, error: worker_kind_mismatch}
+- id: manifest-besides
+  given:
+    manifest:
+      kind: Role
+      metadata: {name: ops-runner}
+      spec:
+        profile: worker
+        worker_kind: agent
+        claims: [ops.insight.v1]
+        models: {base: base-std}
+        insight: {types: [ops.insight.v1], merge_window: 30m}
+  expect: {result: rejected, stage: apply, field: spec.insight.merge_window}
 - id: next-version
   steps:
   - lint: {schedule_yaml: 'type: data.sensor_check.v2'}
   expect: {result: rejected, stage: apply, error: system_ops_missing}
 `)
-	wantStatus(t, got, map[string]Status{"no-code": Unchecked, "unrelated-code": Failed, "param-kept": Passed, "unrelated-object": Failed,
+	wantStatus(t, got, map[string]Status{"no-code": Unchecked, "unrelated-code": Failed, "param-kept": Passed, "unrelated-object": Unchecked, "manifest-besides": Unchecked,
 		"next-version": Passed})
 	if d := got["no-code"].Detail; !strings.Contains(d, "names no error code") {
 		t.Errorf("no-code: %s", d)
+	}
+	if d := got["manifest-besides"].Detail; !strings.Contains(d, "besides the expected error") {
+		t.Errorf("manifest-besides: %s", d)
+	}
+	if d := got["unrelated-object"].Detail; !strings.Contains(d, "outside the objects the fragment changes") {
+		t.Errorf("unrelated-object: %s", d)
 	}
 	o := &outcome{Result: "rejected", Error: "cmd_forbidden_program", Path: "/manifests/0/spec/tools/0", Touched: map[int]bool{1: true}}
 	if n := vague(map[string]any{"result": "rejected", "error": "cmd_forbidden_program"}, o); !strings.Contains(n, "outside the objects") {

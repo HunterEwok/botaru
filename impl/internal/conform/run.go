@@ -632,6 +632,21 @@ func vague(e map[string]any, o *outcome) string {
 		return "the expectation names no error code, reason or field, so a refusal for any reason would match (" + o.errors() + ")"
 	}
 	if o.Touched == nil {
+		// Given manifests: the refusal checks the case only when every error of the set is
+		// the expected one, so a manifest refused for something else as well (a reference
+		// outside the set) does not pass on the expected error alone.
+		var match bool
+		var other []string
+		for _, oo := range append([]*outcome{o}, o.Alts...) {
+			if compareOne(withoutKeys(e, "note"), oo) == "" {
+				match = true
+			} else if oo.Error != "" {
+				other = append(other, oo.Error+" at "+oo.Path)
+			}
+		}
+		if match && len(other) > 0 {
+			return "the given manifests are refused besides the expected error: " + strings.Join(other, ", ")
+		}
 		return ""
 	}
 	var outside []string
