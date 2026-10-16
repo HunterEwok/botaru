@@ -31,20 +31,23 @@ const (
 	Session   = "s"
 	Memory    = "m"
 	// Message shares the prefix m with memory items: the message schema fixes m_<ulid>.
-	Message    = "m"
-	Subject    = "sr"
-	Step       = "es"
-	Proposal   = "prp"
-	Fact       = "fct"
-	FactOffer  = "fo"
-	Incident   = "inc"
-	Control    = "ctl"
-	Finding    = "fd"
-	Card       = "cc"
-	Read       = "rd"
-	Campaign   = "cmp"
-	Script     = "scr"
-	ScriptGate = "scg"
+	Message     = "m"
+	Subject     = "sr"
+	Step        = "es"
+	Proposal    = "prp"
+	Sample      = "smp"
+	GovCase     = "gc"
+	Attribution = "att"
+	Fact        = "fct"
+	FactOffer   = "fo"
+	Incident    = "inc"
+	Control     = "ctl"
+	Finding     = "fd"
+	Card        = "cc"
+	Read        = "rd"
+	Campaign    = "cmp"
+	Script      = "scr"
+	ScriptGate  = "scg"
 	// ModelGrant, Takeover and Escalation are the farm manager's grant, takeover and escalation
 	// records (MGR-5, MGR-17, MGR-21).
 	ModelGrant = "mg"
@@ -62,6 +65,12 @@ func New(prefix string) string {
 	mu.Lock()
 	defer mu.Unlock()
 	return prefix + "_" + ulid.MustNew(ulid.Timestamp(time.Now()), entropy).String()
+}
+
+// Untimed returns a new id of the form prefix_<ULID> whose time part is zero and whose random
+// part is drawn afresh, so it says nothing about when or in which order it was made (SEC-14).
+func Untimed(prefix string) string {
+	return prefix + "_" + ulid.MustNew(0, rand.Reader).String()
 }
 
 // PrincipalID returns a new opaque person id human:p_<ULID>.

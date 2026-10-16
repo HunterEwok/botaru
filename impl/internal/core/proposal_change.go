@@ -5,6 +5,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"math"
 	"regexp"
 	"slices"
@@ -360,4 +361,77 @@ func lower(nv, cur any) bool {
 	a, ok1 := parseDuration(asString(nv))
 	b, ok2 := parseDuration(asString(cur))
 	return ok1 && ok2 && a < b
+}
+
+// cronLookback and cronSpan are the cumulative limit on lowering a schedule's frequency: the
+// runs of a new spec.cron per 30 days are at least half of the runs of the value applied 90
+// days earlier, by the history of applied sets (PRP-16).
+const (
+	cronLookback = 90 * 24 * time.Hour
+	cronSpanDays = 30
+)
+
+// cronHistory refuses a spec.cron below half of the runs of the value that was applied 90 days
+// ago, so a run of small steps cannot lower the frequency more than one step may (PRP-16). The
+// value applied then is the earliest replaced version after that moment, or the one applied
+// now when none was replaced since.
+func (c *Core) cronHistory(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tenant string, ch proposalChange) error {
+	if ch.Kind != "manifest_change" || ch.ManifestChange == nil {
+		return nil
+	}
+	tv := cat.Tenants[tenant]
+	for _, op := range ch.ManifestChange.Ops {
+		if op.Target.Kind != "Schedule" || op.Field != "spec.cron" {
+			continue
+		}
+		sc, ok := tv.Schedules[op.Target.Name]
+		next, isString := op.Value.(string)
+		if !ok || !isString {
+			return rejection("forbidden_change")
+		}
+		old := sc.Cron
+		var doc map[string]any
+		err := tx.QueryRow(ctx, `SELECT doc FROM manifest_versions WHERE kind = 'Schedule' AND tenant = $1 AND name = $2 AND replaced_at > $3
+			ORDER BY replaced_at LIMIT 1`, tenant, op.Target.Name, now.Add(-cronLookback)).Scan(&doc)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+		if v := asString(mmapAny(doc["spec"])["cron"]); v != "" {
+			old = v
+		}
+		loc, err := time.LoadLocation(scheduleTZ(tv, sc))
+		if err != nil {
+			return rejection("forbidden_change")
+		}
+		was, ok1 := cronRuns(old, now.In(loc))
+		will, ok2 := cronRuns(next, now.In(loc))
+		if !ok1 || !ok2 || will*2 < was {
+			return rejection("forbidden_change")
+		}
+	}
+	return nil
+}
+
+// cronRuns counts the slots of an expression over 30 days from the day of from.
+func cronRuns(expr string, from time.Time) (int, bool) {
+	cs, err := parseCron(expr)
+	if err != nil {
+		return 0, false
+	}
+	daily := 0
+	for m := range 60 {
+		for h := range 24 {
+			if cs.min[m] && cs.hour[h] {
+				daily++
+			}
+		}
+	}
+	day := time.Date(from.Year(), from.Month(), from.Day(), 12, 0, 0, 0, from.Location())
+	n := 0
+	for i := range cronSpanDays {
+		if cs.dayMatches(day.AddDate(0, 0, i)) {
+			n += daily
+		}
+	}
+	return n, true
 }

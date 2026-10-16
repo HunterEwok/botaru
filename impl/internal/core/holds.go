@@ -135,7 +135,8 @@ func (c *Core) checkHoldRequest(now time.Time, req HoldSetRequest) (*time.Time, 
 		if !ok || e["kind"] != kind {
 			return refuse("input_schema_invalid", "unknown hold %s %s", kind, id)
 		}
-		if since, _ := e["since"].(string); since != "" && spec.VersionLater(since, spec.Version) {
+		// The scope governance (a case pause) is of v0.2, which this build implements (GOV-14).
+		if since, _ := e["since"].(string); since != "" && spec.VersionLater(since, spec.Version) && !(kind == "scope" && id == "governance") {
 			return refuse("input_schema_invalid", "the hold %s %s is of %s; this core claims %s", kind, id, since, spec.Version)
 		}
 		return nil

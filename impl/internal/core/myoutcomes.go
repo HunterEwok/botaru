@@ -5,6 +5,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"sort"
 	"time"
 
@@ -68,7 +69,7 @@ func myOutcomes(ctx context.Context, tx pgx.Tx, tenant, worker string, limit int
 		r := mmapAny(p.Rec["realization"])
 		v := map[string]any{"id": id, "rejected": false, "category": b.Category, "problem_code": b.Problem.Code, "state": state,
 			"human_outcome": human, "promised": promised, "trial_outcome": t["outcome"], "self_measured": t["self_measured"] == true,
-			"revert_reason": r["revert_reason"]}
+			"revert_reason": r["revert_reason"], "trial_numbers": trialNumbers(t)}
 		rank := 2
 		switch {
 		case t["outcome"] != nil:
@@ -122,4 +123,39 @@ func myOutcomes(ctx context.Context, tx pgx.Tx, tenant, worker string, limit int
 		out = append(out, r.v)
 	}
 	return map[string]any{"bot": worker, "rows": out}, nil
+}
+
+// trialNumbers are the trial figures of a row once the outcome is computed (DIG-8): the metric
+// before and after over all points, the change over all points, without the author and
+// without the author's role, and the guard that broke, if any; nil before the outcome.
+func trialNumbers(t map[string]any) map[string]any {
+	if t == nil || t["outcome"] == nil || t["outcome"] == "canceled" {
+		return nil
+	}
+	before, after := mmapAny(t["before"]), mmapAny(t["after"])
+	delta := func(b, a map[string]any) any {
+		bv, ok1 := toFloat(b["value"])
+		av, ok2 := toFloat(a["value"])
+		if !ok1 || !ok2 {
+			return nil
+		}
+		return math.Round((av-bv)*1e6) / 1e6
+	}
+	out := map[string]any{"before": numOrNil(before["value"]), "after": numOrNil(after["value"]), "change_all": delta(before, after),
+		"change_without_author": delta(mmapAny(before["without_author"]), mmapAny(after["without_author"])),
+		"change_without_role":   delta(mmapAny(before["without_role"]), mmapAny(after["without_role"])), "guard_broken": nil}
+	for _, g := range asList(t["guards"]) {
+		if gm := mmapAny(g); gm["broken_at"] != nil {
+			out["guard_broken"] = gm["series"]
+			break
+		}
+	}
+	return out
+}
+
+func numOrNil(v any) any {
+	if n, ok := toFloat(v); ok {
+		return n
+	}
+	return nil
 }

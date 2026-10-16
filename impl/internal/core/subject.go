@@ -291,6 +291,11 @@ func (c *Core) decideSubject(ctx context.Context, w *Worker, ob OnBehalf, req De
 				for _, k := range slices.Sorted(mapKeys(r.Found)) {
 					spec.Scope.IDs = append(spec.Scope.IDs, r.Found[k]...)
 				}
+				// The request records the ids of each store and which stores found nothing,
+				// so a replay after a restore erases by these and never searches (RET-11).
+				if spec.Found, err = matchRecord(ctx, tx, r); err != nil {
+					return err
+				}
 				if len(spec.Scope.IDs) > maxMatchIDs {
 					spec.Scope.IDs = spec.Scope.IDs[:maxMatchIDs]
 				}
@@ -646,11 +651,12 @@ func (c *Core) ErasureRetry(ctx context.Context, op Operator, req ErasureIDReque
 	return &out, err
 }
 
-// addMatchSteps records a match step for every sink and monitoring adapter of the tenant, the
-// edge stores the core does not read (SEC-11, RET-4); it says whether there is one. The
-// channel cache gets match in v0.2 (RET-11).
+// addMatchSteps records a match step for every sink and monitoring adapter of the tenant and
+// every channel that did not declare it stores nothing (a cache or saved attachments), the
+// edge stores the core does not read (SEC-11, RET-4, RET-11); it says whether there is one.
 func addMatchSteps(ctx context.Context, tx pgx.Tx, now time.Time, tenant, request string) (bool, error) {
-	rows, err := tx.Query(ctx, `SELECT DISTINCT kind, target FROM workers WHERE tenant = $1 AND kind IN ('sink', 'monitor') AND state <> 'revoked' AND target IS NOT NULL ORDER BY 1, 2`, tenant)
+	rows, err := tx.Query(ctx, `SELECT DISTINCT kind, target FROM workers WHERE tenant = $1 AND state <> 'revoked' AND target IS NOT NULL
+		AND (kind IN ('sink', 'monitor') OR kind = 'channel' AND coalesce(hello->'driver'->>'stores_content', '') <> 'none') ORDER BY 1, 2`, tenant)
 	if err != nil {
 		return false, err
 	}
@@ -677,8 +683,8 @@ func addMatchSteps(ctx context.Context, tx pgx.Tx, now time.Time, tenant, reques
 	return len(stores) > 0, nil
 }
 
-// claimMatch takes the oldest pending match step of this sink or monitoring adapter: the work
-// item carries the needles of the request and asks for ids only (SEC-11).
+// claimMatch takes the oldest pending match step of this channel, sink or monitoring adapter:
+// the work item carries the needles of the request and asks for ids only (SEC-11, RET-11).
 func (c *Core) claimMatch(ctx context.Context, tx pgx.Tx, now time.Time, w *Worker) (*WorkItem, error) {
 	var id, request string
 	var leaseNo int
@@ -820,9 +826,12 @@ func settleEdgeSteps(ctx context.Context, tx pgx.Tx, now time.Time, r *subjectRe
 			return err
 		}
 	}
+	// A channel that declared it stores nothing is closed by the erasure loop (declared_none).
 	rows, err := tx.Query(ctx, `SELECT s.store, m.state, coalesce(m.reason, '') FROM erasure_steps s
 		LEFT JOIN subject_match_steps m ON m.request = $2 AND m.store = s.store
-		WHERE s.request = $1 AND s.kind IN ('sink', 'monitor') AND s.state = 'pending' ORDER BY s.store`, erasure, r.ID)
+		WHERE s.request = $1 AND s.state = 'pending' AND (s.kind IN ('sink', 'monitor')
+			OR s.kind = 'channel' AND NOT EXISTS (SELECT 1 FROM workers w WHERE w.tenant = s.tenant AND w.kind = 'channel' AND w.target = s.target
+				AND w.state <> 'revoked' AND w.hello->'driver'->>'stores_content' = 'none')) ORDER BY s.store`, erasure, r.ID)
 	if err != nil {
 		return err
 	}
@@ -869,4 +878,28 @@ func sharesIdentity(ctx context.Context, tx pgx.Tx, tenantA, principalA, tenantB
 	err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM identities a JOIN identities b ON a.identity = b.identity
 		WHERE a.tenant = $1 AND a.principal = $2 AND b.tenant = $3 AND b.principal = $4)`, tenantA, principalA, tenantB, principalB).Scan(&same)
 	return same, err
+}
+
+// matchRecord is what an erase_match found, as the erasure request keeps it: the ids per store,
+// and an empty list for a store whose match answered without ids; a store whose match failed
+// or never answered has no key (RET-11).
+func matchRecord(ctx context.Context, tx pgx.Tx, r *subjectRequest) (map[string][]string, error) {
+	out := map[string][]string{}
+	for k, v := range r.Found {
+		out[k] = slices.Clone(v)
+	}
+	rows, err := tx.Query(ctx, `SELECT store FROM subject_match_steps WHERE request = $1 AND state IN ('done', 'not_applicable') ORDER BY store`, r.ID)
+	if err != nil {
+		return nil, err
+	}
+	stores, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return nil, err
+	}
+	for _, st := range stores {
+		if out[st] == nil {
+			out[st] = []string{}
+		}
+	}
+	return out, nil
 }

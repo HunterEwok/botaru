@@ -22,10 +22,12 @@ import (
 )
 
 // Early deletion goes only through an erasure request (RET-7): a recorded object with a step
-// per store. The erasure loop erases the core stores itself and closes the channel steps by
-// their declaration; a sink or a monitoring adapter gets an erasure work item through claim
-// and answers with an outcome (RET-4). The request stays open while a step is neither done
-// nor not_applicable, and raises alarm.erasure.overdue at its deadline.
+// per store. The erasure loop erases the core stores itself and closes the step of a channel
+// that declared it stores nothing; a channel with a cache or saved attachments, a sink, a
+// monitoring adapter and every agent runtime that ran an attempt of the tenant get an erasure
+// work item through claim and answer with an outcome (RET-4, RET-11). The request stays open
+// while a step is neither done nor not_applicable, and raises alarm.erasure.overdue at its
+// deadline.
 
 // defaultSubjectRequestDays is the deadline of a request when privacy.subject_request_days
 // is not set (SEC-11).
@@ -35,7 +37,12 @@ const defaultSubjectRequestDays = 30
 const erasureRetry = time.Minute
 
 // coreStores are the content stores of the core in the order they are erased.
-var coreStores = []string{"tasks", "deliveries", "toolcalls", "sessions", "memory", "files"}
+// Script runs and campaigns come first: a run of the scope is canceled before the campaign of
+// one of its steps ends, so no failure or always step of the run is released mid-erasure; a
+// campaign of the scope is marked purged and stopped before the tasks step cancels its parent
+// task, so it releases no more items and enqueues no continuation; canceling a live run plans
+// its last card, which the deliveries step withholds.
+var coreStores = []string{"scripts", "campaigns", "tasks", "deliveries", "toolcalls", "sessions", "memory", "files"}
 
 // ErasureScope is the scope of an erasure request (deletion-request).
 type ErasureScope struct {
@@ -63,6 +70,9 @@ type erasureSpec struct {
 	Reason  string
 	Author  string // a principal, or "" for system
 	Needles []string
+	// Found are the ids each store's match found, for the erasure of an erase_match: an
+	// empty list for a store that found nothing, no key for one that could not be searched.
+	Found map[string][]string
 }
 
 var storeKeyBad = regexp.MustCompile(`[^a-z0-9_]`)
@@ -103,9 +113,13 @@ func (c *Core) requestErasure(ctx context.Context, tx pgx.Tx, now time.Time, tv 
 	if len(s.Needles) > 0 {
 		needles = s.Needles
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO erasure_requests (id, tenant, subject, reason, author, state, created_at, scope, deadline_at, needles, updated_at)
-		VALUES ($1, $2, $3, $4, $5, 'requested', $6, $7, $8, $9, $6)`,
-		id, tv.Name, nullable(s.Scope.Subject), s.Reason, author, now, scope, now.Add(time.Duration(subjectRequestDays(tv))*24*time.Hour), needles); err != nil {
+	var found []byte
+	if s.Found != nil {
+		found, _ = json.Marshal(s.Found)
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO erasure_requests (id, tenant, subject, reason, author, state, created_at, scope, deadline_at, needles, updated_at, found)
+		VALUES ($1, $2, $3, $4, $5, 'requested', $6, $7, $8, $9, $6, $10)`,
+		id, tv.Name, nullable(s.Scope.Subject), s.Reason, author, now, scope, now.Add(time.Duration(subjectRequestDays(tv))*24*time.Hour), needles, found); err != nil {
 		return "", err
 	}
 	if err := addErasureSteps(ctx, tx, now, tv.Name, tv, id, s.Reason); err != nil {
@@ -126,8 +140,11 @@ func (c *Core) requestErasure(ctx context.Context, tx pgx.Tx, now time.Time, tv 
 }
 
 // addErasureSteps records a step per store a request reaches: forget reaches only memory and
-// sessions (MEM-4), every other reason every store of the tenant with content. tv is nil for
-// a tenant no longer in the catalog; then it has no channels.
+// sessions (MEM-4), in the core and in every runtime, every other reason every store of the
+// tenant with content; bot_retired reaches only the identity's memory (MEM-9). Every agent
+// worker of the tenant that ran an attempt of it gets a purge step for the working files,
+// caches and logs with content its runtime keeps (RET-11). tv is nil for a tenant no longer in
+// the catalog; then it has no channels.
 func addErasureSteps(ctx context.Context, tx pgx.Tx, now time.Time, tenant string, tv *TenantView, id, reason string) error {
 	var channels map[string]manifest.Channel
 	if tv != nil {
@@ -166,9 +183,38 @@ func addErasureSteps(ctx context.Context, tx pgx.Tx, now time.Time, tenant strin
 			return err
 		}
 	}
+	if reason != "bot_retired" {
+		rows, err := tx.Query(ctx, `SELECT w.id FROM workers w WHERE w.tenant = $1 AND w.kind = 'agent' AND w.state <> 'revoked'
+			AND EXISTS (SELECT 1 FROM leases l WHERE l.worker_id = w.id AND l.kind = 'attempt') ORDER BY w.id`, tenant)
+		if err != nil {
+			return err
+		}
+		agents, err := pgx.CollectRows(rows, pgx.RowTo[string])
+		if err != nil {
+			return err
+		}
+		for _, a := range agents {
+			steps = append(steps, step{storeKey("runtime", a), "runtime", a})
+		}
+	}
 	for _, st := range steps {
 		if _, err := tx.Exec(ctx, `INSERT INTO erasure_steps (id, request, tenant, store, kind, target, state, updated_at) VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7)
 			ON CONFLICT (request, store) DO NOTHING`, ids.New(ids.Step), id, tenant, st.store, st.kind, st.target, now); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// addMissingCoreSteps gives a request recorded by an earlier build, whose steps cover every
+// core store of that build, the steps of core stores added since (script runs, campaigns), so
+// an upgrade does not close it with their content left. It does nothing for forget and
+// bot_retired, which never reach those stores, and is idempotent.
+func addMissingCoreSteps(ctx context.Context, tx pgx.Tx, now time.Time, r *erasureRow) error {
+	for _, st := range []string{"scripts", "campaigns"} {
+		if _, err := tx.Exec(ctx, `INSERT INTO erasure_steps (id, request, tenant, store, kind, target, state, updated_at)
+			SELECT $1, $2, $3, $4, 'core', $4, 'pending', $5 WHERE EXISTS (SELECT 1 FROM erasure_steps WHERE request = $2 AND store = 'tasks')
+			ON CONFLICT (request, store) DO NOTHING`, ids.New(ids.Step), r.ID, r.Tenant, st, now); err != nil {
 			return err
 		}
 	}
@@ -258,6 +304,11 @@ func (c *Core) erasureLoop(ctx context.Context) error {
 				if err := addErasureSteps(ctx, tx, now, r.Tenant, cat.Tenants[r.Tenant], r.ID, r.Reason); err != nil {
 					return err
 				}
+				if err := settleReplayedMatch(ctx, tx, now, r); err != nil {
+					return err
+				}
+			} else if err := addMissingCoreSteps(ctx, tx, now, r); err != nil {
+				return err
 			}
 			if err := c.runCoreSteps(ctx, tx, now, cat, r); err != nil {
 				return err
@@ -273,12 +324,15 @@ func (c *Core) erasureLoop(ctx context.Context) error {
 	return c.subjectRequestTimers(ctx, cat)
 }
 
-// runCoreSteps erases the core stores of a request and closes its channel steps by the
-// driver's declaration: a channel that stores no content is not_applicable with the basis
-// declared_none; the erase of a channel cache arrives in v0.2, so any other channel fails
-// (SEC-11, RET-11).
+// runCoreSteps erases the core stores of a request and closes the step of a channel whose
+// driver declared it stores no content as not_applicable with the basis declared_none; any
+// other channel takes its step as erase work through claim and answers itself, failed when it
+// lacks the operation (SEC-11, RET-11). A channel step with no channel worker left and the
+// step of a runtime that is revoked or stale fail not_ready, so erasure.retry can run them.
 func (c *Core) runCoreSteps(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, r *erasureRow) error {
-	rows, err := tx.Query(ctx, `SELECT store, kind, target FROM erasure_steps WHERE request = $1 AND state = 'pending' AND kind IN ('core', 'channel') ORDER BY id`, r.ID)
+	// Core steps in the order of coreStores, also for steps an upgrade added later.
+	rows, err := tx.Query(ctx, `SELECT store, kind, target FROM erasure_steps WHERE request = $1 AND state = 'pending' AND kind IN ('core', 'channel', 'runtime')
+		ORDER BY array_position($2::text[], store) NULLS LAST, id`, r.ID, coreStores)
 	if err != nil {
 		return err
 	}
@@ -302,19 +356,41 @@ func (c *Core) runCoreSteps(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		return err
 	}
 	for _, s := range steps {
-		if s.kind == "channel" {
-			var none bool
-			if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM workers WHERE tenant = $1 AND kind = 'channel' AND target = $2 AND state <> 'revoked'
-				AND hello->'driver'->>'stores_content' = 'none')`, r.Tenant, s.target).Scan(&none); err != nil {
+		if s.kind == "runtime" {
+			// An agent that is revoked or no longer seen (stale, OBS-4) would hold the request
+			// open for good: its step fails not_ready, and erasure.retry runs it again once the
+			// runtime is back.
+			var gone bool
+			if err := tx.QueryRow(ctx, `SELECT NOT EXISTS (SELECT 1 FROM workers WHERE id = $1 AND state <> 'revoked' AND stale_since IS NULL
+				AND (last_seen IS NULL OR last_seen >= $2))`, s.target, now.Add(-staleAfter)).Scan(&gone); err != nil {
 				return err
+			}
+			if gone {
+				if err := set(s.store, "failed", "", "not_ready"); err != nil {
+					return err
+				}
+			}
+			continue
+		}
+		if s.kind == "channel" {
+			// A worker that is revoked or stale (OBS-4) takes no work, the same as for a runtime.
+			var none, live bool
+			if err := tx.QueryRow(ctx, `SELECT coalesce(bool_or(hello->'driver'->>'stores_content' = 'none'), false),
+				count(*) FILTER (WHERE stale_since IS NULL AND (last_seen IS NULL OR last_seen >= $3)) > 0
+				FROM workers WHERE tenant = $1 AND kind = 'channel' AND target = $2 AND state <> 'revoked'`, r.Tenant, s.target, now.Add(-staleAfter)).Scan(&none, &live); err != nil {
+				return err
+			}
+			if !none && !live {
+				// No channel worker left to take the work: not_ready, retried by erasure.retry.
+				if err := set(s.store, "failed", "", "not_ready"); err != nil {
+					return err
+				}
+				continue
 			}
 			if none {
-				err = set(s.store, "not_applicable", "declared_none", "")
-			} else {
-				err = set(s.store, "failed", "", "not_ready")
-			}
-			if err != nil {
-				return err
+				if err := set(s.store, "not_applicable", "declared_none", ""); err != nil {
+					return err
+				}
 			}
 			continue
 		}
@@ -429,6 +505,65 @@ func (c *Core) eraseCore(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 			OR file_ref = ANY($4))`,
 			r.Tenant, sc.Subject, idsWith(sc.IDs, "t_"), idsWith(sc.IDs, "file:"))
 		return err
+	case "scripts":
+		// A run of the person or anchored in a task of the scope: a live one is canceled, then
+		// it keeps only its tombstone (RET-10).
+		if len(sc.IDs) > 0 && len(idsWith(sc.IDs, "t_", ids.Script+"_")) == 0 {
+			return nil
+		}
+		runs := `SELECT id FROM script_runs WHERE tenant = $1 AND (
+			(cardinality($3::text[]) = 0 AND cardinality($4::text[]) = 0 AND ($2 = '' OR initiator = $2 OR anchor_task IN (` + tasksIn + `)))
+			OR anchor_task = ANY($3) OR id = ANY($4))`
+		rargs := []any{r.Tenant, sc.Subject, idsWith(sc.IDs, "t_"), idsWith(sc.IDs, ids.Script+"_")}
+		rows, err := tx.Query(ctx, runs+` AND state = ANY($5)`, append(rargs, scriptLive)...)
+		if err != nil {
+			return err
+		}
+		live, err := pgx.CollectRows(rows, pgx.RowTo[string])
+		if err != nil {
+			return err
+		}
+		// The campaigns of the runs' steps are marked purged before the cancel stops them, so
+		// they send no summary and enqueue no continuation.
+		if _, err := purgeCampaigns(ctx, tx, "", `SELECT campaign FROM script_steps WHERE campaign IS NOT NULL AND run IN (`+runs+`)`, rargs...); err != nil {
+			return err
+		}
+		if len(live) > 0 {
+			if err := c.cancelRuns(ctx, tx, now, r.Tenant, `id = ANY($2::text[])`, live, r.Reason); err != nil {
+				return err
+			}
+		}
+		_, err = purgeRuns(ctx, tx, "", runs, rargs...)
+		return err
+	case "campaigns":
+		// A campaign of the person, of a task of the scope or named by id is marked purged
+		// first, so ending it sends no summary and enqueues no continuation; a live one is
+		// then rejected or stopped (its pending items are skipped, none is released), and its
+		// items keep no content. The stop reason is admin: the stop reasons of a campaign are a
+		// closed list without one for an erasure, whose own record is the audit trail.
+		if len(sc.IDs) > 0 && len(idsWith(sc.IDs, "t_", ids.Campaign+"_")) == 0 {
+			return nil
+		}
+		cmps := `SELECT id FROM campaigns WHERE tenant = $1 AND (
+			(cardinality($3::text[]) = 0 AND cardinality($4::text[]) = 0 AND ($2 = '' OR initiator = $2 OR parent_task IN (` + tasksIn + `)))
+			OR parent_task = ANY($3) OR id = ANY($4))`
+		cargs := []any{r.Tenant, sc.Subject, idsWith(sc.IDs, "t_"), idsWith(sc.IDs, ids.Campaign+"_")}
+		if _, err := purgeCampaigns(ctx, tx, "", cmps, cargs...); err != nil {
+			return err
+		}
+		rows, err := tx.Query(ctx, cmps+` AND state = ANY($5) ORDER BY id`, append(cargs, campaignLive)...)
+		if err != nil {
+			return err
+		}
+		live, err := pgx.CollectRows(rows, pgx.RowTo[string])
+		if err != nil {
+			return err
+		}
+		if err := c.endCampaigns(ctx, tx, now, r.Tenant, live, "admin"); err != nil {
+			return err
+		}
+		_, err = purgeCampaigns(ctx, tx, "", cmps, cargs...)
+		return err
 	case "memory":
 		if len(sc.IDs) > 0 && len(idsWith(sc.IDs, "m_")) == 0 {
 			return nil
@@ -440,30 +575,88 @@ func (c *Core) eraseCore(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 	return nil
 }
 
-// coreMatchIDs gives, for the erasure of an erase_match, the ids its core stores found; match
-// says the erasure is one.
-func coreMatchIDs(ctx context.Context, tx pgx.Tx, erasure string) ([]string, bool, error) {
+// recordedFound gives the ids per store of the erasure of an erase_match, as the request
+// recorded them (also after a restore replayed it, RET-11), or for a request recorded before
+// that from its person's request; match says the erasure is one.
+func recordedFound(ctx context.Context, tx pgx.Tx, erasure string) (map[string][]string, bool, error) {
 	var raw []byte
-	err := tx.QueryRow(ctx, `SELECT found FROM subject_requests WHERE erasure = $1 AND kind = 'erase_match'`, erasure).Scan(&raw)
-	if errors.Is(err, pgx.ErrNoRows) {
+	err := tx.QueryRow(ctx, `SELECT coalesce(r.found, (SELECT s.found FROM subject_requests s WHERE s.erasure = r.id AND s.kind = 'erase_match'),
+		CASE WHEN EXISTS (SELECT 1 FROM subject_requests s WHERE s.erasure = r.id AND s.kind = 'erase_match') THEN '{}'::jsonb END)
+		FROM erasure_requests r WHERE r.id = $1`, erasure).Scan(&raw)
+	if errors.Is(err, pgx.ErrNoRows) || err == nil && raw == nil {
 		return nil, false, nil
 	}
 	if err != nil {
 		return nil, false, err
 	}
-	var found map[string][]string
-	if len(raw) > 0 {
-		if err := json.Unmarshal(raw, &found); err != nil {
-			return nil, true, err
+	found := map[string][]string{}
+	if err := json.Unmarshal(raw, &found); err != nil {
+		return nil, true, err
+	}
+	return found, true, nil
+}
+
+// edgeStore says whether a store key names an edge store, which keeps its own found ids.
+func edgeStore(k string) bool {
+	for _, p := range []string{"sink_", "monitor_", "channel_", "runtime_"} {
+		if strings.HasPrefix(k, p) {
+			return true
 		}
+	}
+	return false
+}
+
+// coreMatchIDs gives, for the erasure of an erase_match, the ids its core stores found; match
+// says the erasure is one.
+func coreMatchIDs(ctx context.Context, tx pgx.Tx, erasure string) ([]string, bool, error) {
+	found, match, err := recordedFound(ctx, tx, erasure)
+	if err != nil || !match {
+		return nil, match, err
 	}
 	var ids []string
 	for _, k := range slices.Sorted(mapKeys(found)) {
-		if !strings.HasPrefix(k, "sink_") && !strings.HasPrefix(k, "monitor_") {
+		if !edgeStore(k) {
 			ids = append(ids, found[k]...)
 		}
 	}
 	return ids, true, nil
+}
+
+// settleReplayedMatch closes, for the erasure of an erase_match that a restore replayed, the
+// edge steps its recorded ids leave nothing to: a store whose match found nothing is
+// not_applicable (no_match), a store that was not searched fails. Nothing is searched again; a
+// store with recorded ids erases by them (RET-6, RET-11). A runtime step erases by the ids of
+// the request.
+func settleReplayedMatch(ctx context.Context, tx pgx.Tx, now time.Time, r *erasureRow) error {
+	found, match, err := recordedFound(ctx, tx, r.ID)
+	if err != nil || !match {
+		return err
+	}
+	rows, err := tx.Query(ctx, `SELECT s.store FROM erasure_steps s WHERE s.request = $1 AND s.state = 'pending' AND (s.kind IN ('sink', 'monitor')
+		OR s.kind = 'channel' AND NOT EXISTS (SELECT 1 FROM workers w WHERE w.tenant = s.tenant AND w.kind = 'channel' AND w.target = s.target AND w.state <> 'revoked'
+			AND w.hello->'driver'->>'stores_content' = 'none')) ORDER BY s.store`, r.ID)
+	if err != nil {
+		return err
+	}
+	stores, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return err
+	}
+	for _, st := range stores {
+		ids, searched := found[st]
+		if len(ids) > 0 {
+			continue
+		}
+		state, basis, reason := "not_applicable", "no_match", ""
+		if !searched {
+			state, basis, reason = "failed", "", "not_ready"
+		}
+		if _, err := tx.Exec(ctx, `UPDATE erasure_steps SET state = $3, basis = $4, reason = $5, updated_at = $6 WHERE request = $1 AND store = $2`,
+			r.ID, st, state, nullable(basis), nullable(reason), now); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // idsWith keeps the ids with one of the prefixes.
@@ -587,17 +780,24 @@ func (c *Core) erasureOverdue(ctx context.Context) error {
 	})
 }
 
-// claimErasure takes the oldest pending erasure step of this sink or monitoring adapter
-// (RET-4): the work item carries the scope and, until the request closes, the needles.
+// claimErasure takes the oldest pending erasure step of this channel, sink, monitoring adapter
+// or agent runtime (RET-4, RET-11): the work item carries the scope and, until the request
+// closes, the needles. An agent worker's step is its runtime's purge (E4), by its worker id.
 func (c *Core) claimErasure(ctx context.Context, tx pgx.Tx, now time.Time, w *Worker) (*WorkItem, error) {
 	// A match of a person's request comes first: its card waits for it (SEC-11).
-	if item, err := c.claimMatch(ctx, tx, now, w); err != nil || item != nil {
-		return item, err
+	if w.Kind != "agent" {
+		if item, err := c.claimMatch(ctx, tx, now, w); err != nil || item != nil {
+			return item, err
+		}
+	}
+	kind, target := w.Kind, w.Target
+	if w.Kind == "agent" {
+		kind, target = "runtime", w.ID
 	}
 	var id, request, store string
 	var leaseNo int
 	err := tx.QueryRow(ctx, `SELECT id, request, lease_no, store FROM erasure_steps WHERE tenant = $1 AND kind = $2 AND target = $3 AND state = 'pending'
-		AND (run_at IS NULL OR run_at <= $4) ORDER BY updated_at LIMIT 1 FOR UPDATE SKIP LOCKED`, w.Tenant, w.Kind, w.Target, now).Scan(&id, &request, &leaseNo, &store)
+		AND (run_at IS NULL OR run_at <= $4) ORDER BY updated_at LIMIT 1 FOR UPDATE SKIP LOCKED`, w.Tenant, kind, target, now).Scan(&id, &request, &leaseNo, &store)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -622,20 +822,23 @@ func (c *Core) claimErasure(ctx context.Context, tx pgx.Tx, now time.Time, w *Wo
 	}
 	if len(r.Scope.IDs) > 0 {
 		scope["ids"] = r.Scope.IDs
-		// The erasure of an erase_match gives an edge store the ids its own match found.
-		var raw []byte
-		err := tx.QueryRow(ctx, `SELECT found FROM subject_requests WHERE erasure = $1 AND kind = 'erase_match'`, r.ID).Scan(&raw)
-		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		// The erasure of an erase_match gives an edge store the ids its own match found,
+		// as recorded, also after a replay (RET-11).
+		found, _, err := recordedFound(ctx, tx, r.ID)
+		if err != nil {
 			return nil, err
 		}
-		var found map[string][]string
-		if len(raw) > 0 && json.Unmarshal(raw, &found) == nil && len(found[store]) > 0 {
+		if len(found[store]) > 0 {
 			scope["ids"] = found[store]
 		}
 	}
+	tgt := map[string]any{"kind": kind, "name": target}
+	if kind == "runtime" {
+		tgt = map[string]any{"kind": kind, "worker_id": target}
+	}
 	payload := map[string]any{
 		"request_id": r.ID, "op": "erase", "reason": r.Reason,
-		"target": map[string]any{"kind": w.Kind, "name": w.Target}, "scope": scope,
+		"target": tgt, "scope": scope,
 	}
 	if len(r.Needles) > 0 {
 		payload["needles"] = r.Needles

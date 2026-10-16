@@ -354,6 +354,16 @@ func TestScriptConfirmStep(t *testing.T) {
 		DecideRequest{SubjectKind: "script_gate", ID: id, Nonce: run.Nonce, Decision: "approve"}); err == nil {
 		t.Fatal("the run nonce opened the gate")
 	}
+	// A tombstone of a run has no script to read the approvers from (RET-10).
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE script_runs SET record = record || '{"purged": true}' WHERE id = $1`, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	_, err := b.c.Decide(ctx, b.channel, press("telegram:1001", "direct:1001", gc.external),
+		DecideRequest{SubjectKind: "script_gate", ID: id, Nonce: nonce, Decision: "approve"})
+	wantReason(t, err, "already_terminal")
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE script_runs SET record = record - 'purged' WHERE id = $1`, run.ID); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := b.c.Decide(ctx, b.channel, press("telegram:1001", "direct:1001", gc.external),
 		DecideRequest{SubjectKind: "script_gate", ID: id, Nonce: nonce, Decision: "approve"}); err != nil {
 		t.Fatal(err)

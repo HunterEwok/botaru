@@ -203,6 +203,9 @@ func (c *Core) createProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat
 	if err != nil {
 		return "", err
 	}
+	if err := c.cronHistory(ctx, tx, now, cat, a.Tenant, b.Change); err != nil {
+		return "", err
+	}
 	// The trial metric is a series with a complete outcome block (PRP-21, OBV-6).
 	series := c.tenantSeries(cat, a.Tenant)
 	if b.Benefit != nil {
@@ -562,7 +565,25 @@ func proposalLimited(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog
 		FROM proposals WHERE tenant = $1`, a.Tenant, a.Role, openProposalStates, now.AddDate(0, 0, -7)).Scan(&open, &week, &review); err != nil {
 		return false, err
 	}
-	return open >= maxOpen || week >= maxWeek || review >= maxReview, nil
+	if open >= maxOpen || week >= maxWeek || review >= maxReview {
+		return true, nil
+	}
+	// One open proposal per bot on top of the role limits; a worker without a numbered bot
+	// counts as one bot. A proposal parked as conflict behind another author's change that went
+	// to realizing earlier does not take the slot until the conflict ends (PRP-16, PRP-9).
+	author, col := a.Acting.Bot, `record->'origin'->>'acting_bot'`
+	if author == "" {
+		author, col = a.Worker, `CASE WHEN record->'origin'->>'acting_bot' IS NULL THEN worker END`
+	}
+	var mine int
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM proposals p WHERE tenant = $1 AND state = ANY($2) AND `+col+` = $3
+		AND NOT (state = 'parked' AND record->>'state_reason' = 'conflict' AND EXISTS (SELECT 1 FROM proposals h
+			WHERE h.tenant = p.tenant AND h.id IN (SELECT jsonb_array_elements_text(coalesce(p.record->'conflicts_with', '[]'::jsonb)))
+			AND coalesce(h.record->'origin'->>'acting_bot', h.worker) <> coalesce(p.record->'origin'->>'acting_bot', p.worker)))`,
+		a.Tenant, openProposalStates, author).Scan(&mine); err != nil {
+		return false, err
+	}
+	return mine >= 1, nil
 }
 
 // selfInfluence is the share of the author's and its role's own points in the evidence series

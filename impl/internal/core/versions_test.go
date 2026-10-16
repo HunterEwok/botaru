@@ -38,11 +38,11 @@ func helloSet(t *testing.T) ([]map[string]any, map[string]int) {
 func TestApplyLaterVersion(t *testing.T) {
 	ctx := context.Background()
 	b := newBench(t)
-	// The test uses EvalReports as a later kind: this build accepts it ahead, so the list is
-	// emptied for the test.
+	// The test uses EvalReports as a later kind: this build accepts it ahead, so the list keeps
+	// only the tenant retention periods for the test (their journals stay refused).
 	saved := spec.Ahead
 	defer func() { spec.Ahead = saved }()
-	spec.Ahead = map[string][]string{}
+	spec.Ahead = map[string][]string{"Tenant": {"/spec/retention"}}
 	ms, at := helloSet(t)
 	tt := ms[at["TaskType"]]["spec"].(map[string]any)
 	tt["title"] = "Greeting, changed"
@@ -82,7 +82,7 @@ func TestApplyLaterVersion(t *testing.T) {
 	want := []string{
 		"/manifests/" + itoa(at["TaskType"]) + "/spec/await",
 		"/manifests/" + itoa(at["Tenant"]) + "/spec/operator_access/debug_journal",
-		"/manifests/" + itoa(at["Tenant"]) + "/spec/retention",
+		"/manifests/" + itoa(at["Tenant"]) + "/spec/retention/journals",
 		"/manifests/" + itoa(at["Role"]) + "/spec/skills",
 		"/manifests/" + itoa(n) + "/kind",
 		"/manifests/" + itoa(n+1) + "/spec/resources/1/kind",

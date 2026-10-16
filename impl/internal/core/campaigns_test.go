@@ -214,6 +214,17 @@ func TestCampaignActionFlow(t *testing.T) {
 	if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM audit WHERE record->'target'->>'id' = $1 AND record->>'ok' = 'false' AND record->>'reason' = 'forbidden'`, cmp.ID).Scan(&refused); err != nil || refused != 1 {
 		t.Fatalf("refused presses in the audit %d %v", refused, err)
 	}
+	// A campaign whose content went (RET-10) has no arguments to plan a retry from.
+	setPurged := func(on bool) {
+		t.Helper()
+		if _, err := b.c.st.Pool.Exec(ctx, `UPDATE campaigns SET purged_at = CASE WHEN $2 THEN botaru_now() END WHERE id = $1`, cmp.ID, on); err != nil {
+			t.Fatal(err)
+		}
+	}
+	setPurged(true)
+	_, err = b.c.CampaignControl(ctx, b.channel, press("telegram:1001", "direct:1001", summary.external), retry)
+	wantReason(t, err, "already_terminal")
+	setPurged(false)
 	again, err := b.c.CampaignControl(ctx, b.channel, press("telegram:1001", "direct:1001", summary.external), retry)
 	if err != nil || again.State != "proposed" || again.ID == cmp.ID {
 		t.Fatalf("retry %+v %v", again, err)
@@ -556,5 +567,59 @@ func (b *bench) finish(t *testing.T, att *WorkItem) {
 	t.Helper()
 	if _, err := b.c.Complete(context.Background(), b.agent, header(t, att), CompleteRequest{Result: map[string]any{"answer": "Done."}}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// Erasing the person stops their running campaign before its tasks are canceled: no item is
+// released after it, its continuation is never enqueued, no summary goes out, and no live task
+// of the person is left (RET-10, SEC-11, ORC-9).
+func TestCampaignErasedPerson(t *testing.T) {
+	ctx := context.Background()
+	b := newCampaignReadBench(t)
+	att, h := b.attemptTools(t, "1", false)
+	r := proposeCall(t, b, h, map[string]any{
+		"template": map[string]any{"kind": "task", "type": "hello.child.v1", "goal": "Check the machine."},
+		"items":    map[string]any{"resources": []any{"web1", "web2", "web3"}},
+		"rollout":  map[string]any{"max_in_flight": 1, "max_failures": 2},
+		"then":     map[string]any{"type": "hello.greet.v1"},
+	})
+	if r.State != "running" {
+		t.Fatalf("propose %+v", r)
+	}
+	b.finish(t, att)
+	cmp := b.campaign(t, r.Campaign)
+	b.drain(t)
+	d, err := b.c.ErasureRequest(ctx, b.op, ErasureRequestInput{Scope: ErasureScope{Tenant: cmp.Tenant, Subject: cmp.Initiator}, Reason: "manual"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.loop(t, "erasure")
+	b.loop(t, "campaign")
+	cmp = b.campaign(t, cmp.ID)
+	if !cmp.Purged || cmp.StopReason != "admin" || cmp.State == "proposed" || cmp.State == "running" || cmp.State == "paused" || cmp.State == "stopping" {
+		t.Fatalf("campaign after the erasure %s %s purged %v", cmp.State, cmp.StopReason, cmp.Purged)
+	}
+	if st := b.itemStates(t, cmp.ID); st != "canceled,skipped,skipped" {
+		t.Fatalf("items %s", st)
+	}
+	if n := b.count(t, `SELECT count(*) FROM tasks WHERE idempotency_key = $1`, "system:cont:campaign:"+cmp.ID); n != 0 {
+		t.Fatal("the continuation was enqueued for the erased person")
+	}
+	if n := b.count(t, `SELECT count(*) FROM events WHERE type = 'continuation.refused' AND subject = $1 AND data->>'reason' = 'gone'`, cmp.ID); n != 1 {
+		t.Fatalf("continuation.refused events %d", n)
+	}
+	if n := b.count(t, `SELECT count(*) FROM tasks WHERE initiator = $1 AND state IN ('submitted', 'working')`, cmp.Initiator); n != 0 {
+		t.Fatalf("%d live tasks of the person left", n)
+	}
+	if n := b.count(t, `SELECT count(*) FROM campaign_items WHERE campaign = $1 AND (args <> '{}' OR summary IS NOT NULL)`, cmp.ID); n != 0 {
+		t.Fatal("items kept their content")
+	}
+	for _, x := range b.drain(t) {
+		if x.kind == campaignSummaryKind {
+			t.Fatalf("a summary went out after the erasure: %+v", x)
+		}
+	}
+	if b.count(t, `SELECT count(*) FROM erasure_steps WHERE request = $1 AND kind = 'core' AND state <> 'done'`, d.ID) != 0 {
+		t.Fatal("core steps left")
 	}
 }

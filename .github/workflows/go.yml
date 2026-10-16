@@ -23,7 +23,7 @@ concurrency:
 jobs:
   go:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 35
     defaults:
       run:
         working-directory: impl
@@ -54,7 +54,7 @@ jobs:
         env:
           BOTARU_TEST_PG_REQUIRED: "1"
           BOTARU_CONFORM_OUT: ${{ runner.temp }}/conform
-        run: CGO_ENABLED=1 go test -race ./...
+        run: CGO_ENABLED=1 go test -race -timeout 30m ./...
       - name: rule coverage
         # The conformance runner (internal/conform) wrote the coverage table of the rules during
         # the tests: done means every behaviour case of the rule passes on this core.

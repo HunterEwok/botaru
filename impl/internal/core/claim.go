@@ -131,7 +131,7 @@ func (c *Core) claimOnce(ctx context.Context, w *Worker, kinds []string) (*WorkI
 				item, err = c.claimAttempt(ctx, tx, now, cat, w)
 			case k == "toolcall" && w.Kind == "toolhost":
 				item, err = c.claimToolcall(ctx, tx, now, cat, w)
-			case k == "erasure" && (w.Kind == "sink" || w.Kind == "monitor"):
+			case k == "erasure" && (w.Kind == "sink" || w.Kind == "monitor" || w.Kind == "channel" || w.Kind == "agent"):
 				item, err = c.claimErasure(ctx, tx, now, w)
 			}
 			if err != nil || item != nil {
@@ -775,7 +775,7 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 				continue
 			}
 		}
-		if sk := deref(subjectKind); sk == "approval" || sk == "proposal" || sk == "control" || sk == "campaign" || sk == "script" || sk == "script_gate" || sk == "takeover" {
+		if sk := deref(subjectKind); sk == "approval" || sk == "proposal" || sk == "control" || sk == "campaign" || sk == "script" || sk == "script_gate" || sk == "governance_case" || sk == "attribution" || sk == "takeover" {
 			// A card is drawn from the record now, so it shows the current state (APR-3). An
 			// update waits while the card it edits is being sent, and is dropped when that card
 			// never arrived: the card itself then shows the current state.
@@ -793,6 +793,8 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 				drawn, replaces, err = c.campaignCardBody(ctx, tx, cat, w.Tenant, kind, deref(subjectID), targetID, deref(recipient), w.Target, b)
 			case "script", "script_gate":
 				drawn, replaces, err = c.scriptCardBody(ctx, tx, cat, w.Tenant, sk, kind, deref(subjectID), targetID, deref(recipient), w.Target, b)
+			case "governance_case", "attribution":
+				drawn, replaces, err = c.govCardBody(ctx, tx, cat, sk, kind, deref(subjectID), targetID, deref(recipient), w.Target, b)
 			case "proposal":
 				drawn, replaces, err = c.proposalCardBody(ctx, tx, cat, kind, deref(subjectID), targetID, deref(recipient), w.Target, b)
 			case "takeover":

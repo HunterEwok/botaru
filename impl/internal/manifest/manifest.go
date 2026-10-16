@@ -163,9 +163,11 @@ type Tenant struct {
 	Attention        TenantAttention   `json:"attention"`
 	// Run holds the pipelines of the command /run <name> (APR-17).
 	Run map[string]RunEntry `json:"run"`
-	// Retention holds the file period (ART-1, RET-9).
+	// Retention holds the tenant's periods: the file period (ART-1) and the periods of the
+	// classes content, memory and metadata (RET-9).
 	Retention struct {
-		Files string `json:"files"`
+		Files   string            `json:"files"`
+		Classes map[string]string `json:"classes"`
 	} `json:"retention"`
 	// Insights holds the improvement cycle settings of the tenant (INS-6, PRP-5, DIG-1).
 	Insights TenantInsights `json:"insights"`
@@ -385,7 +387,9 @@ type Role struct {
 	ModelGrants *struct {
 		Ladder []string `json:"ladder"`
 	} `json:"model_grants"`
-	Runtime struct {
+	// Aggregate is the sources block of an aggregator (AGG-2, AGG-3).
+	Aggregate *RoleAggregate `json:"aggregate"`
+	Runtime   struct {
 		Driver string `json:"driver"`
 	} `json:"runtime"`
 }
@@ -402,6 +406,17 @@ type RoleScripts struct {
 	StepTypes []string `json:"step_types"`
 	Actions   []string `json:"actions"`
 	MaxSteps  int      `json:"max_steps"`
+}
+
+// RoleAggregate is what an aggregator reads: only its listed sources (AGG-3).
+type RoleAggregate struct {
+	Sources struct {
+		Roles        []string `json:"roles"`
+		BotGroups    []string `json:"bot_groups"`
+		Series       []string `json:"series"`
+		MessageKinds []string `json:"message_kinds"`
+	} `json:"sources"`
+	MaxSources int `json:"max_sources"`
 }
 
 // RoleCampaigns is the campaigns block of a role: propose is none, read or action.

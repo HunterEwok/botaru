@@ -1112,6 +1112,10 @@ func (c *Core) incidentActTx(ctx context.Context, tx pgx.Tx, now time.Time, tena
 		if err := c.settleUnhandled(ctx, tx, now, r); err != nil {
 			return nil, err
 		}
+		// A false incident cancels its attribution candidates without "Yes" (GOV-13).
+		if err := c.dismissedAttributions(ctx, tx, now, r.Tenant, r.ID); err != nil {
+			return nil, err
+		}
 		// The audit keeps the reason code and the Details text for people; no model reads the
 		// audit (MGR-8).
 		audit["reason_code"], audit["details"] = req.ReasonCode, req.Details
