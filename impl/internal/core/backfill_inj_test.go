@@ -93,6 +93,9 @@ func TestBackfillModelChangesNoConfig(t *testing.T) {
 	ctx := context.Background()
 	b := newToolBench(t)
 	before := storedHash(t, b, "Role", "", "hello")
+	if before == "" {
+		t.Fatal("no stored role hello")
+	}
 	_, h := b.attemptTools(t, "1", true)
 	for _, name := range []string{"apply", "manifest_patch", "role_update", "skill_write", "grant", "budget_set"} {
 		r, err := b.c.P3ToolsCall(ctx, h, mcp.CallParams{Name: name, Arguments: map[string]any{}})

@@ -66,6 +66,10 @@ func TestBackfillLogWithoutContent(t *testing.T) {
 	if err := b.c.Tick(ctx); err != nil {
 		t.Fatal(err)
 	}
+	// The positive control: the sink caught the core's own lines of this path.
+	if strings.Count(out.String(), "\n") == 0 {
+		t.Fatal("OBS-1: the log sink caught no line of the core")
+	}
 	if strings.Contains(out.String(), canary) {
 		t.Fatalf("OBS-1: the process log holds content:\n%s", out.String())
 	}

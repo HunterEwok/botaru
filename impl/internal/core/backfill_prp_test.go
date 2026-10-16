@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"maps"
 	"slices"
 	"testing"
 
@@ -65,6 +66,35 @@ func TestBackfillProposable(t *testing.T) {
 	if r := rejectedWith(t, err); r != "forbidden_change" {
 		t.Fatalf("PRP-10: a change of a task type: %q", r)
 	}
+	// A schedule window shift passes for a proposable type and is forbidden_change when the
+	// type or the schedule says proposable: false.
+	sb := newScheduleBench(t, "0 4 * * *", nil)
+	scat, err := sb.c.Catalog(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	op := manifestOp{Op: "set", Field: "spec.cron", Value: "0 5 * * *"}
+	op.Target.Kind, op.Target.Name = "Schedule", "morning"
+	tv := scat.Tenants["demo"]
+	if _, err := sb.c.checkScheduleOp(scat, tv, a, op); err != nil {
+		t.Fatalf("PRP-10: a window shift of a proposable schedule: %v", err)
+	}
+	typeOff := *scat
+	typeOff.TaskTypes = maps.Clone(scat.TaskTypes)
+	tt := typeOff.TaskTypes["hello.greet.v1"]
+	tt.Proposable = &no
+	typeOff.TaskTypes["hello.greet.v1"] = tt
+	if _, err := sb.c.checkScheduleOp(&typeOff, tv, a, op); rejectedWith(t, err) != "forbidden_change" {
+		t.Fatalf("PRP-10: a schedule of a type with proposable: false: %v", err)
+	}
+	schedOff := *tv
+	schedOff.Schedules = maps.Clone(tv.Schedules)
+	sc := schedOff.Schedules["morning"]
+	sc.Proposable = &no
+	schedOff.Schedules["morning"] = sc
+	if _, err := sb.c.checkScheduleOp(scat, &schedOff, a, op); rejectedWith(t, err) != "forbidden_change" {
+		t.Fatalf("PRP-10: a schedule with proposable: false: %v", err)
+	}
 }
 
 // PRP-13: a human_change is a closed description: an object of the tenant's catalog, a path of
@@ -123,6 +153,9 @@ func TestBackfillTrialRevertCard(t *testing.T) {
 		t.Fatalf("apply %+v %v", res, err)
 	}
 	tenantHash := storedHash(t, b, "Tenant", "demo", "demo")
+	if tenantHash == "" {
+		t.Fatal("no stored tenant")
+	}
 	// A guard broke in the window; the metric is gone, so only the guard decides the outcome.
 	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE proposals SET record = jsonb_set(jsonb_set(record, '{trial,metric,series}', '"gone.series"'),
 		'{trial,guards}', (SELECT coalesce(jsonb_agg(g || '{"broken_at": "2026-01-01T00:00:00Z"}'), '[{"series": "gone.guard", "broken_at": "2026-01-01T00:00:00Z"}]') FROM jsonb_array_elements(record->'trial'->'guards') g))

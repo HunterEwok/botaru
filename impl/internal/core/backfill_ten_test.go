@@ -92,9 +92,8 @@ func TestBackfillStoreClock(t *testing.T) {
 	}
 }
 
-// STA-2: a state self-report decides nothing: a worker that reports itself idle with free
-// slots but is not seen goes stale by the core's own observation, and the claim of another
-// worker is the same as without the report.
+// STA-2: a state self-report decides nothing: a worker that reports itself idle but is not
+// seen goes stale by the core's own observation, and another worker still gets the queued task.
 func TestBackfillStateInformational(t *testing.T) {
 	ctx := context.Background()
 	b := newMsgBench(t)
@@ -216,9 +215,9 @@ func TestBackfillWorkerDirectory(t *testing.T) {
 	}
 }
 
-// TEN-5: one attempt sees data of exactly one tenant: a canary in a task, the session and the
-// memory of tenant demo is not in the attempt, the tasks, the sessions, the facts or the
-// messages of tenant demo2, whose worker gets no work of demo.
+// TEN-5: one attempt sees data of exactly one tenant: a canary in the goal of a task of tenant
+// demo is not in the attempt of tenant demo2, nor in any row of demo2's tasks, sessions,
+// facts, memory, messages, deliveries or files, and the worker of demo2 gets no work of demo.
 func TestBackfillTenantsDoNotMix(t *testing.T) {
 	ctx := context.Background()
 	b := newBenchWith(t, func(_ string, ms []map[string]any) []map[string]any {

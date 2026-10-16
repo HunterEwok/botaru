@@ -65,6 +65,9 @@ func TestBackfillApplyIdempotent(t *testing.T) {
 		}
 	}
 	before := storedHash(t, b, "TaskType", "", "hello.greet.v1")
+	if before == "" {
+		t.Fatal("no stored task type")
+	}
 	ms := helloManifests(t)
 	specMap(ms, "TaskType", "hello.greet.v1")["title"] = "Greeting, changed"
 	res, err = b.c.Apply(ctx, b.op, ApplyRequest{Commit: commit, Manifests: ms, DryRun: true})
@@ -105,6 +108,9 @@ func TestBackfillApplyAtomic(t *testing.T) {
 	ctx := context.Background()
 	b := newBench(t)
 	role, typ, group := storedHash(t, b, "Role", "", "hello"), storedHash(t, b, "TaskType", "", "hello.greet.v1"), storedHash(t, b, "Group", "demo", "hello")
+	if role == "" || typ == "" || group == "" {
+		t.Fatalf("stored hashes %q %q %q", role, typ, group)
+	}
 	ms := helloManifests(t)
 	specMap(ms, "Role", "hello")["views"] = []any{"status.tasks"}
 	specMap(ms, "TaskType", "hello.greet.v1")["title"] = "Greeting, changed"

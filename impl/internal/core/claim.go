@@ -254,7 +254,8 @@ func (c *Core) revokeWorkOf(ctx context.Context, tx pgx.Tx, now time.Time, tv *T
 	}
 	// An action task is not stopped: its write call may already run; only a pending approval
 	// is canceled (APR-6).
-	rows, err := tx.Query(ctx, `SELECT id, type, record FROM tasks WHERE tenant = $1 AND initiator = $2 AND state = 'working' AND type NOT LIKE 'action.%' ORDER BY id FOR UPDATE`, tv.Name, principal)
+	// Queued tasks go in the same transaction as running ones (spec/lifecycles/task.md, PRM-3).
+	rows, err := tx.Query(ctx, `SELECT id, type, record FROM tasks WHERE tenant = $1 AND initiator = $2 AND state IN ('submitted', 'working') AND type NOT LIKE 'action.%' ORDER BY id FOR UPDATE`, tv.Name, principal)
 	if err != nil {
 		return err
 	}
@@ -279,11 +280,44 @@ func (c *Core) revokeWorkOf(ctx context.Context, tx pgx.Tx, now time.Time, tv *T
 		if reason == "" {
 			continue
 		}
-		if err := c.cancelTaskIDs(ctx, tx, now, tv.Name, []string{w.id}, revokedReason(reason)); err != nil {
+		if err := c.revokeTask(ctx, tx, now, tv.Name, w.id, principal, w.rec, reason); err != nil {
 			return err
 		}
 	}
 	return c.recheckApprovalsOf(ctx, tx, now, tv, principal)
+}
+
+// revokeTask cancels a task whose initiator lost access (PRM-3) with the ends a failure had:
+// the task.canceled event keeps the detailed access reason (PRM-8), a child answers its
+// parent's continuation (CNT-1..CNT-3), a scheduled slot ends, and for a lost right the origin
+// chat gets the code text task.canceled.rights_revoked.
+func (c *Core) revokeTask(ctx context.Context, tx pgx.Tx, now time.Time, tenant, id, initiator string, rec []byte, access string) error {
+	reason := revokedReason(access)
+	if err := c.cancelTaskIDsWith(ctx, tx, now, tenant, []string{id}, reason, map[string]any{"access_reason": access}); err != nil {
+		return err
+	}
+	if err := c.replyContinuation(ctx, tx, now, tenant, id, "canceled"); err != nil {
+		return err
+	}
+	if err := c.scheduleSlotEnded(ctx, tx, now, tenant, id, rec, reason); err != nil {
+		return err
+	}
+	if reason != "rights_revoked" {
+		return nil
+	}
+	var record treeRecord
+	if err := json.Unmarshal(rec, &record); err != nil {
+		return err
+	}
+	if !record.reportsToOrigin() {
+		return nil
+	}
+	_, err := c.planDelivery(ctx, tx, now, plannedDelivery{
+		Tenant: tenant, Task: id, Kind: "task_result", Addr: "origin", TargetKind: "chat", TargetID: record.Origin.Chat.ID(),
+		ExecKind: "channel", ExecName: record.Origin.Channel, Recipient: initiator, DataOrigin: "code",
+		Body: map[string]any{"form": "text_code", "text_key": "task.canceled.rights_revoked", "params": map[string]any{"reason": access}},
+	})
+	return err
 }
 
 // revokedReason is the cancellation reason of a task whose initiator lost access (PRM-3): a
@@ -521,7 +555,7 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 			return nil, err
 		} else if reason != "" {
 			// The task is canceled, not failed, without spending an attempt (PRM-3).
-			if err := c.cancelTaskIDs(ctx, tx, now, w.Tenant, []string{id}, revokedReason(reason)); err != nil {
+			if err := c.revokeTask(ctx, tx, now, w.Tenant, id, initiator, rec, reason); err != nil {
 				return nil, err
 			}
 			continue

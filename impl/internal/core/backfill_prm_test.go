@@ -213,3 +213,58 @@ func TestBackfillWorkItemMinimum(t *testing.T) {
 		t.Fatalf("OBS-3: the foreign trace changed the task: %q -> %q, tenant %s", trace, after, tenant)
 	}
 }
+
+// PRM-3, PRM-8, CNT-1..CNT-3: a queued child canceled with rights_revoked keeps the detailed
+// access reason in its event and answers its parent's continuation, which the lost right
+// refuses with continuation.refused and the code text to the origin; a queued root task
+// canceled in the same transaction tells the origin chat by the code text
+// task.canceled.rights_revoked.
+func TestBackfillRevokedChildContinuation(t *testing.T) {
+	ctx := context.Background()
+	b := newChainBench(t, 1)
+	b.hello(t, "1")
+	att := b.claim(t, b.agent, "attempt")
+	h := att.Payload["handles"].(map[string]any)["tools"].(string)
+	r := childCall(t, b, h, map[string]any{"type": "hello.child.v1", "goal": "look it up"})
+	if r.Code != "enqueued" {
+		t.Fatalf("child %+v", r)
+	}
+	if _, err := b.c.Complete(ctx, b.agent, header(t, att), CompleteRequest{Result: map[string]any{"answer": "asked"}}); err != nil {
+		t.Fatal(err)
+	}
+	queued := b.hello(t, "2")
+	if _, err := b.c.Grant(ctx, b.op, GrantRequest{Op: "ungrant", Subject: b.alice, Group: "hello"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{r.ID, queued} {
+		var state, reason, access string
+		if err := b.c.st.Pool.QueryRow(ctx, `SELECT t.state, coalesce(t.reason, ''), coalesce((SELECT e.data->>'access_reason' FROM events e WHERE e.type = 'task.canceled' AND e.subject = t.id), '')
+			FROM tasks t WHERE t.id = $1`, id).Scan(&state, &reason, &access); err != nil {
+			t.Fatal(err)
+		}
+		if state != "canceled" || reason != "rights_revoked" || access != "no_group_cap" {
+			t.Fatalf("PRM-3: the queued task %s is %s(%s), access reason %q", id, state, reason, access)
+		}
+	}
+	var refused int
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM events WHERE type = 'continuation.refused' AND subject = $1`, r.ID).Scan(&refused); err != nil || refused != 1 {
+		t.Fatalf("CNT-3: continuation.refused events of the child %d %v", refused, err)
+	}
+	texts := func(task, key string) int {
+		t.Helper()
+		var n int
+		if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM deliveries WHERE task = $1 AND body->>'text_key' = $2 AND target_id = 'direct:1001'`, task, key).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	if texts(r.ID, "task.continuation_refused") != 1 {
+		t.Fatal("CNT-3: no task.continuation_refused text to the origin")
+	}
+	if texts(queued, "task.canceled.rights_revoked") != 1 || texts(r.ID, "task.canceled.rights_revoked") != 0 {
+		t.Fatal("PRM-3: the task.canceled.rights_revoked text goes to the origin of the root task only")
+	}
+	if b.c.texts.Render("en", "task.canceled.rights_revoked", map[string]any{"reason": "no_group_cap"}) == "task.canceled.rights_revoked" {
+		t.Fatal("the catalog has no task.canceled.rights_revoked")
+	}
+}

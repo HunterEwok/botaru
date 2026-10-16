@@ -108,10 +108,10 @@ func TestBackfillNoticeBypassesReporter(t *testing.T) {
 	}
 }
 
-// REP-6: a decision comes only from the channel that delivered the card: a model worker, the
-// reporter among them, that calls decide with the very press of the approver is refused and the
-// approval waits; no built-in tool of the reporter profile decides, draws a card or picks the
-// cards of a digest.
+// REP-6: a decision comes only from the channel that delivered the card: a model worker (the
+// bench's agent, or a second agent worker of the tenant) that calls decide with the very press
+// of the approver is refused and the approval waits; no built-in tool of the reporter profile
+// decides, draws a card or picks the cards of a digest, so a reporter has no path to decide.
 func TestBackfillReporterDecidesNothing(t *testing.T) {
 	ctx := context.Background()
 	b := newActionBench(t, nil)
@@ -125,8 +125,8 @@ func TestBackfillReporterDecidesNothing(t *testing.T) {
 	card := cardOf(t, b.drain(t), approvalCard, "direct:1002")
 	a := b.approval(t, r.ApprovalID)
 	req := DecideRequest{SubjectKind: "approval", ID: a.ID, Nonce: a.Nonce, Decision: "approve"}
-	reporter := b.enroll(t, EnrollRequest{Tenant: "demo", Role: "hello", Kind: "agent"})
-	for _, w := range []*Worker{b.agent, reporter} {
+	second := b.enroll(t, EnrollRequest{Tenant: "demo", Role: "hello", Kind: "agent"})
+	for _, w := range []*Worker{b.agent, second} {
 		_, err := b.c.Decide(ctx, w, press("telegram:1002", "direct:1002", card.external), req)
 		wantReason(t, err, "forbidden")
 	}

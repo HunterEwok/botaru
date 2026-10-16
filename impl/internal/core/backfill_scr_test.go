@@ -95,9 +95,10 @@ func proposeScriptWith(t *testing.T, b *bench, h string, script map[string]any) 
 	return out
 }
 
-// TRN-4: a draft from an attempt that saw untrusted text has at most one action step, no
-// fanout with an action and no selector with an action; otherwise script_untrusted_limit.
-// A draft within the limit carries the flag and its source into the run.
+// TRN-4: a draft from an attempt that saw untrusted text has at most one action step;
+// otherwise script_untrusted_limit. A draft within the limit carries the flag and its source
+// into the run. (The fanout and selector limits need an action with a campaign, which this
+// bench's fix_web lacks; they are not exercised here.)
 func TestBackfillScriptUntrustedLimit(t *testing.T) {
 	ctx := context.Background()
 	b := newScriptRunBench(t)
