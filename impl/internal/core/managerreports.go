@@ -223,9 +223,14 @@ func (c *Core) attentionToolCall(ctx context.Context, tx pgx.Tx, now time.Time, 
 func (c *Core) feedbackCard(ctx context.Context, tx pgx.Tx, now time.Time, tenant, kind, task string, ch adminChat, textKey string, params map[string]any, record bool, runAt *time.Time) error {
 	id, nonce := "", ""
 	if record {
+		// A notice deferred to the next day counts toward that day's limit.
+		at := now
+		if runAt != nil {
+			at = *runAt
+		}
 		id, nonce = ids.New(ids.Notice), ids.Secret(16)
 		if _, err := tx.Exec(ctx, `INSERT INTO manager_feedback (id, tenant, kind, recipient, nonce, task, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-			id, tenant, kind, ch.Principal, nonce, nullable(task), now); err != nil {
+			id, tenant, kind, ch.Principal, nonce, nullable(task), at); err != nil {
 			return err
 		}
 	} else if err := tx.QueryRow(ctx, `SELECT id, nonce FROM manager_feedback WHERE tenant = $1 AND kind = $2 AND recipient = $3 AND task IS NOT DISTINCT FROM $4
@@ -396,7 +401,8 @@ func (c *Core) enqueuePostmortem(ctx context.Context, tx pgx.Tx, now time.Time, 
 
 // postmortemClaimBudget is the tree budget of an analysis task at its claim: what the task
 // spent so far plus the rest of the tenant's daily analysis ceiling after today's analysis
-// spend and the whole tree budgets of the other analyses running now, under the tenant's
+// spend and the unspent rest of the tree budgets of the other analyses running now (their
+// spend so far is already in today's), under the tenant's
 // budget lock. ok false means nothing is left today: the task waits for the next day (MGR-53).
 func postmortemClaimBudget(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tv *TenantView, task string) (int64, bool, error) {
 	if err := lockTenantBudget(ctx, tx, tv.Name); err != nil {
@@ -406,7 +412,8 @@ func postmortemClaimBudget(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 	if err := tx.QueryRow(ctx, `SELECT
 		coalesce((SELECT sum(s.eur_micros + coalesce(s.correction_eur_micros, 0)) FROM spend s JOIN tasks t ON t.id = s.task
 			WHERE s.tenant = $1 AND s.line = 'manager' AND s.unit <> 'task' AND s.time >= $2 AND t.type = $3), 0)::bigint,
-		coalesce((SELECT sum(coalesce((t.record->>'tree_budget_micros')::bigint, 0)) FROM tasks t
+		coalesce((SELECT sum(greatest(coalesce((t.record->>'tree_budget_micros')::bigint, 0) - coalesce((SELECT sum(s.eur_micros + coalesce(s.correction_eur_micros, 0))
+				FROM spend s WHERE s.task = t.id AND s.unit <> 'task'), 0), 0)) FROM tasks t
 			WHERE t.tenant = $1 AND t.type = $3 AND t.state = 'working' AND t.id <> $4), 0)::bigint,
 		coalesce((SELECT sum(s.eur_micros + coalesce(s.correction_eur_micros, 0)) FROM spend s WHERE s.task = $4 AND s.unit <> 'task'), 0)::bigint`,
 		tv.Name, tenantDay(tv, now), postmortemType, task).Scan(&spent, &running, &own); err != nil {

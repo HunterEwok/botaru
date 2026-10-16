@@ -443,7 +443,10 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 						return nil, err
 					}
 					if !ok {
-						if _, err := tx.Exec(ctx, `UPDATE tasks SET run_at = $2 WHERE id = $1`, id, tenantDay(tv, now).AddDate(0, 0, 1)); err != nil {
+						// The deadline and start_by move by the same shift, so the wait does not
+						// end the task.
+						if _, err := tx.Exec(ctx, `UPDATE tasks SET run_at = $2, deadline_at = deadline_at + ($2 - $3), start_by_at = start_by_at + ($2 - $3) WHERE id = $1`,
+							id, tenantDay(tv, now).AddDate(0, 0, 1), now); err != nil {
 							return nil, err
 						}
 						if err := markWaiting(ctx, tx, now, w.Tenant, nil, []string{id}, "budget_exhausted"); err != nil {

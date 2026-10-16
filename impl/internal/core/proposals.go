@@ -117,7 +117,12 @@ func (c *Core) createProposals(ctx context.Context, tx pgx.Tx, now time.Time, ca
 			return err
 		} else if restricted {
 			c.log.Info("proposals of the restricted farm manager seat dropped", "tenant", w.Tenant, "task", task, "count", len(bodies))
-			return nil
+			_, err := c.appendAudit(ctx, tx, now, Audit{
+				Tenant: w.Tenant, Kind: "command", Actor: Actor{Principal: principalOr(acting.Bot), Via: "seat", Role: w.Role, Task: task},
+				Command: "proposal.create", Target: &Target{Kind: "task", ID: task}, OK: false, Reason: restrictedReason,
+				After: map[string]any{"dropped": len(bodies)},
+			})
+			return err
 		}
 	}
 	// An aggregator's proposal takes the mark and the untrusted flag of its task, which carry

@@ -72,6 +72,8 @@ func taskTreeBudget(rec []byte, tt manifest.TaskType) int64 {
 // does not narrow.
 type spendFilter struct {
 	subject, line, role string
+	// sev1 narrows to the lines of tasks whose record has severity sev1 (MGR-49).
+	sev1 bool
 }
 
 // windowUsed sums the spend of a window: usage lines and call reserves in full, and of each
@@ -85,7 +87,8 @@ type spendFilter struct {
 func windowUsed(ctx context.Context, tx pgx.Tx, tenant string, f spendFilter, from time.Time, ownRoot string) (int64, error) {
 	var used int64
 	err := tx.QueryRow(ctx, `WITH w AS (SELECT * FROM spend WHERE tenant = $1 AND time >= $2
-			AND ($3 = '' OR subject = $3 AND (task IS NULL OR NOT EXISTS (SELECT 1 FROM tasks t WHERE t.id = spend.task AND t.record ? 'paid_by_card'))) AND ($5 = '' OR line = $5) AND ($6 = '' OR role = $6))
+			AND ($3 = '' OR subject = $3 AND (task IS NULL OR NOT EXISTS (SELECT 1 FROM tasks t WHERE t.id = spend.task AND t.record ? 'paid_by_card'))) AND ($5 = '' OR line = $5) AND ($6 = '' OR role = $6)
+			AND (NOT $7 OR EXISTS (SELECT 1 FROM tasks t WHERE t.id = spend.task AND t.record->>'severity' = 'sev1')))
 		SELECT coalesce((SELECT sum(CASE WHEN state = 'estimated' AND (reconciled_at IS NOT NULL OR released_at IS NOT NULL) THEN 0
 				ELSE eur_micros + coalesce(correction_eur_micros, 0) END) FROM w WHERE unit <> 'task'), 0)
 			+ coalesce((SELECT sum(greatest(r.eur_micros - coalesce((SELECT sum(s.eur_micros) FROM spend s LEFT JOIN tasks u ON u.id = s.task
@@ -93,7 +96,7 @@ func windowUsed(ctx context.Context, tx pgx.Tx, tenant string, f spendFilter, fr
 					AND (u.record->>'wake_task') IS NOT DISTINCT FROM (SELECT x.record->>'wake_task' FROM tasks x WHERE x.id = r.task)), 0), 0))
 				FROM w r WHERE r.unit = 'task' AND r.root <> $4
 				AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.id = r.task AND t.state = 'submitted' AND t.reason IN ('provider_unavailable', 'provider_quota'))), 0)`,
-		tenant, from, f.subject, ownRoot, f.line, f.role).Scan(&used)
+		tenant, from, f.subject, ownRoot, f.line, f.role, f.sev1).Scan(&used)
 	return used, err
 }
 
@@ -202,24 +205,19 @@ func (c *Core) checkBudget(ctx context.Context, tx pgx.Tx, now time.Time, tv *Te
 	if line == "manager" && claimsV03() {
 		if ask.sev1 || ask.fallback {
 			windows[2].limit = nil
-			// Once the month is spent, sev1 runs only from the day's reserve: 30% of the day
-			// above what work outside sev1 spent today.
+			// Once the month is spent, sev1 runs only from the day's reserve: today's sev1 spend,
+			// counted as every window counts, within 30% of the line's day.
 			if ask.sev1 && lb.MonthEUR != nil {
 				used, err := windowUsed(ctx, tx, tv.Name, spendFilter{line: line}, month, ask.ownRoot)
 				if err != nil {
 					return refuse("not_ready", "store")
 				}
 				if used >= money.FromEUR(*lb.MonthEUR) {
-					var other int64
-					if err := tx.QueryRow(ctx, `SELECT coalesce(sum(s.eur_micros + coalesce(s.correction_eur_micros, 0)), 0)::bigint FROM spend s LEFT JOIN tasks t ON t.id = s.task
-						WHERE s.tenant = $1 AND s.line = $2 AND s.time >= $3 AND coalesce(t.record->>'severity', '') <> 'sev1'`, tv.Name, line, day).Scan(&other); err != nil {
-						return refuse("not_ready", "store")
-					}
-					reserve := float64(other) / 1e6
+					reserve := 0.0
 					if lb.DayEUR != nil {
-						reserve += *lb.DayEUR * (1 - managerNonSev1Share)
+						reserve = *lb.DayEUR * (1 - managerNonSev1Share)
 					}
-					windows = append(windows, window{&reserve, day, spendFilter{line: line}, "the manager line is spent but for the sev1 reserve", ""})
+					windows = append(windows, window{&reserve, day, spendFilter{line: line, sev1: true}, "the manager line is spent but for the sev1 reserve", ""})
 				}
 			}
 		} else if lb.MonthEUR != nil {
