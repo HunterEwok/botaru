@@ -403,6 +403,19 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 				skip = append(skip, id)
 				continue
 			}
+			// The seat's tasks of a production tenant wait until the seat model profile has
+			// passed the mgr-inj set (MGR-23).
+			if seat == managerSeatID && productionTenant(tv) {
+				if wait, err := c.seatEvalWait(ctx, tx, now, cat, w.Tenant, role); err != nil {
+					return nil, err
+				} else if wait {
+					if err := markWaiting(ctx, tx, now, w.Tenant, nil, []string{id}, "seat_eval_missing"); err != nil {
+						return nil, err
+					}
+					skip = append(skip, id)
+					continue
+				}
+			}
 			acting = a
 		} else if own != nil {
 			acting = actingOf{Bot: own.ID, BotEpoch: own.Epoch}
@@ -516,6 +529,15 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 			return nil, err
 		}
 		handles["tools"] = h
+	}
+	// An approved grant of the task gives this attempt the granted slot; the run fingerprint
+	// keeps the profile configured for the role's slot (MGR-18, GW-7, PRV-1).
+	if slot != "" {
+		if gp, ok, err := claimGrant(ctx, tx, now, cat, w.Tenant, id, w.Role); err != nil {
+			return nil, err
+		} else if ok {
+			slot, profile = grantedSlot, gp
+		}
 	}
 	if slot != "" {
 		h := "bh_" + ids.Secret(32)
@@ -669,14 +691,41 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 			return nil, err
 		}
 		if kind != "alarm_notice" && kind != "monitor_alarm" && kind != "monitor_audit_head" {
-			scopes := append(tenantScopes(w.Tenant), scopeRef{kind: "channel", tenant: w.Tenant, name: w.Target})
+			// The executor itself: its channel or sink and its worker (HLD-1, SEC-6).
+			scopes := append(tenantScopes(w.Tenant), scopeRef{kind: "worker", tenant: w.Tenant, name: strings.ToLower(w.ID)})
+			switch w.Kind {
+			case "sink":
+				scopes = append(scopes, scopeRef{kind: "sink", tenant: w.Tenant, name: w.Target})
+			default:
+				scopes = append(scopes, scopeRef{kind: "channel", tenant: w.Tenant, name: w.Target})
+			}
 			if role != "" && origin == "model" {
 				// The role whose attempt wrote the text, as the auto-stop of HLD-6 scopes it. A
 				// code text, such as the notice in place of an answer above the ceiling, is not
 				// the role's writing.
 				scopes = append(scopes, scopeRef{kind: "role", tenant: w.Tenant, name: role})
 			}
-			held, err := heldBy(ctx, tx, now, []string{"no_delivery"}, scopes...)
+			// An export passes a suspension or an offboarding of its tenant: only export is
+			// allowed while a tenant is offboarding (LCY-1); a compromised, sink, worker or farm
+			// hold still stops it.
+			// The admins' notice about a suspension or an offboarding passes it too (HLD-3).
+			var except []string
+			if kind == "export" {
+				except = []string{"suspended", "offboarding"}
+			} else if hold := aboutTenantHold(body); kind == "notice" && hold != "" {
+				// Only the kind of hold the notice is about, and only when that hold is a
+				// suspension or an offboarding of this very tenant.
+				var reason string
+				err := tx.QueryRow(ctx, `SELECT reason FROM holds WHERE id = $1 AND scope_kind = 'tenant' AND scope_tenant = $2
+					AND reason IN ('suspended', 'offboarding')`, hold, w.Tenant).Scan(&reason)
+				if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+					return nil, err
+				}
+				if reason != "" {
+					except = []string{reason}
+				}
+			}
+			held, err := heldByExcept(ctx, tx, now, []string{"no_delivery"}, except, scopes...)
 			if err != nil {
 				return nil, err
 			}
@@ -753,7 +802,7 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 				continue
 			}
 		}
-		if sk := deref(subjectKind); sk == "approval" || sk == "proposal" || sk == "control" || sk == "campaign" || sk == "script" || sk == "script_gate" || sk == "governance_case" || sk == "attribution" {
+		if sk := deref(subjectKind); sk == "approval" || sk == "proposal" || sk == "control" || sk == "campaign" || sk == "script" || sk == "script_gate" || sk == "governance_case" || sk == "attribution" || sk == "takeover" {
 			// A card is drawn from the record now, so it shows the current state (APR-3). An
 			// update waits while the card it edits is being sent, and is dropped when that card
 			// never arrived: the card itself then shows the current state.
@@ -775,6 +824,8 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 				drawn, replaces, err = c.govCardBody(ctx, tx, cat, sk, kind, deref(subjectID), targetID, deref(recipient), w.Target, b)
 			case "proposal":
 				drawn, replaces, err = c.proposalCardBody(ctx, tx, cat, kind, deref(subjectID), targetID, deref(recipient), w.Target, b)
+			case "takeover":
+				drawn, replaces, err = takeoverCardBody(ctx, tx, w.Tenant, kind, deref(subjectID), targetID, deref(recipient), w.Target, b)
 			default:
 				drawn, replaces, err = controlCardBody(ctx, tx, w.Tenant, kind, deref(subjectID), targetID, deref(recipient), w.Target, b)
 			}
@@ -904,4 +955,16 @@ func joinInstruction(persona, instruction string) string {
 		return persona
 	}
 	return persona + "\n\n" + instruction
+}
+
+// aboutTenantHold is the hold the admins' notice about a tenant hold names, or "".
+func aboutTenantHold(body []byte) string {
+	var b struct {
+		AboutHold string `json:"about_hold"`
+		TextKey   string `json:"text_key"`
+	}
+	if json.Unmarshal(body, &b) != nil || b.TextKey != "notice.tenant_held" {
+		return ""
+	}
+	return b.AboutHold
 }

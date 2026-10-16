@@ -280,7 +280,7 @@ func (c *Core) incidentLoop(ctx context.Context) error {
 	// page.
 	classes := incidentClasses(cat)
 	return errors.Join(c.openIncidents(ctx, cat, classes), c.resolveIncidents(ctx, cat),
-		c.refreshImplicated(ctx, cat), c.unhandledIncidents(ctx, cat))
+		c.refreshImplicated(ctx, cat), c.unhandledIncidents(ctx, cat), c.escalationLoop(ctx, cat))
 }
 
 // openIncidents opens or reopens an incident for every firing episode that a class detects and

@@ -217,3 +217,69 @@ func TestViewFilterAudience(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// The paragraph is read by tokens: a token with a digit passes only as a name of the table or the
+// catalog or as the snapshot time or a window bound, and a number word never passes (REP-4).
+func TestParagraphNumbers(t *testing.T) {
+	at := time.Date(2026, 10, 16, 9, 30, 0, 0, time.UTC)
+	n := numberCheck{names: map[string]bool{"web1": true, "hello.greet.v1": true, "42": true}, exact: map[string]bool{"db7": true},
+		times: []time.Time{at, at.Add(-24 * time.Hour)}, loc: time.UTC}
+	// Built from a digest: a word of a multi-word title is no name.
+	if got := digestNumberCheck(newCatalog(), "demo", &viewSnapshot{Counts: []map[string]any{{"title": "Disk 3 alarm", "type": "web2"}}}); got.names["3"] || !got.names["web2"] {
+		t.Errorf("names %v", got.names)
+	}
+	words := []string{"zero", "one", "two", "three", "twenty"}
+	for text, want := range map[string][2]int{
+		"All went well on web1.":                {1, 0},
+		"Since 2026-10-15 at 09:30 it was calm": {2, 0},
+		"Two greetings failed.":                 {1, 1},
+		"About 40% failed (hello.greet.v1)":     {2, 1},
+		"Twenty-one runs, web2 down at 10:00":   {3, 3},
+		"Nothing to report.":                    {0, 0},
+		"It was 42 and db7 was calm":            {2, 1},
+		"About ½ of them, x² more":              {2, 2},
+		"Choose one/two or three.five":          {2, 2},
+	} {
+		if c, r := n.paragraphNumbers(text, words); c != want[0] || r != want[1] {
+			t.Errorf("%q: checked %d rejected %d, want %v", text, c, r, want)
+		}
+	}
+}
+
+// A paragraph with a number is not sent: the digest goes with its code table only, and the core
+// writes digest.text_dropped.v1 with counts only (REP-4).
+func TestDigestNumbersDropped(t *testing.T) {
+	ctx := context.Background()
+	b := newReporterBench(t)
+	reporter := b.enroll(t, EnrollRequest{Tenant: "demo", Role: "reporter", Kind: "agent"})
+	b.hello(t, "1")
+	a := Activity{Kind: "message", Channel: "telegram", UpdateID: "3", Chat: Chat{Kind: "direct", ExternalID: "1001"}, Text: "/report"}
+	a.Sender.Identity, a.Sender.Verified = "telegram:1001", true
+	res, err := b.c.SubmitActivity(ctx, b.channel, a)
+	if err != nil || res.Result != "task" {
+		t.Fatalf("submit_activity: %+v %v", res, err)
+	}
+	att := claimFor(t, b, reporter, res.Task)
+	if _, err := b.c.Complete(ctx, reporter, header(t, att), CompleteRequest{Result: map[string]any{"text": "Three greetings went fine, 1 was slow."}}); err != nil {
+		t.Fatal(err)
+	}
+	var id, origin string
+	var body []byte
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT id, body, dataorigin FROM deliveries WHERE task = $1 AND kind = 'digest'`, res.Task).Scan(&id, &body, &origin); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(body), "greetings") || origin != "code" {
+		t.Fatalf("digest %s %s", body, origin)
+	}
+	var data []byte
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT data FROM events WHERE type = 'digest.text_dropped.v1' AND subject = $1`, id).Scan(&data); err != nil {
+		t.Fatalf("event: %v", err)
+	}
+	var ev map[string]any
+	if err := json.Unmarshal(data, &ev); err != nil {
+		t.Fatal(err)
+	}
+	if ev["numbers_checked"] != float64(2) || ev["numbers_unmatched"] != float64(2) || ev["snapshot_id"] == nil || strings.Contains(string(data), "greetings") {
+		t.Fatalf("event %s", data)
+	}
+}

@@ -64,6 +64,14 @@ type Core struct {
 	Spend core.SpendConfig `yaml:"spend"`
 	// Backup holds the backup locations the core watches (RET-8).
 	Backup core.BackupConfig `yaml:"backup"`
+	// Files holds the farm ceilings of one file and of the files of one task (ART-4).
+	Files core.FilesConfig `yaml:"files"`
+	// SecretUses lists for each named secret of the deployment description the scopes that use
+	// it, as hold scopes (kind channel, plugin, worker, sink or tenant), for secret.revoke (SEC-6).
+	SecretUses map[string][]core.HoldScope `yaml:"secret_uses"`
+	// ExportKeyFiles maps the key_ref of an export_only sink to the file with the recipient's
+	// X25519 public key (x25519:<base64>); the core encrypts every export (LCY-2, SEC-10).
+	ExportKeyFiles map[string]string `yaml:"export_key_files"`
 	// Monitor turns on the monitor profile: alarms go to the monitoring system only (D-88).
 	Monitor core.MonitorConfig `yaml:"monitor"`
 }

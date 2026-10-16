@@ -38,6 +38,11 @@ func helloSet(t *testing.T) ([]map[string]any, map[string]int) {
 func TestApplyLaterVersion(t *testing.T) {
 	ctx := context.Background()
 	b := newBench(t)
+	// The test uses EvalReports as a later kind: this build accepts it ahead, so the list keeps
+	// only the tenant retention periods for the test (their journals stay refused).
+	saved := spec.Ahead
+	defer func() { spec.Ahead = saved }()
+	spec.Ahead = map[string][]string{"Tenant": {"/spec/retention"}}
 	ms, at := helloSet(t)
 	tt := ms[at["TaskType"]]["spec"].(map[string]any)
 	tt["title"] = "Greeting, changed"
@@ -46,8 +51,6 @@ func TestApplyLaterVersion(t *testing.T) {
 	ms[at["Tenant"]]["spec"].(map[string]any)["operator_access"] = map[string]any{"debug_journal": "notify"}
 	ms[at["Role"]]["spec"].(map[string]any)["skills"] = []any{}
 	extra := []map[string]any{
-		{"apiVersion": "botaru/v1alpha1", "kind": "EvalReports", "metadata": map[string]any{"name": "reports"},
-			"spec": map[string]any{"reports": []any{}}},
 		{"apiVersion": "botaru/v1alpha1", "kind": "Catalog", "metadata": map[string]any{"name": "demo", "tenant": "demo"},
 			"spec": map[string]any{"resources": []any{
 				map[string]any{"id": "manuals", "title": "Manuals"},
@@ -79,9 +82,8 @@ func TestApplyLaterVersion(t *testing.T) {
 		"/manifests/" + itoa(at["Tenant"]) + "/spec/operator_access/debug_journal",
 		"/manifests/" + itoa(at["Tenant"]) + "/spec/retention/journals",
 		"/manifests/" + itoa(at["Role"]) + "/spec/skills",
-		"/manifests/" + itoa(n) + "/kind",
-		"/manifests/" + itoa(n+1) + "/spec/resources/1/kind",
-		"/manifests/" + itoa(n+2) + "/spec/tier",
+		"/manifests/" + itoa(n) + "/spec/resources/1/kind",
+		"/manifests/" + itoa(n+1) + "/spec/tier",
 	}
 	slices.Sort(got)
 	slices.Sort(want)
@@ -99,8 +101,8 @@ func TestApplyLaterVersion(t *testing.T) {
 	// The same set without these fields and objects passes.
 	ms, _ = helloSet(t)
 	ms[at["TaskType"]]["spec"].(map[string]any)["title"] = "Greeting, changed"
-	extra[1]["spec"] = map[string]any{"resources": []any{map[string]any{"id": "manuals", "title": "Manuals"}}}
-	res, err = b.c.Apply(ctx, b.op, ApplyRequest{Commit: "5555555555555555555555555555555555555555", Manifests: append(ms, extra[1])})
+	extra[0]["spec"] = map[string]any{"resources": []any{map[string]any{"id": "manuals", "title": "Manuals"}}}
+	res, err = b.c.Apply(ctx, b.op, ApplyRequest{Commit: "5555555555555555555555555555555555555555", Manifests: append(ms, extra[0])})
 	if err != nil || !res.Applied {
 		t.Fatalf("apply: %+v %v", res, err)
 	}

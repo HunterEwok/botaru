@@ -49,6 +49,7 @@ type ErasureScope struct {
 	Tenant  string   `json:"tenant"`
 	Subject string   `json:"subject,omitempty"`
 	Bot     string   `json:"bot,omitempty"`
+	Worker  string   `json:"worker,omitempty"`
 	IDs     []string `json:"ids,omitempty"`
 }
 
@@ -58,6 +59,8 @@ func (s ErasureScope) kind() string {
 		return "tenant_subject"
 	case s.Bot != "":
 		return "bot"
+	case s.Worker != "":
+		return "worker"
 	case len(s.IDs) > 0:
 		return "ids"
 	}
@@ -125,6 +128,10 @@ func (c *Core) requestErasure(ctx context.Context, tx pgx.Tx, now time.Time, tv 
 	if err := addErasureSteps(ctx, tx, now, tv.Name, tv, id, s.Reason); err != nil {
 		return "", err
 	}
+	// Any erasure request of the tenant drops its cached tool output (PRM-12).
+	if _, err := tx.Exec(ctx, `DELETE FROM tool_cache WHERE tenant = $1`, tv.Name); err != nil {
+		return "", err
+	}
 	if err := c.appendEvent(ctx, tx, now, tv.Name, Event{Type: "erasure.requested", Subject: id, Data: map[string]any{
 		"request": id, "scope_kind": s.Scope.kind(), "reason": s.Reason,
 	}}); err != nil {
@@ -152,6 +159,16 @@ func addErasureSteps(ctx context.Context, tx pgx.Tx, now time.Time, tenant strin
 	}
 	type step struct{ store, kind, target string }
 	var steps []step
+	if reason == "worker_revoke" {
+		// A revoked worker's runtime profile store is the only store of the request (LCY-4).
+		var worker string
+		if err := tx.QueryRow(ctx, `SELECT scope->>'worker' FROM erasure_requests WHERE id = $1`, id).Scan(&worker); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, `INSERT INTO erasure_steps (id, request, tenant, store, kind, target, state, updated_at) VALUES ($1, $2, $3, $4, 'runtime', $5, 'pending', $6)`,
+			ids.New(ids.Step), id, tenant, storeKey("runtime", strings.ToLower(worker)), worker, now)
+		return err
+	}
 	for _, st := range coreStores {
 		if reason == "forget" && st != "sessions" && st != "memory" {
 			continue
@@ -256,6 +273,11 @@ func loadErasure(ctx context.Context, q store.Querier, id string, lock bool) (*e
 // each request; an open request past its deadline raises its alarm. It also runs the person's
 // requests: the reminder at half of the deadline and the overdue notice (SEC-11).
 func (c *Core) erasureLoop(ctx context.Context) error {
+	// The export tasks of the pass first, so an export queued before a deletion still runs
+	// (LCY-2).
+	if err := c.runExports(ctx); err != nil {
+		return err
+	}
 	var open []string
 	err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
 		open = open[:0]
@@ -302,6 +324,11 @@ func (c *Core) erasureLoop(ctx context.Context) error {
 			}
 			if n == 0 {
 				if err := addErasureSteps(ctx, tx, now, r.Tenant, cat.Tenants[r.Tenant], r.ID, r.Reason); err != nil {
+					return err
+				}
+				// A request replayed after a restore drops the cached tool output the backup
+				// brought back, as requestErasure does for a new one (PRM-12).
+				if _, err := tx.Exec(ctx, `DELETE FROM tool_cache WHERE tenant = $1`, r.Tenant); err != nil {
 					return err
 				}
 				if err := settleReplayedMatch(ctx, tx, now, r); err != nil {
@@ -357,6 +384,18 @@ func (c *Core) runCoreSteps(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 	}
 	for _, s := range steps {
 		if s.kind == "runtime" {
+			if r.Reason == "worker_revoke" {
+				// The step of a revoked worker's profile store closes by what the worker ran
+				// (LCY-4).
+				state, basis, reason, err := runtimeStepOutcome(ctx, tx, s.target)
+				if err != nil {
+					return err
+				}
+				if err := set(s.store, state, basis, reason); err != nil {
+					return err
+				}
+				continue
+			}
 			// An agent that is revoked or no longer seen (stale, OBS-4) would hold the request
 			// open for good: its step fails not_ready, and erasure.retry runs it again once the
 			// runtime is back.
@@ -499,9 +538,12 @@ func (c *Core) eraseCore(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 		if len(sc.IDs) > 0 && len(idsWith(sc.IDs, "t_", "file:")) == 0 {
 			return nil
 		}
-		_, err := tx.Exec(ctx, `UPDATE files SET state = 'purged', content = NULL WHERE tenant = $1 AND state <> 'purged' AND (
+		// The person's own copies (a principal export, LCY-2) go with the person's files; the
+		// file name is content as well (ART-5).
+		_, err := tx.Exec(ctx, `UPDATE files SET state = 'purged', content = NULL, filename = NULL WHERE tenant = $1 AND state <> 'purged' AND (
 			(cardinality($4::text[]) = 0 AND ($2 = '' OR producer = $2) AND cardinality($3::text[]) = 0)
 			OR producer IN (`+tasksIn+`) AND (cardinality($3::text[]) > 0 OR ($2 <> '' AND cardinality($4::text[]) = 0))
+			OR ($2 <> '' AND cardinality($4::text[]) = 0 AND origin = 'export' AND producer IN (SELECT id FROM exports WHERE tenant = $1 AND kind = 'principal' AND subject = $2))
 			OR file_ref = ANY($4))`,
 			r.Tenant, sc.Subject, idsWith(sc.IDs, "t_"), idsWith(sc.IDs, "file:"))
 		return err

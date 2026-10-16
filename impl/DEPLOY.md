@@ -344,6 +344,18 @@ To restore the farm:
 4. Reconcile each day from the backup to the day of the restore with the provider's cost report (`farmctl spend reconcile -from <first day> -to <last day>`; a day without rows in the CSV is handed in as a day without usage, which also counts), then `farmctl restore complete`. The report of the restore day exists only from the next day, so a farm restored the same day usually starts with `farmctl restore complete -spend-pending`: the daily limits are halved until the reconciliation arrives.
 5. A worker token revoked after the backup is valid again in the restored store. Rotate the token key without keeping the old one (section "Rotating the token key", with no `previous_token_keys`), enroll every worker again, and start them.
 
+## Exports
+
+An export goes only to a sink with `export_only`, and the core always encrypts it for the sink's one recipient. A person's own copy (`/mydata export <key>`) is sealed with the public key the person sends and goes to a sink with `recipient_ref: self`. For every other export (`farmctl` `tenant.export`, and `principal.export` to a sink whose `recipient_ref` is `admin` or a person `human:<id>`) the key is the file that `core.yaml` names for the sink's `key_ref`:
+
+```yaml
+export_key_files:
+  EXPORT_ADMIN: /etc/botaru/export-keys/admin.pub     # x25519:<base64 of 32 bytes>
+  EXPORT_PERSON: /etc/botaru/export-keys/person.pub
+```
+
+The farm operator writes these files, so the operator decides who can open such an export. For a sink that names a person this means the person has to trust the operator: an operator who puts their own key in place of the person's can read the copy. Take the person's public key from the person through a channel you both trust, compare its fingerprint with them, and keep the key files writable only by root. When the person should not have to trust the operator, use `/mydata export` instead: there the key comes from the person in their private chat and the operator never holds it. The core reads the key when it writes the export, not when it is queued, so a key changed in between is used and a key removed fails the export with `not_ready`.
+
 ## Rotating the token key
 
 ```sh

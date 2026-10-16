@@ -47,6 +47,12 @@ commands:
   worker enroll -tenant T -role R -kind K [-target NAME] [-bot ID] -token-out FILE
                 [-plugins P[,P] -placement host|sandbox [-host MACHINE]]   (toolhost)
   worker revoke ID                           the token stops working; the bot identity becomes unbound
+  worker drain ID [-deadline TIME]           no new work; after the deadline the leases are released (LCY-4)
+  secret revoke --compromised NAME           a worker id, a channel driver or a named secret (SEC-6)
+  tenant suspend|delete T | tenant offboard T [-export-window 30d]
+                                             the tenant lifecycle (LCY-1)
+  export tenant T SINK | export principal T ID SINK
+                                             an encrypted JSON Lines export to an export_only sink (LCY-2)
   bot list | bot show ID | bot retire ID     bot identities of the credential's tenant (IDN-8, IDN-11)
   incident list | incident show|ack|close ID | incident dismiss ID REASON DETAILS
   control list [TENANT] | control revert incident=ID|since=TIME
@@ -151,8 +157,18 @@ func run(c *client, args []string) error {
 		if len(args) == 3 && args[1] == "revoke" {
 			return c.print("worker.revoke", map[string]any{"op": "worker.revoke", "worker": args[2]})
 		}
+		if len(args) >= 3 && args[1] == "drain" {
+			fs := flag.NewFlagSet("worker drain", flag.ExitOnError)
+			deadline := fs.String("deadline", "", "RFC 3339 time after which the leases are released")
+			_ = fs.Parse(args[3:])
+			req := map[string]any{"op": "worker.drain", "worker": args[2]}
+			if *deadline != "" {
+				req["deadline"] = *deadline
+			}
+			return c.print("worker.drain", req)
+		}
 		if len(args) < 2 || args[1] != "enroll" {
-			return errors.New("worker needs enroll or revoke")
+			return errors.New("worker needs enroll, revoke or drain")
 		}
 		return enroll(c, args[2:])
 	case "bot":
@@ -229,6 +245,34 @@ func run(c *client, args []string) error {
 		return errors.New("usage: farmctl seat assign SEAT [BOT] | seat vacate SEAT | seat resume farm-manager [--incident] INCIDENT")
 	case "hold":
 		return hold(c, args[1:])
+	case "secret":
+		if len(args) != 4 || args[1] != "revoke" || args[2] != "--compromised" {
+			return errors.New("secret revoke --compromised NAME")
+		}
+		return c.print("secret.revoke", map[string]any{"secret": args[3], "compromised": true})
+	case "tenant":
+		if len(args) < 3 || (args[1] != "suspend" && args[1] != "offboard" && args[1] != "delete") {
+			return errors.New("tenant suspend|offboard|delete TENANT")
+		}
+		op := "tenant." + args[1]
+		req := map[string]any{"op": op, "tenant": args[2]}
+		if args[1] == "offboard" {
+			fs := flag.NewFlagSet("tenant offboard", flag.ExitOnError)
+			window := fs.String("export-window", "", "the export window, 30d by default and at most")
+			_ = fs.Parse(args[3:])
+			if *window != "" {
+				req["export_window"] = *window
+			}
+		}
+		return c.print(op, req)
+	case "export":
+		switch {
+		case len(args) == 4 && args[1] == "tenant":
+			return c.print("tenant.export", map[string]any{"op": "tenant.export", "tenant": args[2], "sink": args[3]})
+		case len(args) == 5 && args[1] == "principal":
+			return c.print("principal.export", map[string]any{"op": "principal.export", "tenant": args[2], "subject": args[3], "sink": args[4]})
+		}
+		return errors.New("export tenant TENANT SINK, or export principal TENANT ID SINK")
 	case "audit":
 		if len(args) >= 2 && args[1] == "query" {
 			return auditQuery(c, args[2:])

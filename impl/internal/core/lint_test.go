@@ -40,7 +40,7 @@ func lintCodes(t *testing.T, c *Core, docs string) []string {
 			ds[i].Tenant = ""
 		}
 	}
-	errs, err := c.lintManifests(ds, index, nil)
+	errs, err := c.lintManifests(ds, index, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

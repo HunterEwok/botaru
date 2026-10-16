@@ -100,9 +100,17 @@ func run(path string, log *slog.Logger) error {
 	if err := st.Migrate(ctx); err != nil {
 		return err
 	}
+	exportKeys := map[string]string{}
+	for ref, f := range cfg.ExportKeyFiles {
+		k, err := config.Secret(f)
+		if err != nil {
+			return fmt.Errorf("export key %s: %w", ref, err)
+		}
+		exportKeys[ref] = k
+	}
 	c, err := core.New(ctx, core.Config{
 		TokenKey: key, KeyID: keyID, PreviousKeys: prevKeys, TestBench: cfg.TestBench, LeaseS: cfg.LeaseS, HeartbeatS: cfg.HeartbeatS,
-		DeliveryMaxAttempts: cfg.DeliveryMaxAttempts, Operator: cfg.Operator, FarmHosts: cfg.FarmHosts, Health: cfg.Health, Spend: cfg.Spend, Backup: cfg.Backup, Monitor: cfg.Monitor, Logger: log,
+		DeliveryMaxAttempts: cfg.DeliveryMaxAttempts, Operator: cfg.Operator, FarmHosts: cfg.FarmHosts, Health: cfg.Health, Spend: cfg.Spend, Backup: cfg.Backup, Files: cfg.Files, SecretUses: cfg.SecretUses, ExportKeys: exportKeys, Monitor: cfg.Monitor, Logger: log,
 	}, st, sp, tx)
 	if err != nil {
 		return err

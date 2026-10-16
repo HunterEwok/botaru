@@ -84,6 +84,9 @@ type enqueueInput struct {
 	// Sev1 marks a seat task of a sev1 incident: it may use the reserve of the manager line
 	// (MGR-20).
 	Sev1 bool
+	// PayTenant is the tenant whose budget pays the task when it is not its own: the farm pays
+	// the necessity review of an urgent, compromise or data-risk escalation (MGR-6, COM-13).
+	PayTenant string
 	// Campaign and CampaignItem make the task an item of a campaign, with the resource scope of
 	// its one resource (ORC-3, ORC-7); PaidByCard keeps the item out of the person's day limit,
 	// since the approved card pays it (ORC-8, BUD-12).
@@ -390,7 +393,8 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 		if err != nil {
 			return nil, err
 		}
-		if f == nil || f.State != "stored" || (f.Expires != nil && !f.Expires.After(now)) {
+		// An export file is never a task input (LCY-2, SEC-10).
+		if f == nil || f.Origin == "export" || f.State != "stored" || (f.Expires != nil && !f.Expires.After(now)) {
 			return reject(refuse("ref_invalid", "no such file"))
 		}
 		mark = c.higherMark(mark, f.Mark)
@@ -438,7 +442,11 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 	if in.PaidByCard {
 		askSubject = "system"
 	}
-	if p := c.checkBudget(ctx, tx, now, tv, budgetAsk{subject: askSubject, groups: groups, extra: estimate, line: line, sev1: in.Sev1, crossed: &crossed}); p != nil {
+	budgetTV, payer := tv, in.Tenant
+	if pt := cat.Tenants[in.PayTenant]; pt != nil && in.PayTenant != in.Tenant {
+		budgetTV, payer, askSubject = pt, in.PayTenant, "system"
+	}
+	if p := c.checkBudget(ctx, tx, now, budgetTV, budgetAsk{subject: askSubject, groups: groups, extra: estimate, line: line, sev1: in.Sev1, crossed: &crossed}); p != nil {
 		return reject(p)
 	}
 	// A wake-up reserves in the day limit of each principal the entries came from too (MSG-11).
@@ -537,6 +545,9 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 		// So is the tree budget of the root type (GW-6).
 		"tree_budget_micros": money.FromEUR(tt.TreeBudgetEUR),
 		"trace":              trace,
+	}
+	if payer != in.Tenant {
+		record["pay_tenant"] = payer
 	}
 	// Someone else's text in the body: the task starts untrusted and with personal data seen
 	// (INJ-13, AUD-5). A forward has no principal of its author, so no personal_subjects.
@@ -736,7 +747,7 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 	}
 	if estimate > 0 {
 		if _, err := tx.Exec(ctx, `INSERT INTO spend (id, tenant, task, root, subject, line, purpose, unit, state, eur_micros, time)
-			VALUES ($1, $2, $3, $9, $4, $5, $6, 'task', 'reserved', $7, $8)`, ids.New(ids.Spend), in.Tenant, id, in.Initiator, line, purposeOf(tt), estimate, now, root); err != nil {
+			VALUES ($1, $2, $3, $9, $4, $5, $6, 'task', 'reserved', $7, $8)`, ids.New(ids.Spend), payer, id, in.Initiator, line, purposeOf(tt), estimate, now, root); err != nil {
 			return nil, err
 		}
 	}

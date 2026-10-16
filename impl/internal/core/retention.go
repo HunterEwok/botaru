@@ -232,7 +232,7 @@ func (c *Core) retentionLoop(ctx context.Context) error {
 			WHERE s.updated_at <= $9 AND (s.updated_at <= coalesce(p.content, $6) OR (s.role = ANY($10) AND s.updated_at <= coalesce(p.short, $7)))
 			LIMIT $8 FOR UPDATE OF s SKIP LOCKED)`, with(noMemory)),
 		// A file past its expiry, or past the tenant's file period as it stands now (RET-9).
-		exec(`UPDATE files SET state = 'expired', content = NULL WHERE file_ref IN (SELECT f.file_ref FROM files f LEFT JOIN p ON p.tenant = f.tenant
+		exec(`UPDATE files SET state = 'expired', content = NULL, filename = NULL WHERE file_ref IN (SELECT f.file_ref FROM files f LEFT JOIN p ON p.tenant = f.tenant
 			WHERE f.state = 'stored' AND (f.expires_at <= $10 OR f.created_at <= coalesce(p.files, $6)) LIMIT $8 FOR UPDATE OF f SKIP LOCKED)`, with(start)),
 		// An entry of a bot message that ended (acknowledged, discarded, dead, expired, replaced,
 		// removed, or a state value gone stale) leaves the store with its fields after the
@@ -270,13 +270,25 @@ func (c *Core) retentionLoop(ctx context.Context) error {
 		exec(`UPDATE proposals SET record = record #- '{body,note}' WHERE id IN (SELECT x.id FROM proposals x LEFT JOIN p ON p.tenant = x.tenant
 			WHERE x.record->'body' ? 'note' AND x.state NOT IN ('screened', 'in_review', 'recommended', 'parked', 'presented', 'realizing')
 			AND x.updated_at <= $9 AND x.updated_at <= coalesce(p.content, $6) LIMIT $8 FOR UPDATE OF x SKIP LOCKED)`, base),
+		// The untrusted note of an ended grant request and of an ended escalation is content
+		// (MGR-17, MGR-5); their closed fields are metadata.
+		exec(`UPDATE model_grants SET note = NULL WHERE id IN (SELECT g.id FROM model_grants g LEFT JOIN p ON p.tenant = g.tenant
+			WHERE g.note IS NOT NULL AND g.state IN ('consumed', 'denied', 'expired', 'revoked') AND g.updated_at <= $9
+			AND g.updated_at <= coalesce(p.content, $6) LIMIT $8 FOR UPDATE OF g SKIP LOCKED)`, base),
+		exec(`UPDATE escalations SET note = NULL WHERE id IN (SELECT e.id FROM escalations e LEFT JOIN p ON p.tenant = e.tenant
+			WHERE e.note IS NOT NULL AND e.state IN ('merged', 'dismissed', 'answered', 'expired') AND e.updated_at <= $9
+			AND e.updated_at <= coalesce(p.content, $6) LIMIT $8 FOR UPDATE OF e SKIP LOCKED)`, base),
 		// A sent digest is content once its slot is past (DIG-1): its row only kept the slot.
 		exec(`DELETE FROM proposal_digests WHERE id IN (SELECT d.id FROM proposal_digests d LEFT JOIN p ON p.tenant = d.tenant
 			WHERE d.created_at <= $9 AND d.created_at <= coalesce(p.content, $6) LIMIT $8 FOR UPDATE OF d SKIP LOCKED)`, base),
 		// An expired file has no bytes left; the next step records expired -> purged and the
 		// record stays as the tombstone (spec/lifecycles/file.md, RET-2).
-		exec(`UPDATE files SET state = 'purged', content = NULL WHERE file_ref IN (SELECT file_ref FROM files
+		exec(`UPDATE files SET state = 'purged', content = NULL, filename = NULL WHERE file_ref IN (SELECT file_ref FROM files
 			WHERE state = 'expired' LIMIT $8 FOR UPDATE SKIP LOCKED)`, base),
+		// A cached tool output is content (PRM-12): an entry goes at its own expiry or once it
+		// is older than the tenant's content period, whichever comes first.
+		exec(`DELETE FROM tool_cache WHERE (tenant, key) IN (SELECT k.tenant, k.key FROM tool_cache k LEFT JOIN p ON p.tenant = k.tenant
+			WHERE k.expires_at <= $10 OR (k.created_at <= $9 AND k.created_at <= coalesce(p.content, $6)) LIMIT $8 FOR UPDATE OF k SKIP LOCKED)`, with(start)),
 		// C4 by the tenant's memory period: a person's records (RET-9).
 		exec(`DELETE FROM memory_items WHERE id IN (SELECT m.id FROM memory_items m JOIN p ON p.tenant = m.tenant
 			WHERE m.updated_at <= p.memory LIMIT $8 FOR UPDATE OF m SKIP LOCKED)`, base),
@@ -501,11 +513,23 @@ func (c *Core) metadataRetention(ctx context.Context, cat *Catalog) error {
 			// erase (a match that found nothing), or once its erasure is done with the ids it
 			// found recorded on the erasure itself (the replay reads those).
 			meta(`WITH c AS (SELECT q.id FROM subject_requests q LEFT JOIN erasure_requests e ON e.id = q.erasure WHERE q.tenant = $1
-				AND (q.state IN ('rejected', 'withdrawn') OR q.state = 'approved' AND (q.erasure IS NULL OR e.state = 'done' AND (q.kind = 'erase' OR e.found IS NOT NULL)))`+
+				AND (q.state IN ('rejected', 'withdrawn') OR q.kind = 'export' AND q.state = 'done'
+					OR q.kind <> 'export' AND q.state = 'approved' AND (q.erasure IS NULL OR e.state = 'done' AND (q.kind = 'erase' OR e.found IS NOT NULL)))`+
 				fmt.Sprintf(in, "q.updated_at", "q.updated_at")+` LIMIT $4 FOR UPDATE OF q SKIP LOCKED),
 				m AS (DELETE FROM subject_match_steps WHERE request IN (SELECT id FROM c)),
 				d AS (DELETE FROM subject_requests WHERE id IN (SELECT id FROM c) RETURNING id)
 				SELECT count(*) FROM d`),
+			// An export that is done or failed goes by the month it ended (LCY-2, SEC-10): its
+			// row holds ids, the sink, the recipient and the public key; its file stays a
+			// tombstone in files and goes by the file period. The row stays while its file still
+			// has bytes (a person's erasure finds the person's copies through it) and while a
+			// delivery of it is not final.
+			meta(`WITH d AS (DELETE FROM exports WHERE id IN (SELECT x.id FROM exports x WHERE x.tenant = $1 AND x.state IN ('done', 'failed')`+
+				fmt.Sprintf(in, "x.updated_at", "x.updated_at")+`
+				AND NOT EXISTS (SELECT 1 FROM files f WHERE f.file_ref = x.file_ref AND f.state = 'stored')
+				AND NOT EXISTS (SELECT 1 FROM deliveries v WHERE v.tenant = x.tenant AND v.kind = 'export' AND v.body->>'export' = x.id
+					AND v.state NOT IN ('delivered', 'dead', 'withheld'))
+				LIMIT $4 FOR UPDATE OF x SKIP LOCKED) RETURNING id) SELECT count(*) FROM d`),
 		)
 		for _, step := range steps {
 			if err := c.batches(ctx, step); err != nil {
