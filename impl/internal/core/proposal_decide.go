@@ -484,13 +484,36 @@ func (c *Core) trialBaseline(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 	if len(guards) == 0 {
 		return nil, fmt.Errorf("%w: proposal %s: no guard can be measured", errNoTrial, p.ID)
 	}
-	return map[string]any{
+	out := map[string]any{
 		"metric":   map[string]any{"series": metric.Name, "subject": subject, "compare": metric.Outcome.Compare, "better": metric.Outcome.Better},
 		"promised": promised, "subjects": subjects, "before": before, "guards": guards,
 		"window": map[string]any{"from": "realized", "days": trialDays, "starts_at": nil}, "state": "baseline",
 		"self_measured": false, "outcome": nil,
-	}, nil
+	}
+	// From v0.3 every trial also guards the farm's work over the whole tenant, and a tenant
+	// cannot remove these guards (PRP-26).
+	if c.claimsV03() {
+		var farm []any
+		for _, name := range farmGuards {
+			g, ok := series[name]
+			if !ok || g.Outcome == nil {
+				continue
+			}
+			v, err := trialValue(ctx, tx, p.Tenant, g, "tenant:"+p.Tenant, from, now, author, p.Role)
+			if err != nil {
+				return nil, err
+			}
+			farm = append(farm, map[string]any{"series": name, "subject": "tenant:" + p.Tenant, "compare": g.Outcome.Compare, "before": v["value"],
+				"before_samples": v["samples"], "source": "farm", "broken_at": nil})
+		}
+		out["farm_guards"] = farm
+	}
+	return out, nil
 }
+
+// farmGuards are the two guards of the farm's work every trial carries from v0.3, over the
+// whole tenant: the share of successful tasks and the 95th percentile of the queue wait (PRP-26).
+var farmGuards = []string{"farm.task.outcome", "farm.queue.wait"}
 
 // guardSubject is the subject a guard series is measured on (PRP-21): the benefit subject when
 // the guard is of its catalog kind, otherwise the object of that kind the change targets, or the
@@ -585,6 +608,10 @@ func trialValue(ctx context.Context, tx pgx.Tx, tenant string, s seriesDef, subj
 	one := func(column, value string) (map[string]any, error) {
 		args := []any{tenant, s.Name, subject, from, to}
 		where := `tenant = $1 AND series = $2 AND subject = $3 AND at >= $4 AND at < $5`
+		if subject == "tenant:"+tenant {
+			// A farm guard reads the series over every subject of the tenant (PRP-26).
+			where = `tenant = $1 AND series = $2 AND $3 <> '' AND at >= $4 AND at < $5`
+		}
 		if column != "" {
 			args = append(args, value)
 			where += fmt.Sprintf(` AND %s IS DISTINCT FROM $%d`, column, len(args))

@@ -526,7 +526,8 @@ func (c *Core) reviewsFit(ctx context.Context, tx pgx.Tx, now time.Time, cat *Ca
 // system:review:<proposal>:<lens> (COM-2, IDM-2), with the input block the core builds
 // (COM-3); the task goes only to the lens executor role and never to the author's worker.
 func (c *Core) enqueueReviews(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tv *TenantView, p *proposalRow, lenses []string, exec map[string]lensExecutor) ([]any, float64, error) {
-	input := reviewInput(p)
+	v03 := c.claimsV03()
+	input := reviewInput(p, v03)
 	reviews := []any{}
 	reserved := 0.0
 	origin, _ := p.Rec["origin"].(map[string]any)
@@ -551,8 +552,22 @@ func (c *Core) enqueueReviews(ctx context.Context, tx pgx.Tx, now time.Time, cat
 		// role; a vacant seat, a holder under a hold of people or the author's own bot leaves
 		// it to the fallback role (COM-7, IDN-10).
 		extra := map[string]any{"lens": l, "proposal": p.ID, "executor_role": e.Role, "not_worker": asString(origin["worker"])}
+		review := map[string]any{"lens": l, "task": res.TaskID, "executor": e.Source, "state": "pending"}
+		if v03 {
+			// A review enqueued on a v0.3 core hands in review-result.v2 with its forecast,
+			// which code scores (COM-15, COM-16).
+			extra["review_schema"] = "v2"
+			review["v03"], review["enqueued_at"] = true, fmtTime(now)
+		}
 		if e.Source == "seat" {
 			extra["seat"] = e.Seat
+			// The holder and the seat epoch the review is written for: only reviews of the
+			// holder in the current seat epoch answer for a link (GOV-41).
+			if s, err := loadSeat(ctx, tx, p.Tenant, e.Seat, false); err != nil {
+				return nil, 0, err
+			} else if s != nil {
+				review["holder"], review["seat"], review["seat_epoch"] = s.Holder, s.ID, s.Epoch
+			}
 			// The author's bot never reviews its own proposal, even if it takes the seat
 			// before the review is claimed (COM-2); claim checks this against the holder.
 			if a := asString(origin["acting_bot"]); a != "" {
@@ -567,15 +582,17 @@ func (c *Core) enqueueReviews(ctx context.Context, tx pgx.Tx, now time.Time, cat
 			return nil, 0, err
 		}
 		reserved += cat.TaskTypes[e.Type].TreeBudgetEUR
-		reviews = append(reviews, map[string]any{"lens": l, "task": res.TaskID, "executor": e.Source, "state": "pending"})
+		reviews = append(reviews, review)
 	}
 	return reviews, reserved, nil
 }
 
 // reviewInput is the data block of a review: closed fields of the body, the values the core
 // reread, the change in code words, the author level and the marks; never the note, the
-// author's identity or other lenses' scores (COM-2, COM-3).
-func reviewInput(p *proposalRow) map[string]any {
+// author's identity or other lenses' scores (COM-2, COM-3). From v0.3 it has no author level
+// and never says whether the proposal is a resubmission; it carries cost_eur, the spend the cost
+// lens forecasts against (COM-15, COM-16, PRP-24).
+func reviewInput(p *proposalRow, v03 bool) map[string]any {
 	body, _ := p.Rec["body"].(map[string]any)
 	in := map[string]any{}
 	for _, k := range []string{"category", "problem", "change", "benefit", "cost", "risk"} {
@@ -585,7 +602,11 @@ func reviewInput(p *proposalRow) map[string]any {
 	}
 	origin, _ := p.Rec["origin"].(map[string]any)
 	in["evidence"] = p.Rec["evidence_seen"]
-	in["author_level"] = origin["level"]
+	if v03 {
+		in["cost_eur"] = reviewCostEUR(body)
+	} else {
+		in["author_level"] = origin["level"]
+	}
 	in["self_evidence"] = p.Rec["self_evidence"] == true
 	us, _ := p.Rec["untrusted_seen"].(map[string]any)
 	in["untrusted_seen"] = us["value"] == true
@@ -626,9 +647,23 @@ func (c *Core) reviewProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat
 			rm["state"], changed = "late", true
 		case state == "completed":
 			var res map[string]any
-			if err := json.Unmarshal(result, &res); err != nil || c.spec.Validate("urn:botaru:schema:review-result:1", res) != nil || res["lens"] != rm["lens"] || res["shadow"] == true {
+			schema := reviewResultV1
+			if rm["v03"] == true {
+				schema = reviewResultV2
+			}
+			lens := asString(rm["lens"])
+			switch {
+			case json.Unmarshal(result, &res) != nil || c.spec.Validate(schema, res) != nil || res["lens"] != rm["lens"] || res["shadow"] == true:
 				rm["state"] = "schema_invalid"
-			} else {
+			case schema == reviewResultV2 && !forecastValid(lens, c.lensDefs()[lens].Veto, res):
+				// A forecast that does not sum to 1 or contradicts the score makes the review
+				// invalid: it counts as missing (COM-15, COM-4).
+				rm["state"] = "schema_invalid"
+			case schema == reviewResultV2:
+				// The record keeps the review-result fields; the forecast beside them, seen only
+				// by people and code (COM-16, GOV-46).
+				rm["state"], rm["result"], rm["forecast"] = "done", reviewV1View(res), res["forecast"]
+			default:
 				rm["state"], rm["result"] = "done", res
 			}
 			changed = true
@@ -693,6 +728,9 @@ func (c *Core) reviewProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat
 		v["no_manager_vote"] = true
 	}
 	p.Rec["verdict"] = v
+	if err := c.recordForecasts(ctx, tx, now, p); err != nil {
+		return err
+	}
 	state, reason, _ := strings.Cut(asString(v["outcome"]), "(")
 	reason = strings.TrimSuffix(reason, ")")
 	return c.moveProposal(ctx, tx, now, p, state, reason)

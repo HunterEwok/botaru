@@ -249,6 +249,16 @@ func (c *Core) applyOnce(ctx context.Context, op Operator, req ApplyRequest) (*A
 			return nil, err
 		}
 		res.Errors = append(res.Errors, errs...)
+		// accountability on needs every seat held with enough scored forecasts (GOV-36).
+		current, err := c.Catalog(ctx)
+		if err != nil {
+			return nil, err
+		}
+		errs, err = c.accountabilityLint(ctx, docs, index, current)
+		if err != nil {
+			return nil, err
+		}
+		res.Errors = append(res.Errors, errs...)
 	}
 	if len(res.Errors) == 0 {
 		if _, err := buildCatalog(after); err != nil {
@@ -416,6 +426,9 @@ func (c *Core) applyOnce(ctx context.Context, op Operator, req ApplyRequest) (*A
 			return err
 		}
 		if err := c.syncSeats(ctx, tx, now, next); err != nil {
+			return err
+		}
+		if err := c.applyV03(ctx, tx, now, next); err != nil {
 			return err
 		}
 		if err := recordMetadataPeriods(ctx, tx, now, next); err != nil {

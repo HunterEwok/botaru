@@ -489,7 +489,7 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 	if tt := cat.TaskTypes[typ]; tt.Purpose == "review" {
 		lens, _ = record["lens"].(string)
 	}
-	persona, personaHashes, err := attemptPersona(ctx, tx, cat, w.Tenant, w.Role, acting, lens)
+	persona, personaHashes, err := attemptPersona(ctx, tx, cat, w.Tenant, w.Role, acting, lens, c.claimsV03())
 	if err != nil {
 		return nil, err
 	}

@@ -127,6 +127,18 @@ func charterPersonas(gov map[string]any) map[string]personaRef {
 	if pr := personaOf(mmap(mmap(gov, "farm_manager"), "persona")); pr.Ref != "" {
 		out["/farm_manager/persona"] = pr
 	}
+	// From v0.3 a position may have addenda per role profile (GOV-45).
+	for pos, v := range mmap(gov, "positions") {
+		if p, ok := v.(map[string]any); ok {
+			for prof, a := range mmap(p, "addenda") {
+				if am, ok := a.(map[string]any); ok {
+					if pr := personaOf(am); pr.Ref != "" {
+						out["/positions/"+pos+"/addenda/"+prof] = pr
+					}
+				}
+			}
+		}
+	}
 	for lens, v := range mmap(mmap(gov, "commission"), "lenses") {
 		if l, ok := v.(map[string]any); ok {
 			if pr := personaOf(mmap(l, "persona")); pr.Ref != "" {
@@ -265,7 +277,9 @@ func personaText(ctx context.Context, q store.Querier, tenant string, p personaR
 // attempt: the persona of the acting identity's position and, for a lens review, the lens
 // addendum (GOV-4, COM-19); with the hashes for the run fingerprint (PRV-1). A role without a
 // model has no persona.
-func attemptPersona(ctx context.Context, q store.Querier, cat *Catalog, tenant, role string, acting actingOf, lens string) (string, []string, error) {
+//
+// From v0.3 the addendum of the position for the role profile follows the persona (GOV-45).
+func attemptPersona(ctx context.Context, q store.Querier, cat *Catalog, tenant, role string, acting actingOf, lens string, v03 bool) (string, []string, error) {
 	if !hasModel(cat, role) {
 		return "", nil, nil
 	}
@@ -279,9 +293,12 @@ func attemptPersona(ctx context.Context, q store.Querier, cat *Catalog, tenant, 
 			actingRole = b.Role
 		}
 	}
-	position, _ := positionOf(cat, actingRole, acting.Seat)
+	position, profile := positionOf(cat, actingRole, acting.Seat)
 	gov := tenantSpecOf(cat, "Governance", tenant)
 	refs := []personaRef{personaOf(mmap(mmap(mmap(gov, "positions"), position), "persona"))}
+	if v03 && position != "farm_manager" {
+		refs = append(refs, personaOf(mmap(mmap(mmap(mmap(gov, "positions"), position), "addenda"), profile)))
+	}
 	personaTenant := tenant
 	if position == "farm_manager" {
 		// The seat persona is the farm charter's, stored in farm (GOV-4, GOV-33).
@@ -302,4 +319,62 @@ func attemptPersona(ctx context.Context, q store.Querier, cat *Catalog, tenant, 
 		}
 	}
 	return strings.Join(texts, "\n\n"), slices.Clip(hashes), nil
+}
+
+// purposeMark opens the paragraph of the farm manager's persona that names its goal (GOV-45).
+const purposeMark = "<!-- purpose -->"
+
+// managerGoal is the goal the purpose paragraph names (GOV-4, GOV-45).
+const managerGoal = "prevent critical incidents from the approved catalog"
+
+// accountabilityStems are the words of accountability that no persona or addendum uses from
+// v0.3 (GOV-45, GOV-46): accuracy, rewards, parking and the accountability mode. The forecast
+// line of a commission persona (D-111) stays allowed.
+var accountabilityStems = []string{"accuracy", "accountab", "reward", "parked", "parking", "brier"}
+
+// personaFindingsV03 are the lint codes of a persona or an addendum from v0.3 (GOV-45): the file,
+// not its paragraphs: no links, addresses, secret names or ids; the unawareness dictionary of
+// GOV-29 and the words of accountability (GOV-46); and the one anchor, the purpose paragraph of
+// the farm manager's persona naming its goal. The size counts with the addenda (the caller).
+func personaFindingsV03(text, position string, u unawareTerms) []string {
+	var out []string
+	if personaLinkRe.MatchString(text) || personaIDRe.MatchString(text) || personaEnvRe.MatchString(text) {
+		out = append(out, "persona_link")
+	}
+	unaware := u.linked(text, position == "functional")
+	for _, p := range paragraphs(text) {
+		if strings.HasPrefix(p, valuePathMark) {
+			continue
+		}
+		if u.has("soul", p) || hasStem(p, accountabilityStems) {
+			unaware = true
+		}
+	}
+	if unaware {
+		out = append(out, "unaware_text")
+	}
+	if position == "farm_manager" {
+		ok := false
+		for _, p := range paragraphs(text) {
+			if strings.HasPrefix(p, purposeMark) && strings.Contains(strings.ToLower(p), managerGoal) {
+				ok = true
+			}
+		}
+		if !ok {
+			out = append(out, "persona_purpose")
+		}
+	}
+	return out
+}
+
+// hasStem says whether a text has a word that starts with one of the stems, ignoring case.
+func hasStem(text string, stems []string) bool {
+	for _, w := range wordRe.FindAllString(strings.ToLower(text), -1) {
+		for _, s := range stems {
+			if strings.HasPrefix(w, s) {
+				return true
+			}
+		}
+	}
+	return false
 }

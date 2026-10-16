@@ -213,8 +213,10 @@ func (c *Core) shiftManager(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 
 // leaveReason is the retirement trigger of a holder that people replace: after an incident stop
 // replaced_after_incident, otherwise replaced_by_human (IDN-11, GOV-22).
-func (m *managerSeat) leaveReason() string {
-	if m.has("incident") {
+func (m *managerSeat) leaveReason(v03 bool) string {
+	// A v0.3 core never applies replaced_after_incident: there is no stop on an incident
+	// (IDN-15, IDN-16, GOV-47).
+	if m.has("incident") && !v03 {
 		return "replaced_after_incident"
 	}
 	return "replaced_by_human"
@@ -231,7 +233,7 @@ func (c *Core) retireHolder(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		return err
 	}
 	if prev != nil {
-		if _, err := c.retireBot(ctx, tx, now, cat, prev, m.leaveReason(), successor, actor); err != nil {
+		if _, err := c.retireBot(ctx, tx, now, cat, prev, m.leaveReason(c.claimsV03()), successor, actor); err != nil {
 			return err
 		}
 	}
@@ -469,7 +471,9 @@ func (c *Core) syncHumanStop(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 // and, for a disk, MGR-33 and MGR-34 hold. Otherwise the record keeps the reason code why there
 // is no stop. A seat already stopped by an incident only gets the incident on its card.
 func (c *Core) incidentStop(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, ic incidentClass, r *incidentRow) error {
-	if !truthy(ic.Spec["stops_manager"]) {
+	// From v0.3 an incident never stops the seat: stops_manager is a field of v0.1 and v0.2
+	// only (IDN-16, GOV-47).
+	if !truthy(ic.Spec["stops_manager"]) || c.claimsV03() {
 		return nil
 	}
 	if _, err := tx.Exec(ctx, `UPDATE incidents SET stops_manager = true WHERE id = $1`, r.ID); err != nil {

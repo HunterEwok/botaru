@@ -18,7 +18,13 @@ import (
 const (
 	promotionCard   = "promotion_card"
 	attributionCard = "attribution_card"
+	// rejectionLinkCard asks a person whether a rejected proposal could have prevented an
+	// incident (GOV-40).
+	rejectionLinkCard = "rejection_link_card"
 )
+
+// attributionCards are the card kinds of the attribution subject.
+var attributionCards = []string{attributionCard, rejectionLinkCard}
 
 // withinCeiling keeps the people whose data ceiling covers mark (DIG-2).
 func (c *Core) withinCeiling(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, people []string, mark string) ([]string, error) {
@@ -162,7 +168,7 @@ func (c *Core) govDetails(ctx context.Context, w *Worker, ob OnBehalf, req CardO
 	err = c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
 		table, kind := "governance_cases", promotionCard
 		if req.SubjectKind == "attribution" {
-			table, kind = "attributions", attributionCard
+			table = "attributions"
 		}
 		var tenant string
 		var nonce *string
@@ -174,7 +180,11 @@ func (c *Core) govDetails(ctx context.Context, w *Worker, ob OnBehalf, req CardO
 		if deref(nonce) == "" || deref(nonce) != req.Nonce {
 			return refuse("forbidden", "the nonce is not the card's")
 		}
-		press, err := c.checkPress(ctx, tx, now, cat, w, ob, req.SubjectKind, req.ID, []string{kind})
+		kinds := []string{kind}
+		if req.SubjectKind == "attribution" {
+			kinds = attributionCards
+		}
+		press, err := c.checkPress(ctx, tx, now, cat, w, ob, req.SubjectKind, req.ID, kinds)
 		if err != nil {
 			return err
 		}
