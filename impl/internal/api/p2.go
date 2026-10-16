@@ -292,6 +292,27 @@ func (s *Server) p2(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		out, err = s.c.SpendReconcile(ctx, oper, req)
+	case "msg.list":
+		req, derr := decode[core.MsgListRequest](m)
+		if derr != nil {
+			s.fail(w, derr)
+			return
+		}
+		out, err = s.c.MsgList(ctx, oper, req)
+	case "msg.show":
+		req, derr := decode[core.MsgShowRequest](m)
+		if derr != nil {
+			s.fail(w, derr)
+			return
+		}
+		out, err = s.c.MsgShow(ctx, oper, req)
+	case "inbox.status":
+		req, derr := decode[core.InboxStatusRequest](m)
+		if derr != nil {
+			s.fail(w, derr)
+			return
+		}
+		out, err = s.c.InboxStatus(ctx, oper, req)
 	case "core.drain":
 		req, derr := decode[core.CoreDrainRequest](m)
 		if derr != nil {
