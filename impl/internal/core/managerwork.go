@@ -129,7 +129,7 @@ func (c *Core) enqueueDirective(ctx context.Context, tx pgx.Tx, now time.Time, c
 	}
 	body := map[string]any{"type": directiveType, "goal": goal, "params": map[string]any{"input": input}}
 	res, err := c.enqueue(ctx, tx, now, cat, enqueueInput{Tenant: tenant, Type: directiveType, Body: body,
-		IdempotencyKey: "directive:" + newIdemSuffix(), Initiator: "system", EnqueuedBy: "system:directive",
+		IdempotencyKey: "system:directive:" + newIdemSuffix(), Initiator: "system", EnqueuedBy: "system:directive",
 		Source: seatSource, SourceID: d.By, Priority: 2})
 	if err != nil {
 		return "", nil, err
@@ -441,7 +441,7 @@ func (c *Core) enqueueReview(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 	}
 	body := map[string]any{"type": reviewType, "goal": "Review the day of the farm manager in the tenant.", "params": map[string]any{"input": input}}
 	res, err := c.enqueue(ctx, tx, now, cat, enqueueInput{Tenant: tenant, Type: reviewType, Body: body,
-		IdempotencyKey: "review:" + day.Format("2006-01-02"), Initiator: "system", EnqueuedBy: "system:manager_review",
+		IdempotencyKey: "system:daily:" + tenant + ":" + day.Format("2006-01-02"), Initiator: "system", EnqueuedBy: "system:manager_review",
 		Source: seatSource, SourceID: day.Format("2006-01-02"), Priority: 5})
 	if err != nil {
 		return "", err

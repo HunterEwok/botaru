@@ -329,6 +329,10 @@ type Subprocessor struct {
 		Mode    string `json:"mode"`
 		MaxDays *int   `json:"max_days"`
 	} `json:"retention"`
+	// Terms are the agreement terms the profiles of the provider must meet (GW-15).
+	Terms struct {
+		HumanReview string `json:"human_review"`
+	} `json:"terms"`
 }
 
 // NoticeVersionString returns the privacy notice version as text.
@@ -751,6 +755,15 @@ type ModelProfile struct {
 	ProviderTraining *struct {
 		Value bool `json:"value"`
 	} `json:"provider_training"`
+	// RequiresRetention, ProviderHumanReview and Subprocessors are the provider terms of the
+	// model that the tenant's subprocessor entry must allow (GW-15).
+	RequiresRetention   bool `json:"requires_retention"`
+	ProviderHumanReview *struct {
+		Value string `json:"value"`
+	} `json:"provider_human_review"`
+	Subprocessors []struct {
+		Provider string `json:"provider"`
+	} `json:"subprocessors"`
 }
 
 // Price is in euros per million tokens, that is micro-euros per token.
