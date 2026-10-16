@@ -56,10 +56,17 @@ func (c *Core) governanceLoop(ctx context.Context) error {
 	}
 	var errs []error
 	for _, t := range slices.Sorted(mapKeys(cat.Tenants)) {
-		if t == farmTenant || len(charterSeats(cat, t)) == 0 {
+		if t == farmTenant {
 			continue
 		}
 		tv := cat.Tenants[t]
+		if len(charterSeats(cat, t)) == 0 {
+			// Script links need no commission (TRN-7).
+			if err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error { return c.scriptLinkStep(ctx, tx, now, cat, tv) }); err != nil {
+				errs = append(errs, fmt.Errorf("script links of %s: %w", t, err))
+			}
+			continue
+		}
 		if err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error { return c.governTenant(ctx, tx, now, cat, tv) }); err != nil {
 			errs = append(errs, fmt.Errorf("governance of %s: %w", t, err))
 		}

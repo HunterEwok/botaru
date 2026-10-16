@@ -173,11 +173,13 @@ type scriptRec struct {
 	FanoutLists []scriptFanout  `json:"fanout_lists,omitempty"`
 	// Marks are the code marks of each step for the run card (SCR-6, TRN-2); NeedsRun says
 	// whether "Run" needs the privileged script.run.
-	Marks      map[string][]string `json:"marks,omitempty"`
-	NeedsRun   bool                `json:"needs_script_run"`
-	StepMicros map[string]int64    `json:"step_micros,omitempty"`
-	StepTree   map[string]int      `json:"step_tree,omitempty"`
-	Deadline   string              `json:"run_deadline"`
+	Marks    map[string][]string `json:"marks,omitempty"`
+	NeedsRun bool                `json:"needs_script_run"`
+	// Unnamed are, per step, the targets the typed text does not name (TRN-10).
+	Unnamed    map[string]*unnamedTargets `json:"unnamed_targets,omitempty"`
+	StepMicros map[string]int64           `json:"step_micros,omitempty"`
+	StepTree   map[string]int             `json:"step_tree,omitempty"`
+	Deadline   string                     `json:"run_deadline"`
 	// Assignment is the text the initiator typed, the goal of {assignment: true} (SCR-4).
 	Assignment   string  `json:"assignment,omitempty"`
 	Role         string  `json:"role,omitempty"`
@@ -858,6 +860,25 @@ func (c *Core) acceptScript(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		if s.hasAction() || s.Kind == "confirm" || slices.Contains(rec.Marks[s.ID], "may_control_services") {
 			rec.NeedsRun = true
 		}
+		if u := unnamedOf(cat, tv, resources, s, rec.fanoutList(s.ID), assignment); u != nil {
+			if rec.Unnamed == nil {
+				rec.Unnamed = map[string]*unnamedTargets{}
+			}
+			rec.Unnamed[s.ID] = u
+			rec.Marks[s.ID] = append(rec.Marks[s.ID], "targets_not_in_assignment")
+		}
+	}
+	// HLD-9, HLD-3: under a no_action hold on the author role, a draft that acts (an action, or
+	// a step that may control services or run monitoring scripts) is rejected; read-only
+	// drafts still pass.
+	if scriptActs(steps, rec.Marks) {
+		held, err := heldBy(ctx, tx, now, []string{"no_action"}, append(tenantScopes(g.Tenant), scopeRef{kind: "role", tenant: g.Tenant, name: g.Role})...)
+		if err != nil {
+			return nil, nil, err
+		}
+		if held != "" {
+			return nil, &scriptProblem{Reason: "held", Detail: "a hold stops the actions of the role"}, nil
+		}
 	}
 	rec.Estimate.Micros = total
 	rec.Estimate.EUR = float64(money.CentsUp(total)) / 100
@@ -1387,7 +1408,9 @@ func scriptScopes(r *scriptRun, steps []scriptStep) []scopeRef {
 
 // setRunState moves a run and writes its event and card updates.
 func (c *Core) setRunState(ctx context.Context, tx pgx.Tx, now time.Time, r *scriptRun, state, reason string) error {
-	if _, err := tx.Exec(ctx, `UPDATE script_runs SET state = $2, reason = $3, updated_at = $4 WHERE id = $1`, r.ID, state, nullable(reason), now); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE script_runs SET state = $2, reason = $3, updated_at = $4,
+		ended_at = CASE WHEN $2 IN ('completed', 'failed', 'canceled') AND started_at IS NOT NULL THEN coalesce(ended_at, $4) ELSE ended_at END WHERE id = $1`,
+		r.ID, state, nullable(reason), now); err != nil {
 		return err
 	}
 	r.State, r.Reason = state, reason
@@ -1451,7 +1474,14 @@ func (c *Core) startRun(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cata
 		d = farmScriptRunDeadline
 	}
 	at := now.Add(d)
-	if _, err := tx.Exec(ctx, `UPDATE script_runs SET tree_left = $2, deadline_at = $3 WHERE id = $1`, r.ID, r.Rec.Estimate.TreeTasks, at); err != nil {
+	// The targets fixed at "Run" are what a script link looks at (TRN-7).
+	defs, err := parseSteps(r.Rec.Script)
+	if err != nil {
+		return "", err
+	}
+	targets := runTargets(c.campaignResources(cat, r.Tenant, r.Rec.Mark), defs, r.Rec)
+	if _, err := tx.Exec(ctx, `UPDATE script_runs SET tree_left = $2, deadline_at = $3, targets = $4, started_at = $5 WHERE id = $1`,
+		r.ID, r.Rec.Estimate.TreeTasks, at, targets, now); err != nil {
 		return "", err
 	}
 	r.TreeLeft = r.Rec.Estimate.TreeTasks
@@ -2577,7 +2607,12 @@ func (c *Core) scriptCommand(ctx context.Context, w *Worker, ob OnBehalf, id, no
 			if err != nil {
 				return err
 			}
-			if held, err := heldBy(ctx, tx, now, []string{"no_enqueue", "no_action"}, scriptScopes(r, defs)...); err != nil {
+			// A read-only run still runs under no_action (HLD-9).
+			effects := []string{"no_enqueue"}
+			if scriptActs(defs, r.Rec.Marks) {
+				effects = append(effects, "no_action")
+			}
+			if held, err := heldBy(ctx, tx, now, effects, scriptScopes(r, defs)...); err != nil {
 				return err
 			} else if held != "" {
 				return deny("held", "a hold covers the script")

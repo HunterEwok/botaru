@@ -104,6 +104,9 @@ func (c *Core) attributionStep(ctx context.Context, tx pgx.Tx, now time.Time, ca
 	if err := c.createAttributions(ctx, tx, now, cat, tv); err != nil {
 		return err
 	}
+	if err := c.createScriptLinks(ctx, tx, now, cat, tv); err != nil {
+		return err
+	}
 	if err := c.dismissedAttributions(ctx, tx, now, tv.Name, ""); err != nil {
 		return err
 	}
@@ -199,21 +202,24 @@ func (c *Core) createAttribution(ctx context.Context, tx pgx.Tx, now time.Time, 
 	return err
 }
 
-// attributionRow is an attribution candidate under its lock.
+// attributionRow is an attribution candidate under its lock; Kind is change or script_run
+// (TRN-7), and ScriptRun names the run of a script link.
 type attributionRow struct {
 	ID, Tenant, Incident, Proposal, State, Nonce string
+	Kind, ScriptRun                              string
 	Rec                                          map[string]any
 	PresentedAt, RemindedAt                      *time.Time
 }
 
 func loadAttribution(ctx context.Context, tx pgx.Tx, id string, lock bool) (*attributionRow, error) {
-	q := `SELECT id, tenant, incident, proposal, state, record, coalesce(nonce, ''), presented_at, reminded_at FROM attributions WHERE id = $1`
+	q := `SELECT id, tenant, incident, coalesce(proposal, ''), state, record, coalesce(nonce, ''), presented_at, reminded_at, kind, coalesce(script_run, '')
+		FROM attributions WHERE id = $1`
 	if lock {
 		q += ` FOR UPDATE`
 	}
 	a := &attributionRow{}
 	var raw []byte
-	err := tx.QueryRow(ctx, q, id).Scan(&a.ID, &a.Tenant, &a.Incident, &a.Proposal, &a.State, &raw, &a.Nonce, &a.PresentedAt, &a.RemindedAt)
+	err := tx.QueryRow(ctx, q, id).Scan(&a.ID, &a.Tenant, &a.Incident, &a.Proposal, &a.State, &raw, &a.Nonce, &a.PresentedAt, &a.RemindedAt, &a.Kind, &a.ScriptRun)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -237,6 +243,9 @@ func (c *Core) moveAttribution(ctx context.Context, tx pgx.Tx, now time.Time, a 
 	after := map[string]any{"state": state}
 	if ans := mmapAny(a.Rec["answer"]); ans != nil {
 		after["decision"], after["response_ms"], after["details_opened"] = ans["decision"], ans["response_ms"], ans["details_opened"]
+	}
+	if a.Rec["self_assessment"] == true {
+		after["self_assessment"] = true
 	}
 	via := "core"
 	if strings.HasPrefix(actor, "human:") {
@@ -350,6 +359,12 @@ func (c *Core) remindAttributions(ctx context.Context, tx pgx.Tx, now time.Time,
 		if _, err := tx.Exec(ctx, `UPDATE attributions SET record = $2, reminded_at = $3, updated_at = $3 WHERE id = $1`, a.ID, raw, now); err != nil {
 			return err
 		}
+		if a.Kind == "script_run" {
+			if err := c.planScriptLinkCards(ctx, tx, now, tv, a.ID, a.ScriptRun, map[string]any{"reminder": true}); err != nil {
+				return err
+			}
+			continue
+		}
 		if _, err := c.planGovCards(ctx, tx, now, tv, "attribution", a.ID, attributionCard, "governance.attribute", proposalMark(ctx, tx, a.Proposal), map[string]any{"reminder": true}); err != nil {
 			return err
 		}
@@ -363,6 +378,9 @@ func (c *Core) attributionCardFields(ctx context.Context, tx pgx.Tx, cat *Catalo
 	a, err := loadAttribution(ctx, tx, id, false)
 	if err != nil || a == nil {
 		return nil, err
+	}
+	if a.Kind == "script_run" {
+		return c.scriptLinkCardFields(ctx, tx, cat, a)
 	}
 	var class, kind, subject string
 	var opened time.Time
@@ -429,7 +447,7 @@ func (c *Core) decideAttribution(ctx context.Context, w *Worker, ob OnBehalf, re
 		if a.Nonce == "" || a.Nonce != req.Nonce {
 			return refuse("forbidden", "the nonce is not the card's")
 		}
-		press, err := c.checkPress(ctx, tx, now, cat, w, ob, "attribution", a.ID, []string{attributionCard})
+		press, err := c.checkPress(ctx, tx, now, cat, w, ob, "attribution", a.ID, []string{attributionCard, scriptLinkCard})
 		if err != nil {
 			return err
 		}
@@ -451,6 +469,19 @@ func (c *Core) decideAttribution(ctx context.Context, w *Worker, ob OnBehalf, re
 		if !hasCap(press.tv, press.groups, "governance.attribute") {
 			return deny("forbidden", "the person has no governance.attribute")
 		}
+		if a.Kind == "script_run" {
+			// TRN-7: not the person who pressed "Run", unless nobody else may decide.
+			self, ok, err := scriptLinkDecider(ctx, tx, now, press.tv, a, press.principal)
+			if err != nil {
+				return err
+			}
+			if !ok {
+				return deny("forbidden", "the person who pressed Run does not decide the link of the run")
+			}
+			if self {
+				a.Rec["self_assessment"] = true
+			}
+		}
 		switch a.State {
 		case "candidate", "unknown", "rejected":
 		case "canceled":
@@ -459,11 +490,16 @@ func (c *Core) decideAttribution(ctx context.Context, w *Worker, ob OnBehalf, re
 			return refuse("already_decided", "the attribution is decided")
 		}
 		if a.State != "candidate" {
-			p, err := readProposal(ctx, tx, a.Proposal)
-			if err != nil {
-				return err
+			var open bool
+			if a.Kind == "script_run" {
+				open, err = scriptLinkWindowOpen(ctx, tx, now, a.ScriptRun)
+			} else {
+				var p *proposalRow
+				if p, err = readProposal(ctx, tx, a.Proposal); err != nil {
+					return err
+				}
+				open, err = attributionWindowOpen(ctx, tx, now, cat, a.Tenant, a.Proposal, parseTime(asString(mmapAny(p.Rec["realization"])["realized_at"])))
 			}
-			open, err := attributionWindowOpen(ctx, tx, now, cat, a.Tenant, a.Proposal, parseTime(asString(mmapAny(p.Rec["realization"])["realized_at"])))
 			if err != nil {
 				return err
 			}
@@ -488,7 +524,12 @@ func (c *Core) decideAttribution(ctx context.Context, w *Worker, ob OnBehalf, re
 			return err
 		}
 		if state == "confirmed" {
-			if err := c.attributionConfirmed(ctx, tx, now, a); err != nil {
+			if a.Kind == "change" {
+				if err := c.attributionConfirmed(ctx, tx, now, a); err != nil {
+					return err
+				}
+			}
+			if err := c.roleIncidents(ctx, tx, now, a); err != nil {
 				return err
 			}
 		}

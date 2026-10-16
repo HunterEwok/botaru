@@ -188,6 +188,8 @@ type Tenant struct {
 		MaxSteps       int    `json:"max_steps"`
 		MaxActionSteps *int   `json:"max_action_steps"`
 		RunDeadline    string `json:"run_deadline"`
+		// UnnamedTargetsMax is the widest machine selector the run card does not mark (TRN-10).
+		UnnamedTargetsMax int `json:"unnamed_targets_max"`
 	} `json:"scripts"`
 	// Messaging holds the wake-up ceilings of the tenant (MSG-11).
 	Messaging struct {

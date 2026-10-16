@@ -24,8 +24,9 @@ var Profiles = []string{"core"}
 // kind with the pointer "/kind". The list shrinks when the claimed version reaches them.
 var Ahead = map[string][]string{
 	// The tenant retention periods, which the retention loop applies in every copy (RET-9,
-	// RET-10); journals stays refused with the debug profile.
-	"Tenant": {"/spec/retention"},
+	// RET-10); journals stays refused with the debug profile. The widest machine selector the
+	// script run card does not mark (TRN-10).
+	"Tenant": {"/spec/retention", "/spec/scripts/unnamed_targets_max"},
 }
 
 // ahead says whether the field at ptr of a manifest of kind is in Ahead.
