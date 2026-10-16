@@ -184,6 +184,13 @@ func TestAccountabilityReview(t *testing.T) {
 	if r := rejections(t, b); !slices.Contains(r, "resubmit_too_early") {
 		t.Fatalf("rejections %v", r)
 	}
+	var rejected map[string]any
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT data FROM events WHERE type = $1 AND data->>'reason' = 'resubmit_too_early'`, proposalRejectedType).Scan(&rejected); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.c.spec.Validate("urn:botaru:schema:proposal-rejected:1", rejected); err != nil {
+		t.Fatalf("PRP-24 resubmit_too_early off schema: %v", err)
+	}
 	b.advance(t, 31*86400)
 	b.helloDone(t, "2", "", "hi")
 	b.loop(t, "observe")

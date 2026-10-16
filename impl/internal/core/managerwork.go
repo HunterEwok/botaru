@@ -433,6 +433,12 @@ func (c *Core) enqueueReview(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 		return "", nil
 	}
 	input := map[string]any{"day": day.Format("2006-01-02"), "numbers": n.params(false)}
+	// From v0.3 the review reads the two farm guards of the tenant's last day (PRP-26).
+	if guards, err := c.farmGuardDay(ctx, tx, cat, tenant, day.AddDate(0, 0, -1), day); err != nil {
+		return "", err
+	} else if guards != nil {
+		input["farm_guards"] = guards
+	}
 	body := map[string]any{"type": reviewType, "goal": "Review the day of the farm manager in the tenant.", "params": map[string]any{"input": input}}
 	res, err := c.enqueue(ctx, tx, now, cat, enqueueInput{Tenant: tenant, Type: reviewType, Body: body,
 		IdempotencyKey: "review:" + day.Format("2006-01-02"), Initiator: "system", EnqueuedBy: "system:manager_review",
