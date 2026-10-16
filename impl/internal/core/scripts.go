@@ -1447,18 +1447,12 @@ func runHoldScopes(r *scriptRun, defs []scriptStep) []scopeRef {
 	return s
 }
 
-// runHeld is the hold that covers a run with an effect of runHoldEffects, or "". no_action
-// forbids only what acts, so it covers a run only when the run acts by the catalog at the check:
-// read-only scripts still run under it (HLD-9); a read fanout's campaign still pauses by itself
-// (ORC-11).
+// runHeld is the hold that covers a run with an effect of runHoldEffects, or "" (SCR-10); a
+// read fanout's campaign still pauses by itself (ORC-11).
 func (c *Core) runHeld(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, r *scriptRun) (string, error) {
 	defs, err := parseSteps(r.Rec.Script)
 	if err != nil {
 		return "", err
-	}
-	effects := runHoldEffects
-	if !c.scriptActs(cat, defs) {
-		effects = slices.DeleteFunc(slices.Clone(runHoldEffects), func(e string) bool { return e == "no_action" })
 	}
 	scopes := runHoldScopes(r, defs)
 	// The campaigns of its fanout steps: a hold on a campaign's item type, action or role covers
@@ -1480,7 +1474,26 @@ func (c *Core) runHeld(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 	if err := rows.Err(); err != nil {
 		return "", err
 	}
-	return heldBy(ctx, tx, now, effects, scopes...)
+	return runHeldBy(ctx, tx, now, r, c.scriptActs(cat, defs), runHoldEffects, scopes)
+}
+
+// runHeldBy is heldBy for a run, with the exception of HLD-9: a no_action hold on the scope of
+// the role that wrote the draft does not cover a run that does not act by the catalog at the
+// check, so read-only scripts of a held role still run. no_action on every other scope (the farm,
+// the tenant, the worker, a type, an action, a machine or resource) covers it as SCR-10 says.
+func runHeldBy(ctx context.Context, tx pgx.Tx, now time.Time, r *scriptRun, acts bool, effects []string, scopes []scopeRef) (string, error) {
+	if acts || r.Rec.Role == "" || !slices.Contains(effects, "no_action") {
+		return heldBy(ctx, tx, now, effects, scopes...)
+	}
+	other := slices.DeleteFunc(slices.Clone(effects), func(e string) bool { return e == "no_action" })
+	if len(other) > 0 {
+		if held, err := heldBy(ctx, tx, now, other, scopes...); err != nil || held != "" {
+			return held, err
+		}
+	}
+	role := scopeRef{kind: "role", tenant: r.Tenant, name: r.Rec.Role}
+	rest := slices.DeleteFunc(slices.Clone(scopes), func(s scopeRef) bool { return s == role })
+	return heldBy(ctx, tx, now, []string{"no_action"}, rest...)
 }
 
 // pauseHeldRuns moves the running runs of a tenant (every tenant for "") that a hold covers to
@@ -2731,12 +2744,8 @@ func (c *Core) scriptCommand(ctx context.Context, w *Worker, ob OnBehalf, id, no
 			if err != nil {
 				return err
 			}
-			// A read-only run still runs under no_action (HLD-9).
-			effects := []string{"no_enqueue"}
-			if c.scriptActs(cat, defs) {
-				effects = append(effects, "no_action")
-			}
-			if held, err := heldBy(ctx, tx, now, effects, scriptScopes(r, defs)...); err != nil {
+			// A read-only run still runs under no_action on its own role (HLD-9).
+			if held, err := runHeldBy(ctx, tx, now, r, c.scriptActs(cat, defs), []string{"no_enqueue", "no_action"}, scriptScopes(r, defs)); err != nil {
 				return err
 			} else if held != "" {
 				return deny("held", "a hold covers the script")

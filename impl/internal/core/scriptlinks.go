@@ -161,14 +161,24 @@ func (c *Core) scriptActs(cat *Catalog, steps []scriptStep) bool {
 // createScriptLinks creates the candidates of the rule script_target (TRN-7): an incident of a
 // change_sensitive class about a catalog resource among the targets a run fixed at "Run",
 // opened from the start of the run until 14 days after it ended. The hop over the catalog
-// dependencies is not built, as for the rule dependency_1.
+// dependencies is not built, as for the rule dependency_1. On a core that claims v0.3 only runs
+// started at or after the tenant's governance_v03_since are linked, none before it is known
+// (GOV-36).
 func (c *Core) createScriptLinks(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tv *TenantView) error {
+	var from *time.Time
+	if c.claimsV03() {
+		since, _, err := v03State(ctx, tx, tv.Name)
+		if err != nil || since == nil {
+			return err
+		}
+		from = since
+	}
 	rows, err := tx.Query(ctx, `SELECT i.id, i.class, r.id FROM incidents i JOIN script_runs r ON r.tenant = i.tenant
 		AND r.started_at IS NOT NULL AND i.opened_at >= r.started_at AND (r.ended_at IS NULL OR i.opened_at <= r.ended_at + interval '14 days')
-		AND i.subject_kind = 'resource' AND i.subject_id = ANY(r.targets)
+		AND i.subject_kind = 'resource' AND i.subject_id = ANY(r.targets) AND ($3::timestamptz IS NULL OR r.started_at >= $3)
 		WHERE i.tenant = $1 AND i.state <> 'dismissed' AND i.opened_at >= $2
 		AND NOT EXISTS (SELECT 1 FROM attributions a WHERE a.incident = i.id AND a.script_run = r.id)
-		ORDER BY i.opened_at, i.id, r.id`, tv.Name, now.Add(-attributionLookback))
+		ORDER BY i.opened_at, i.id, r.id`, tv.Name, now.Add(-attributionLookback), from)
 	if err != nil {
 		return err
 	}

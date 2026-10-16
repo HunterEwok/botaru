@@ -107,6 +107,9 @@ func TestScriptLinkRoleHold(t *testing.T) {
 	// (GOV-41) and still counts for the role (HLD-9).
 	b.c.v03.Store(true)
 	b.exec(t, `INSERT INTO governance_v03 (tenant, since, updated_at) VALUES ('demo', botaru_now(), botaru_now())`)
+	// Only runs started since the tenant moved to v0.3 are linked (GOV-36); this one started
+	// before, until the start is moved back.
+	runSinceV03 := func() { b.exec(t, `UPDATE governance_v03 SET since = since - interval '1 day' WHERE tenant = 'demo'`) }
 	// One live incident per subject: the later ones are already closed.
 	incident := func(subject, state string) string {
 		id := ids.New(ids.Incident)
@@ -118,6 +121,12 @@ func TestScriptLinkRoleHold(t *testing.T) {
 	first := incident("web1", "open")
 	incident("web1", "closed")
 	incident("web2", "open") // not a target of the run
+	b.tick(t, "governance")
+	var early int
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM attributions WHERE kind = 'script_run'`).Scan(&early); err != nil || early != 0 {
+		t.Fatalf("links of a run before v0.3 %d %v", early, err)
+	}
+	runSinceV03()
 	b.tick(t, "governance")
 	var links int
 	if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM attributions WHERE kind = 'script_run' AND script_run = $1 AND record->>'rule' = 'script_target'`, run.ID).Scan(&links); err != nil || links != 2 {
@@ -210,6 +219,15 @@ func TestScriptLinkRoleHold(t *testing.T) {
 	}
 	if eff := campaignHoldEffectsOf(cmp); !containsString(eff, "no_enqueue") || !containsString(eff, "no_action") || containsString(eff, "pause_action") {
 		t.Fatalf("read campaign hold effects %v", eff)
+	}
+	// The exception is only for the role's own scope: no_action on a machine the run names
+	// pauses it as SCR-10 says.
+	if _, err := b.c.HoldSet(ctx, OperatorActor(b.op), HoldSetRequest{Scope: HoldScope{Kind: "host", Tenant: "demo", Name: "web1"},
+		Effects: []string{"no_action"}, Reason: "maintenance"}); err != nil {
+		t.Fatal(err)
+	}
+	if run, _ = b.run(t, r.RunRef); run.State != "paused" || run.Reason != "held" {
+		t.Fatalf("a read-only run under a host hold: %s %s", run.State, run.Reason)
 	}
 	// A dismissed incident disputes its link and lifts nothing.
 	if _, err := b.c.IncidentDismiss(ctx, b.op, IncidentRequest{Incident: first, ReasonCode: "maintenance", Details: "planned work"}); err != nil {

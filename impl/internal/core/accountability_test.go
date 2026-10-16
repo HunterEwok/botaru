@@ -102,6 +102,16 @@ func TestPersonaV03(t *testing.T) {
 	}
 }
 
+// Only seats whose lens assesses proposals write forecasts, so a necessity seat does not hold
+// accountability: on back (GOV-36, COM-13).
+func TestProposalSeatsV03(t *testing.T) {
+	b := newBench(t)
+	got := b.c.proposalSeats(map[string]string{"commission:1": "security", "commission:2": "necessity"})
+	if len(got) != 1 || got["commission:1"] != "security" {
+		t.Fatalf("seats %v", got)
+	}
+}
+
 // A v0.3 core never retires the farm manager as replaced_after_incident (IDN-15, IDN-16).
 func TestLeaveReasonV03(t *testing.T) {
 	m := &managerSeat{Reasons: []stopReason{{Reason: "incident"}}}

@@ -134,7 +134,7 @@ func (c *Core) accountabilityLint(ctx context.Context, docs []manifest.Doc, inde
 		if n, ok := mnum(com, "accountability_min_forecasts"); ok {
 			need = min(max(int(n), minMinForecasts), defaultMinForecasts)
 		}
-		ready, _, err := seatsReady(ctx, c.st.Pool, now, d.Tenant, charterSeatsOf(com), need)
+		ready, _, err := seatsReady(ctx, c.st.Pool, now, d.Tenant, c.proposalSeats(charterSeatsOf(com)), need)
 		if err != nil {
 			return nil, err
 		}
@@ -153,6 +153,24 @@ func charterSeatsOf(com map[string]any) map[string]string {
 		if n, ok := toFloat(sm["id"]); ok {
 			out[fmt.Sprintf("commission:%d", int(n))] = mstr(sm, "lens")
 		}
+	}
+	return out
+}
+
+// proposalSeats are the seats whose lens assesses proposals (subject proposal in
+// spec/model/lenses.yaml): only they write forecasts, so a seat of the necessity lens, which
+// assesses escalations, does not hold accountability back (GOV-36, COM-13).
+func (c *Core) proposalSeats(seats map[string]string) map[string]string {
+	reg, err := c.spec.Registry("spec/model/lenses.yaml")
+	if err != nil {
+		return seats
+	}
+	out := map[string]string{}
+	for id, lens := range seats {
+		if e, ok := reg.Entry(lens); ok && e["subject"] != "proposal" {
+			continue
+		}
+		out[id] = lens
 	}
 	return out
 }
@@ -198,7 +216,7 @@ func (c *Core) readyStep(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 	if err != nil || sent != nil && now.Sub(*sent) < readyEvery {
 		return err
 	}
-	ready, accs, err := seatsReady(ctx, tx, now, tv.Name, charterSeats(cat, tv.Name), minForecasts(cat, tv.Name))
+	ready, accs, err := seatsReady(ctx, tx, now, tv.Name, c.proposalSeats(charterSeats(cat, tv.Name)), minForecasts(cat, tv.Name))
 	if err != nil || !ready {
 		return err
 	}
