@@ -190,7 +190,7 @@ func TestLintPrivilegeRaised(t *testing.T) {
 }
 
 // GOV-33, GOV-22: a seat declared twice, the farm_manager block in a tenant charter and a
-// field against its one direction fail apply; a v0.3 core does not use incident_stop (MGR-55).
+// field against its one direction fail apply.
 func TestLintCharterBounds(t *testing.T) {
 	c := lintCore(t)
 	charter := func(tenant, spec string) string {
@@ -220,10 +220,6 @@ func TestLintCharterBounds(t *testing.T) {
 	}
 	if got := lintCodes(t, c, charter("farm", `{farm_manager: {incident_stop: {decide_within: 3d}}}`)); slices.Contains(got, "charter_direction") {
 		t.Fatalf("decide_within shortened: %v", got)
-	}
-	setClaimsV03(t, true)
-	if got := lintCodes(t, c, charter("farm", long)); slices.Contains(got, "charter_direction") {
-		t.Fatalf("a v0.3 core checks incident_stop: %v", got)
 	}
 }
 

@@ -1281,6 +1281,7 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
     lint_v02_features(S, f, types, tools, roles, claimed)
     lint_series(S, f, tools)
     lint_insight_types(S, f, roles)
+    lint_lens_names(S, f)
     lint_governance(S, f)
     lint_incident_classes(S, f)
     lint_seat_profiles(S, f)
@@ -1360,46 +1361,12 @@ def find_persona(where, ref):
         d = parent
 
 
-def governance_name(n, incidents=True):
-    return isinstance(n, str) and (n.startswith(('governance.', 'attribution.', 'seat.')) or (incidents and n.startswith('incident.')))
-
-
-# Durations of a tenant charter that only rise from their default (GOV-33); the schema bounds the counts.
-CHARTER_FLOORS = {('promotion', 'probation'): 14 * 86400, ('promotion', 'min_tenure'): 30 * 86400,
-                  ('promotion', 'swap_cooldown'): 30 * 86400, ('removal', 'protect_new'): 60 * 86400,
-                  ('attribution', 'window'): 14 * 86400, ('confirmation', 'ttl'): 7 * 86400,
-                  ('identity', 'unbound_ttl'): 30 * 86400, ('memory', 'seal_ttl'): 30 * 86400}
-
-
 def version_tuple(v):
     try:
         major, minor = str(v).lstrip('v').split('.')[:2]
         return int(major), int(minor)
     except ValueError:
         return (99, 0)
-
-
-def lint_charter_bounds(S, f):
-    """What the charter schema cannot say (GOV-33): a seat declared twice, the farm_manager block outside the farm
-    charter, a duration below its default, exclude_change_kinds without none, decide_within above 7 days (GOV-22)."""
-    for tenant, gname, where, gs in S.each('Governance'):
-        seen = set()
-        for s in (gs.get('commission') or {}).get('seats') or []:
-            if str(s.get('id')) in seen:
-                f.error('charter_seat_twice', where, f'charter {gname}: seat {s.get("id")} is declared twice (GOV-33)')
-            seen.add(str(s.get('id')))
-        if tenant != 'farm' and 'farm_manager' in gs:
-            f.error('charter_farm_manager', where, f'charter {gname}: only the farm charter declares the manager seat (GOV-33)')
-        for (block, field), floor in CHARTER_FLOORS.items():
-            v = (gs.get(block) or {}).get(field)
-            if v is not None and (seconds(v) is None or seconds(v) < floor):
-                f.error('charter_direction', where, f'charter {gname}: {block}.{field} {v} is below its default (GOV-33)')
-        kinds = (gs.get('promotion') or {}).get('exclude_change_kinds')
-        if kinds is not None and 'none' not in kinds:
-            f.error('charter_direction', where, f'charter {gname}: promotion.exclude_change_kinds lacks none (GOV-14, GOV-33)')
-        dw = ((gs.get('farm_manager') or {}).get('incident_stop') or {}).get('decide_within')
-        if dw is not None and (seconds(dw) is None or seconds(dw) > 7 * 86400):
-            f.error('charter_direction', where, f'charter {gname}: incident_stop.decide_within {dw} is above 7 days (GOV-22, GOV-33)')
 
 
 def lint_lens_names(S, f):
@@ -1424,18 +1391,49 @@ def lint_lens_names(S, f):
                     f.error('lens_weight_fixed', where, f'commission {cname}: the weight of lens {lens} is set by rule (COM-8)')
 
 
+def governance_name(n, incidents=True):
+    return isinstance(n, str) and (n.startswith(('governance.', 'attribution.', 'seat.')) or (incidents and n.startswith('incident.')))
+
+
+# Durations of a tenant charter that only rise from their default (GOV-33).
+CHARTER_FLOORS = (('promotion', 'probation', '14d'), ('promotion', 'min_tenure', '30d'), ('promotion', 'swap_cooldown', '30d'),
+                  ('removal', 'protect_new', '60d'), ('attribution', 'window', '14d'), ('confirmation', 'ttl', '7d'),
+                  ('identity', 'unbound_ttl', '30d'), ('memory', 'seal_ttl', '30d'))
+
+
+def lint_charter_bounds(tenant, gname, where, gs, f):
+    """What the charter schema cannot check (GOV-33): a seat twice, farm_manager outside farm, durations against their direction."""
+    seen = set()
+    for s in (gs.get('commission') or {}).get('seats') or []:
+        sid = s.get('id') if isinstance(s, dict) else None
+        if sid in seen:
+            f.error('charter_seat_twice', where, f'charter {gname}: seat {sid} is declared twice (GOV-33)')
+        seen.add(sid)
+    if tenant != 'farm' and 'farm_manager' in gs:
+        f.error('charter_farm_manager', where, f'charter {gname}: only the farm charter declares the manager seat (GOV-33)')
+    for block, field, floor in CHARTER_FLOORS:
+        v = (gs.get(block) or {}).get(field)
+        if v is not None and duration_s(v) < duration_s(floor):
+            f.error('charter_direction', where, f'charter {gname}: {block}.{field} {v} is below its default {floor} (GOV-33)')
+    kinds = (gs.get('promotion') or {}).get('exclude_change_kinds')
+    if kinds is not None and 'none' not in kinds:
+        f.error('charter_direction', where, f'charter {gname}: promotion.exclude_change_kinds leaves out none (GOV-33)')
+    dw = ((gs.get('farm_manager') or {}).get('incident_stop') or {}).get('decide_within')
+    if dw is not None and duration_s(dw) > duration_s('7d'):
+        f.error('charter_direction', where, f'charter {gname}: incident_stop.decide_within {dw} is above 7d (GOV-33)')
+
+
 def lint_governance(S, f):
     """Personas of the charters (GOV-4, COM-19), unawareness of bot texts (GOV-29) and no bot reference to governance (GOV-6, GOV-13)."""
     import hashlib
     terms = unaware_terms()
-    lint_charter_bounds(S, f)
-    lint_lens_names(S, f)
     for tenant, gname, where, gs in S.each('Governance'):
         com = gs.get('commission') or {}
         for s in com.get('seats') or []:
             lens = s.get('lens')
             if lens and not (((com.get('lenses') or {}).get(lens) or {}).get('persona') or {}).get('ref'):
                 f.error('lens_persona_missing', where, f'charter {gname}: seat {s.get("id")} names lens {lens} without a persona addendum (COM-19)')
+        lint_charter_bounds(tenant, gname, where, gs, f)
         refs = []
         for pos, pv in (gs.get('positions') or {}).items():
             if isinstance(pv, dict) and isinstance(pv.get('persona'), dict):

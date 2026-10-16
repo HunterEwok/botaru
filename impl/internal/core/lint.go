@@ -2083,62 +2083,6 @@ func namesHuman(v any) bool {
 	return false
 }
 
-// governanceName says whether a name is an event or operation of governance, attribution or
-// seats, which no bot reaches (GOV-6, GOV-29); with incidents, also of incident records, which
-// no bot creates or changes (GOV-13).
-func governanceName(n string, incidents bool) bool {
-	for _, p := range []string{"governance.", "attribution.", "seat."} {
-		if strings.HasPrefix(n, p) {
-			return true
-		}
-	}
-	return incidents && strings.HasPrefix(n, "incident.")
-}
-
-// charterFloors are the durations of a tenant charter that only rise from their default, and
-// charterCeilings the counts that only fall from it (GOV-33). The schema bounds the counts and
-// the audit sample; the durations are strings it cannot compare.
-var charterFloors = []struct {
-	block, field string
-	def          time.Duration
-}{
-	{"promotion", "probation", govProbation}, {"promotion", "min_tenure", govMinTenure}, {"promotion", "swap_cooldown", govSwapCooldown},
-	{"removal", "protect_new", 60 * 24 * time.Hour}, {"attribution", "window", defaultAttributionWindow},
-	{"confirmation", "ttl", 7 * 24 * time.Hour}, {"identity", "unbound_ttl", defaultUnboundTTL}, {"memory", "seal_ttl", defaultSealTTL},
-}
-
-// lintCharterBounds checks what the schema of a charter cannot (GOV-33): a seat id declared
-// twice, the farm_manager block outside the farm charter, a duration below its default, the
-// excluded change kinds without none, and in the farm charter a decide_within above 7 days.
-// A core that claims v0.3 does not use incident_stop (MGR-55), so it does not check it.
-func lintCharterBounds(o lintObj, f *lintFindings) {
-	seen := map[string]bool{}
-	for i, sv := range mlist(mmap(o.spec, "commission"), "seats") {
-		sm, _ := sv.(map[string]any)
-		id := fmt.Sprint(sm["id"])
-		if seen[id] {
-			f.add(o, "charter_seat_twice", fmt.Sprintf("/commission/seats/%d/id", i))
-		}
-		seen[id] = true
-	}
-	if o.tenant != farmTenant && o.spec["farm_manager"] != nil {
-		f.add(o, "charter_farm_manager", "/farm_manager")
-	}
-	for _, fl := range charterFloors {
-		v := mstr(mmap(o.spec, fl.block), fl.field)
-		if d, ok := parseDuration(v); v != "" && (!ok || d < fl.def) {
-			f.add(o, "charter_direction", "/"+fl.block+"/"+fl.field)
-		}
-	}
-	if p := mmap(o.spec, "promotion"); p["exclude_change_kinds"] != nil && !slices.Contains(strList(p["exclude_change_kinds"]), "none") {
-		f.add(o, "charter_direction", "/promotion/exclude_change_kinds")
-	}
-	v := mstr(mmap(mmap(o.spec, "farm_manager"), "incident_stop"), "decide_within")
-	if d, ok := parseDuration(v); !claimsV03() && v != "" && (!ok || d > 7*24*time.Hour) {
-		f.add(o, "charter_direction", "/farm_manager/incident_stop/decide_within")
-	}
-}
-
 // lintPrivilegeRaised refuses a set in which an ordinary group became privileged (PRM-13): a
 // group of the store that was not privileged is privileged after the set, by its own
 // capabilities or by a type it names, whether or not it has members. A group new in the set
@@ -2258,6 +2202,61 @@ func (c *Core) lintLensNames(S *lintSet, f *lintFindings) error {
 		}
 	}
 	return nil
+}
+
+// governanceName says whether a name is an event or operation of governance, attribution or
+// seats, which no bot reaches (GOV-6, GOV-29); with incidents, also of incident records, which
+// no bot creates or changes (GOV-13).
+func governanceName(n string, incidents bool) bool {
+	for _, p := range []string{"governance.", "attribution.", "seat."} {
+		if strings.HasPrefix(n, p) {
+			return true
+		}
+	}
+	return incidents && strings.HasPrefix(n, "incident.")
+}
+
+// charterFloors are the durations of a tenant charter that only rise from their default, and
+// charterCeilings the counts that only fall from it (GOV-33). The schema bounds the counts and
+// the audit sample; the durations are strings it cannot compare.
+var charterFloors = []struct {
+	block, field string
+	def          time.Duration
+}{
+	{"promotion", "probation", govProbation}, {"promotion", "min_tenure", govMinTenure}, {"promotion", "swap_cooldown", govSwapCooldown},
+	{"removal", "protect_new", 60 * 24 * time.Hour}, {"attribution", "window", defaultAttributionWindow},
+	{"confirmation", "ttl", 7 * 24 * time.Hour}, {"identity", "unbound_ttl", defaultUnboundTTL}, {"memory", "seal_ttl", defaultSealTTL},
+}
+
+// lintCharterBounds checks what the schema of a charter cannot (GOV-33): a seat id declared
+// twice, the farm_manager block outside the farm charter, a duration below its default, the
+// excluded change kinds without none, and in the farm charter a decide_within above 7 days.
+func lintCharterBounds(o lintObj, f *lintFindings) {
+	seen := map[string]bool{}
+	for i, sv := range mlist(mmap(o.spec, "commission"), "seats") {
+		sm, _ := sv.(map[string]any)
+		id := fmt.Sprint(sm["id"])
+		if seen[id] {
+			f.add(o, "charter_seat_twice", fmt.Sprintf("/commission/seats/%d/id", i))
+		}
+		seen[id] = true
+	}
+	if o.tenant != farmTenant && o.spec["farm_manager"] != nil {
+		f.add(o, "charter_farm_manager", "/farm_manager")
+	}
+	for _, fl := range charterFloors {
+		v := mstr(mmap(o.spec, fl.block), fl.field)
+		if d, ok := parseDuration(v); v != "" && (!ok || d < fl.def) {
+			f.add(o, "charter_direction", "/"+fl.block+"/"+fl.field)
+		}
+	}
+	if p := mmap(o.spec, "promotion"); p["exclude_change_kinds"] != nil && !slices.Contains(strList(p["exclude_change_kinds"]), "none") {
+		f.add(o, "charter_direction", "/promotion/exclude_change_kinds")
+	}
+	v := mstr(mmap(mmap(o.spec, "farm_manager"), "incident_stop"), "decide_within")
+	if d, ok := parseDuration(v); v != "" && (!ok || d > 7*24*time.Hour) {
+		f.add(o, "charter_direction", "/farm_manager/incident_stop/decide_within")
+	}
 }
 
 // lintGovernance checks the personas of the charters (GOV-4, COM-19), the unawareness of the

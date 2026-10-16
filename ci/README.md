@@ -171,9 +171,9 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `cap_unknown` | capability is not in spec/model/capabilities.yaml |  |
 | `cap_unknown_action` | capability for an action that is not in the set |  |
 | `catalog_value_format` | catalog resource value fails its format | MAN-10 |
-| `charter_direction` | a charter field changes against its one direction: a duration below its default, exclude_change_kinds without none, or decide_within above 7 days | GOV-33, GOV-22 |
-| `charter_farm_manager` | a tenant charter holds the farm_manager block, which only the farm charter declares | GOV-33 |
-| `charter_seat_twice` | a charter declares a commission seat id twice | GOV-33 |
+| `charter_direction` | a charter duration below its default, promotion.exclude_change_kinds without none, or incident_stop.decide_within above 7d | GOV-33 |
+| `charter_farm_manager` | a tenant charter other than farm has the farm_manager block | GOV-33 |
+| `charter_seat_twice` | a charter declares one commission seat id twice | GOV-33 |
 | `cmd_argv_path` | command program path is not absolute | INJ-14 |
 | `cmd_forbidden_program` | command program is in spec/model/forbidden-programs.yaml | INJ-14 |
 | `cmd_param_conflict` | a parameter name has different schemas in the tool and its commands | INJ-14 |
