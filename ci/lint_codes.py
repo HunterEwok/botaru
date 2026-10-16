@@ -50,7 +50,7 @@ CODES = {
     'service_script_unknown': ('no script from monitor_scripts_allowed for a service verb', 'MON-8, MON-10'),
     'enum_from_unknown_list': ('the enum_from list is in no catalog of the set (note)', ''),
     'cap_unknown': ('capability is not in spec/model/capabilities.yaml', ''),
-    'cap_star': ('wildcard in a capability for actions, data or decisions', 'PRM-7'),
+    'cap_star': ('wildcard in a capability for actions, data or decisions, or any wildcard in system-ops (task wildcards included)', 'PRM-7, PRM-10'),
     'action_type_grant': ('grant, command, route or type named action.*', 'APR-5'),
     'cap_data_class': ('data class not accepted (unknown or reserved)', ''),
     'cap_unknown_action': ('capability for an action that is not in the set', ''),

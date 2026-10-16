@@ -60,7 +60,7 @@ func (b *inProcess) Fresh(ctx context.Context) (*Endpoints, func(), error) {
 		st.Close()
 		return nil, nil, err
 	}
-	c, err := core.New(ctx, core.Config{TokenKey: []byte("conform-key-conform-key-conform-key"), TestBench: true, Operator: "the test bench operator",
+	c, err := core.New(ctx, core.Config{TokenKey: []byte("conform-key-conform-key-conform-key"), TestBench: true, Monitor: core.MonitorConfig{Enabled: true}, Operator: "the test bench operator",
 		Logger: slog.New(slog.NewTextHandler(io.Discard, nil))}, st, b.sp, b.tx)
 	if err != nil {
 		st.Close()
