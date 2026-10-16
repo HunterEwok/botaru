@@ -899,6 +899,10 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
             bad += [t for t in rs.get('tools', []) if t in tools and tools[t][2].get('untrusted_output')]
             if bad:
                 f.error('memory_person', where, f'role {rname}: memory: person with {bad} (MEM-2)')
+            # From v0.2, while the personal assistant is deferred, no role holds person memory (MEM-2,
+            # DSP-10, D-114); the core refuses it the same way.
+            if skeleton_version() >= (0, 2):
+                f.error('person_memory_deferred', where, f'role {rname}: memory: person while the personal assistant is deferred (MEM-2)')
 
     # 9a. One level of aggregators (AGG-3): no aggregator among the sources, no more than max_sources.
     for rname, (where, rs) in roles.items():

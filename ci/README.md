@@ -239,6 +239,7 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `notice_version_not_raised` | privacy controller, purposes, subprocessors or recipients changed without a higher notice_version | SEC-13 |
 | `observes_not_job` | observes on a type that is not a job | OBV-3 |
 | `params_invalid` | route or schedule params fail the closed type schema |  |
+| `person_memory_deferred` | from v0.2 a role with memory: person while the personal assistant is deferred | MEM-2 |
 | `persona_hash` | a persona text sent with apply does not match its SHA-256 | GOV-4 |
 | `persona_link` | a persona or lens addendum holds a link, an address, an id or a secret name | GOV-4 |
 | `persona_missing` | a charter pins a persona by hash and apply has no text of that hash | GOV-4 |

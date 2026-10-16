@@ -6,8 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
-	"os"
-	"path/filepath"
 	"regexp"
 	"slices"
 	"sort"
@@ -2331,26 +2329,7 @@ var reProviderName = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 // name does not start with eu, as ci/check_manifests.py reads it (D-86 (6), GW-14). A provider
 // without a binding note, such as the test providers of the examples, has no such region.
 func (c *Core) nonEURegion(provider, region string) bool {
-	if region == "" || !reProviderName.MatchString(provider) || provider == "README" || provider == "mock" {
-		return false
-	}
-	raw, err := os.ReadFile(filepath.Join(c.spec.Root, "spec", "bindings", "model-providers", provider+".md"))
-	if err != nil {
-		return false
-	}
-	inside := false
-	for _, line := range strings.Split(string(raw), "\n") {
-		if strings.HasPrefix(line, "## ") {
-			inside = strings.TrimSpace(line) == "## Region"
-			continue
-		}
-		if inside && strings.HasPrefix(line, "| `") {
-			if name := strings.Split(line, "`")[1]; name == region {
-				return !strings.HasPrefix(name, "eu")
-			}
-		}
-	}
-	return false
+	return region != "" && c.bindingRegions(provider)[region] && !strings.HasPrefix(region, "eu")
 }
 
 // transferBasis says whether the tenant spec has a model_transfer entry for the provider (all

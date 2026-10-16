@@ -161,9 +161,10 @@ func (c *Core) lintPrivacy(S *lintSet, f *lintFindings, prior []manifest.Doc) {
 // bindingRegions are the regions of the "Region" table of the provider binding note
 // spec/bindings/model-providers/<provider>.md (GW-14), as ci/check_manifests.py reads it. A
 // provider without a note or without the section, such as the test providers of the examples
-// and the mock provider, has no table: nil.
+// and the mock provider, has no table: nil. The provider name is checked against
+// reProviderName before it becomes a path.
 func (c *Core) bindingRegions(provider string) map[string]bool {
-	if provider == "" || strings.ContainsAny(provider, "/\\.") || provider == "README" || provider == "mock" {
+	if !reProviderName.MatchString(provider) || provider == "README" || provider == "mock" {
 		return nil
 	}
 	raw, err := os.ReadFile(filepath.Join(c.spec.Root, "spec", "bindings", "model-providers", provider+".md"))

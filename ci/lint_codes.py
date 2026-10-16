@@ -138,6 +138,7 @@ CODES = {
     'rank_exceeded': ('model profile rank above the slot or seat ceiling', 'GOV-3'),
     'role_write_tool': ('role has a tool that is not read', 'APR-1, PRM-2'),
     'memory_person': ('memory: person with disallowed types or tools', 'MEM-2'),
+    'person_memory_deferred': ('from v0.2 a role with memory: person while the personal assistant is deferred', 'MEM-2'),
     'route_mode': ('route mode without its section', ''),
     'system_ops_missing': ('route or schedule type is not granted to system-ops', 'PRM-10'),
     'params_invalid': ('route or schedule params fail the closed type schema', ''),
