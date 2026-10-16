@@ -5,6 +5,7 @@ package core
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -60,12 +61,13 @@ func TestBenchOpsOnlyOnTestBench(t *testing.T) {
 func TestBenchAuthorizeEval(t *testing.T) {
 	ctx := context.Background()
 	b := newBench(t)
-	row := func(principal, tenant, action string, extra map[string]any) map[string]any {
+	row := func(principal, home, action string, extra map[string]any) map[string]any {
 		r := map[string]any{
-			"principal": map[string]any{"kind": "human", "id": principal, "tenant": tenant},
+			"principal": map[string]any{"kind": "human", "id": principal},
 			"action":    action,
 			"resource":  map[string]any{"tenant": "demo", "kind": "task_type"},
 		}
+		r["principal"].(map[string]any)["tenant"] = home
 		if principal == "system" {
 			r["principal"].(map[string]any)["kind"] = "system"
 		}
@@ -88,10 +90,10 @@ func TestBenchAuthorizeEval(t *testing.T) {
 		wantProblem string
 	}{
 		{"allowed", "", row(b.alice, "demo", "task:hello.greet.v1", nil), "allow", "", "intersection", ""},
-		{"no allowing row", "", row(b.alice, "demo", "task:ops.investigate.v1", nil), "deny", "no_group_cap", "intersection", ""},
+		{"type not allowed", "", row(b.alice, "demo", "task:ops.investigate.v1", nil), "deny", "type_not_allowed", "ban", ""},
 		{"unknown principal", "", row(stranger, "demo", "task:hello.greet.v1", nil), "deny", "person_inactive", "intersection", ""},
 		{"other tenant", "", row(b.alice, "demo2", "task:hello.greet.v1", nil), "deny", "tenant_mismatch", "ban", ""},
-		{"action type", "", row(b.alice, "demo", "task:action.fix_web.v1", nil), "deny", "forbidden", "ban", ""},
+		{"action type", "", row(b.alice, "demo", "task:action.fix_web.v1", nil), "deny", "type_not_allowed", "ban", ""},
 		{"data class", "", row(b.alice, "demo", "data:raw_logs", nil), "deny", "no_data_class", "intersection", ""},
 		{"system has its group only", "", row("system", "demo", "task:hello.greet.v1", nil), "deny", "no_group_cap", "intersection", ""},
 		{"every initiator", "", row(b.alice, "demo", "task:hello.greet.v1", map[string]any{"context": map[string]any{
@@ -103,7 +105,7 @@ func TestBenchAuthorizeEval(t *testing.T) {
 		{"budget", "production", row(b.alice, "demo", "task:hello.greet.v1", map[string]any{"context": map[string]any{
 			"budget": map[string]any{"exhausted": true}}}), "deny", "budget_exhausted", "intersection", ""},
 		{"self approval in production", "production", row(b.alice, "demo", "action.approve:fix_web", map[string]any{"context": map[string]any{
-			"task": map[string]any{"initiators": []any{b.alice}}}}), "deny", "self_approve", "ban", ""},
+			"task": map[string]any{"initiators": []any{b.alice}}}}), "deny", "forbidden", "intersection", ""},
 		{"not an authz-request", "", map[string]any{"action": "task:hello.greet.v1"}, "", "", "", "input_schema_invalid"},
 		{"tenant kind", "staging", row(b.alice, "demo", "task:hello.greet.v1", nil), "", "", "", "input_schema_invalid"},
 	}
@@ -334,6 +336,54 @@ func TestBenchStoreRestore(t *testing.T) {
 	}
 	if v, err := b.c.AuditVerify(ctx, "farm", nil); err != nil || !v.OK {
 		t.Fatalf("audit.verify of farm after a restore: %+v %v", v, err)
+	}
+	// The replayed request erases again what the backup brought back (RET-7): the bodies of
+	// the person's tasks are gone after one pass of the erasure loop.
+	bodies := func() int {
+		t.Helper()
+		var n int
+		if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM tasks WHERE tenant = 'demo' AND initiator = $1 AND body IS NOT NULL`, b.alice).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	if bodies() == 0 {
+		t.Fatal("the backup brought back no task body of the person")
+	}
+	b.tick(t, "erasure")
+	if n := bodies(); n != 0 {
+		t.Fatalf("%d task bodies of the erased person after the erasure loop", n)
+	}
+}
+
+// parentsFirst orders the tables of a restore so a row's parent is inserted before it; a
+// table that references itself does not block the order (its rows go in one statement).
+func TestParentsFirst(t *testing.T) {
+	ctx := context.Background()
+	b := newBench(t)
+	if _, err := b.c.st.Pool.Exec(ctx, `CREATE TABLE bench_tree (id int PRIMARY KEY, parent int REFERENCES bench_tree(id))`); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = b.c.st.Pool.Exec(context.Background(), `DROP TABLE IF EXISTS bench_tree`) })
+	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO bench_tree VALUES (2, NULL), (1, 2)`); err != nil {
+		t.Fatal(err)
+	}
+	order, err := parentsFirst(ctx, b.c.st.Pool, []string{"campaign_items", "bench_tree", "campaigns"})
+	if err != nil || len(order) != 3 || slices.Index(order, "campaigns") > slices.Index(order, "campaign_items") {
+		t.Fatalf("order %v %v", order, err)
+	}
+	if _, err := b.c.TestStoreSnapshot(ctx, "tree"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `DELETE FROM bench_tree`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.TestStoreRestore(ctx, "tree"); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM bench_tree WHERE parent IS NULL OR parent IN (SELECT id FROM bench_tree)`).Scan(&n); err != nil || n != 2 {
+		t.Fatalf("rows of a self-referencing table after a restore: %d %v", n, err)
 	}
 }
 

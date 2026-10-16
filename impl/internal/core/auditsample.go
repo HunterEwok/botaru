@@ -45,7 +45,11 @@ var sampleDecisions = []string{"would_accept", "would_not_accept", "override_vet
 // sampleConfig is commission.audit_sample of the tenant charter over the defaults.
 func sampleConfig(cat *Catalog, tenant string) (minPer int, share float64, perDigest int) {
 	gov := tenantSpecOf(cat, "Governance", tenant)
-	as := mmap(mmap(gov, "commission"), "audit_sample")
+	return sampleConfigFrom(mmap(mmap(gov, "commission"), "audit_sample"))
+}
+
+// sampleConfigFrom is commission.audit_sample of a charter over the defaults.
+func sampleConfigFrom(as map[string]any) (minPer int, share float64, perDigest int) {
 	minPer, share, perDigest = defaultSampleMin, defaultSampleShare, defaultSamplePerDigest
 	if n, ok := toFloat(as["min_per_month"]); ok && int(n) >= defaultSampleMin {
 		minPer = int(n)

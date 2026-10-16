@@ -19,6 +19,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/HunterEwok/botaru/impl/internal/manifest"
 	"github.com/HunterEwok/botaru/impl/internal/store"
 )
 
@@ -110,9 +111,11 @@ func (c *Core) TestProcessStop(ctx context.Context, req ProcessStopRequest) (*Te
 	return nil, refuse("input_schema_invalid", "process.kind is worker or core")
 }
 
-// benchRestart is the start of a core process over the store it already has (New and the
-// start of cmd/botaru-core): the store epoch, the settling of a restore, the restore mark, the
-// leases that overlapped the downtime and the end of a drain (RET-6, FEN-5, LCY-6).
+// benchRestart is the start of a new core process over the store it already has: the
+// in-memory state of a process starts empty (the epoch read from the store, no store-down mode,
+// no slow pass done, a fresh volume measurement, the catalog read again), then New's startUp,
+// and the start of cmd/botaru-core: the leases that overlapped the downtime and the end of a
+// drain (RET-6, FEN-5, LCY-6).
 func (c *Core) benchRestart(ctx context.Context) error {
 	var epoch int64
 	if err := c.st.Pool.QueryRow(ctx, `SELECT epoch FROM farm_meta WHERE id = 1`).Scan(&epoch); err != nil {
@@ -120,10 +123,15 @@ func (c *Core) benchRestart(ctx context.Context) error {
 	}
 	c.epoch.Store(epoch)
 	c.storeDown.Store(false)
-	if err := c.settleRestore(ctx); err != nil {
+	c.budgetAt.Store(0)
+	c.retentionAt.Store(0)
+	c.measureCapacity()
+	c.cat.reset()
+	cat, err := c.Catalog(ctx)
+	if err != nil {
 		return err
 	}
-	if err := c.loadRestoring(ctx); err != nil {
+	if err := c.startUp(ctx, cat); err != nil {
 		return err
 	}
 	if err := c.endLeasesOfDowntime(ctx); err != nil {
@@ -293,10 +301,10 @@ func benchLabel(label string) bool {
 
 // TestStoreRestore restores the test bench store from the backup of a label by the real restore
 // path (RET-6, AUD-6): the separate erasure log is exported first, as farmctl erasure-log export
-// keeps it apart from the store backups (RET-5); the tables are loaded from the backup; then
-// RestoreBegin grows the epoch past the running one, writes the restore record into the farm
-// chain and replays the erasure log, and the core starts again over the restored store, which
-// settles the approvals and leaves it not ready until P2 restore.complete.
+// keeps it apart from the store backups (RET-5); in one transaction the tables are loaded from
+// the backup and RestoreBegin grows the epoch past the running one, writes the restore record
+// into the farm chain and replays the erasure log; then the core starts again over the restored
+// store, which settles the approvals and leaves it not ready until P2 restore.complete.
 func (c *Core) TestStoreRestore(ctx context.Context, label string) (*TestClock, error) {
 	if err := c.requireTestBench(); err != nil {
 		return nil, err
@@ -316,6 +324,10 @@ func (c *Core) TestStoreRestore(ctx context.Context, label string) (*TestClock, 
 	if err != nil {
 		return nil, err
 	}
+	// P1 is not ready from the first table loaded: the core answers not_ready while a restore
+	// runs (RET-6 (d)). The load and RestoreBegin are one transaction, so a failure leaves the
+	// store as it was, and the mark of the store again decides readiness.
+	c.restoring.Store(true)
 	err = c.st.Tx(ctx, func(tx pgx.Tx) error {
 		tables, err := benchTables(ctx, tx)
 		if err != nil {
@@ -359,12 +371,15 @@ func (c *Core) TestStoreRestore(ctx context.Context, label string) (*TestClock, 
 				return fmt.Errorf("restore %s: %w", t, err)
 			}
 		}
-		return nil
+		now, err := store.Now(ctx, tx)
+		if err != nil {
+			return err
+		}
+		_, err = c.restoreBegin(ctx, tx, now, log)
+		return err
 	})
 	if err != nil {
-		return nil, err
-	}
-	if _, err := c.RestoreBegin(ctx, log); err != nil {
+		_ = c.loadRestoring(ctx)
 		return nil, err
 	}
 	if err := c.benchRestart(ctx); err != nil {
@@ -462,16 +477,13 @@ type authzRequest struct {
 	} `json:"context"`
 }
 
-// TestAuthorize answers one row of the permission table (PRM-2, PRM-1) by the checks the core
-// makes at its decision points, in the order of PRM-2 and with the same functions enqueue uses:
-// the holds of the farm, the tenant and the task type with no_enqueue for task:<type>; then the
-// bans (one tenant for the principal and the resource, action.* types only by the core, no
-// self-approval where the tenant forbids it); then the intersection: the principal's groups
-// with their inheritance, task:<type> or the capability itself, data:<mark> of the task type or
-// the task, every other initiator of context.task alike (PRM-6), the chat ceiling of a group
-// chat and the budget of the work line (BUD-1). tenantKind is the tenant kind of the row: a
-// production row is checked without a production tenant on the bench (runner.md, APR-9). It
-// writes nothing.
+// TestAuthorize answers one row of the permission table (PRM-2, PRM-1) by the decisions the core
+// itself makes, not a copy of them: a task:<type> row runs the decision of enqueue (the type and
+// its purpose bans, then authorizeEnqueue: holds, the initiator's and every other initiator's
+// rights, the files, the chain and the money windows), an action.approve row the decision of an
+// approval press, and a group chat the ceiling check of the handoff. tenantKind is the tenant
+// kind of the row: a production row is checked without a production tenant on the bench
+// (runner.md, APR-9). It writes nothing.
 func (c *Core) TestAuthorize(ctx context.Context, body map[string]any, tenantKind string) (*AuthzDecision, error) {
 	if err := c.requireTestBench(); err != nil {
 		return nil, err
@@ -524,110 +536,116 @@ var errReadOnly = errors.New("read only")
 
 func (c *Core) authorizeRow(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tv *TenantView, req *authzRequest, tenantKind string,
 	deny func(stage, reason string, needs ...string) *AuthzDecision) (*AuthzDecision, error) {
+	if (req.Principal.Kind == "system") != (req.Principal.ID == "system") {
+		return nil, refuse("input_schema_invalid", "the principal kind does not match its id")
+	}
+	d, err := c.authorizeDecide(ctx, tx, now, cat, tv, req, tenantKind, deny)
+	if err != nil {
+		return nil, err
+	}
+	// A request names one tenant: a principal of another tenant reaches no decision of this one
+	// (TEN-1). Holds come first in the decision order, so a hold still answers.
+	if req.Principal.Tenant != req.Resource.Tenant && d.Stage != "hold" {
+		return deny("ban", "tenant_mismatch"), nil
+	}
+	return d, nil
+}
+
+// authorizeDecide is the decision of authorizeRow for the resource's tenant.
+func (c *Core) authorizeDecide(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tv *TenantView, req *authzRequest, tenantKind string,
+	deny func(stage, reason string, needs ...string) *AuthzDecision) (*AuthzDecision, error) {
 	form, name, _ := strings.Cut(req.Action, ":")
-	// Holds come first (HLD-1, HLD-3): a new task of a held tenant or type is refused before any
-	// permission is looked at.
-	if form == "task" {
-		held, err := heldBy(ctx, tx, now, []string{"no_enqueue"}, append(tenantScopes(tv.Name), scopeRef{kind: "tasktype", tenant: tv.Name, name: name})...)
+	var others []string
+	for _, id := range req.Context.Task.Initiators {
+		if id != req.Principal.ID {
+			others = append(others, id)
+		}
+	}
+	mark := req.Context.Task.DataMark
+	switch form {
+	case "task":
+		// The decision of enqueue itself (PRM-2): a direct request of the principal, as system
+		// from its schedules (PRM-10), with the other initiators of what the tree read and the
+		// mark the task carries over.
+		in := enqueueInput{Tenant: tv.Name, Type: name, Initiator: req.Principal.ID, EnqueuedBy: req.Principal.ID,
+			Source: "interactive", CoInitiators: others, ContinuesMark: mark}
+		if req.Principal.ID == "system" {
+			in.Source = "schedule"
+		}
+		tt, pr := c.enqueueType(cat, in)
+		if pr != nil {
+			return deny("ban", pr.Reason), nil
+		}
+		g, denial, err := c.authorizeEnqueue(ctx, tx, now, cat, tv, tt, in)
 		if err != nil {
 			return nil, err
 		}
-		if held != "" {
+		if denial != nil {
+			d := deny(denial.stage, denial.p.Reason, denial.p.Needs...)
+			d.Hold = denial.hold
+			return d, nil
+		}
+		mark = g.mark
+	case "action.approve":
+		// The decision of an approval press (APR-4): the approver's groups and the self
+		// approval the tenant allows; a production tenant never allows it (APR-9). The holds
+		// of the action come after the permission, as at a press.
+		groups, err := principalGroups(ctx, tx, now, tv, req.Principal.ID)
+		if err != nil {
+			return nil, err
+		}
+		a := &approvalRow{Tenant: tv.Name, Action: name, Approvals: 1}
+		if len(req.Context.Task.Initiators) > 0 {
+			a.Initiator = req.Context.Task.Initiators[0]
+		}
+		view := tv
+		if tenantKind == "production" && tv.Spec.SelfApprove {
+			cp := *tv
+			cp.Spec.SelfApprove = false
+			view = &cp
+		}
+		if approveRefusal(view, groups, req.Principal.ID, a) != "" {
+			return deny("intersection", "forbidden", req.Action), nil
+		}
+		scopes, err := c.approvalHoldScopes(ctx, tx, cat, a)
+		if err != nil {
+			return nil, err
+		}
+		if held, err := heldBy(ctx, tx, now, []string{"no_action"}, scopes...); err != nil {
+			return nil, err
+		} else if held != "" {
 			d := deny("hold", "held")
 			d.Hold = held
 			return d, nil
 		}
-	}
-	// The bans no permission lifts.
-	if req.Principal.Tenant != req.Resource.Tenant {
-		return deny("ban", "tenant_mismatch"), nil
-	}
-	if (req.Principal.Kind == "system") != (req.Principal.ID == "system") {
-		return nil, refuse("input_schema_invalid", "the principal kind does not match its id")
-	}
-	if form == "task" && strings.HasPrefix(name, "action.") {
-		// Only the core enqueues action.* types, from an approved request (APR-5).
-		return deny("ban", "forbidden"), nil
-	}
-	initiators := []string{}
-	for _, id := range req.Context.Task.Initiators {
-		if id != req.Principal.ID {
-			initiators = append(initiators, id)
+	default:
+		// Any other capability: the principal's groups and those of every other initiator,
+		// by the functions every decision point uses (PRM-1, PRM-6).
+		capName := req.Action
+		if form == "data" {
+			capName, mark = "", name
+		}
+		for _, id := range append([]string{req.Principal.ID}, others...) {
+			groups, err := principalGroups(ctx, tx, now, tv, id)
+			if err != nil {
+				return nil, err
+			}
+			if capName != "" && !hasCap(tv, groups, capName) {
+				return deny("intersection", "no_group_cap", capName), nil
+			}
+			if mark != "" && !hasData(tv, groups, mark) {
+				return deny("intersection", "no_data_class", "data:"+mark), nil
+			}
 		}
 	}
-	if form == "action.approve" && slices.Contains(req.Context.Task.Initiators, req.Principal.ID) && (!tv.Spec.SelfApprove || tenantKind == "production") {
-		// A production tenant never lets the initiator approve their own request (APR-9).
-		return deny("ban", "self_approve"), nil
+	// In a group chat the mark stays within the chat's ceiling, as the handoff checks it
+	// (PRM-5, claim of a delivery).
+	if req.Context.Chat.Kind == "group" && req.Context.Chat.Ceiling != "" && mark != "" && !c.markWithin(mark, req.Context.Chat.Ceiling) {
+		return deny("intersection", "channel_ceiling"), nil
 	}
-	// The intersection: the principal's own groups first.
-	var groups []string
-	if req.Principal.ID == "system" {
-		groups = groupClosure(tv, []string{"system-ops"})
-	} else {
-		p, err := loadPrincipal(ctx, tx, now, tv.Name, req.Principal.ID)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return deny("intersection", "person_inactive"), nil
-		}
-		if err != nil {
-			return nil, err
-		}
-		if p.State != "active" {
-			return deny("intersection", "person_inactive"), nil
-		}
-		groups = groupClosure(tv, p.Groups)
-	}
-	capName, mark := req.Action, req.Context.Task.DataMark
-	if form == "data" {
-		capName, mark = "", name
-	}
-	tt, isTask := cat.TaskTypes[name]
-	isTask = isTask && form == "task"
-	if isTask {
-		mark = c.higherMark(tt.DataClass, mark)
-	}
-	check := func(g []string) *AuthzDecision {
-		if capName != "" && !hasCap(tv, g, capName) {
-			return deny("intersection", "no_group_cap", capName)
-		}
-		if mark != "" && !hasData(tv, g, mark) {
-			return deny("intersection", "no_data_class", "data:"+mark)
-		}
-		return nil
-	}
-	if d := check(groups); d != nil {
-		return d, nil
-	}
-	// Every initiator of what the attempt read narrows it the same way (PRM-6, MSG-7).
-	for _, id := range initiators {
-		g, err := principalGroups(ctx, tx, now, tv, id)
-		if err != nil {
-			return nil, err
-		}
-		if d := check(g); d != nil {
-			return d, nil
-		}
-	}
-	// In a group chat the class is not above the chat ceiling (PRM-5).
-	if req.Context.Chat.Kind == "group" && req.Context.Chat.Ceiling != "" && mark != "" {
-		m, ok1 := c.markOrder(mark)
-		ceil, ok2 := c.markOrder(req.Context.Chat.Ceiling)
-		if !ok1 || !ok2 || m > ceil {
-			return deny("intersection", "data_class_exceeded"), nil
-		}
-	}
-	// The budget is not exhausted: the row's own budget state, and for a task the money windows
-	// of its line with the estimate of the type, as enqueue reserves it (BUD-1).
+	// The row's own budget state, beside the money windows the decision of enqueue read (BUD-1).
 	if req.Context.Budget.Exhausted {
 		return deny("intersection", "budget_exhausted"), nil
-	}
-	if isTask {
-		estimate, err := taskEstimate(ctx, tx, now, tv.Name, name, tt)
-		if err != nil {
-			return nil, err
-		}
-		if p := c.checkBudget(ctx, tx, now, tv, budgetAsk{subject: req.Principal.ID, groups: groups, extra: estimate, line: c.budgetLine(tt.Purpose)}); p != nil {
-			return deny("intersection", p.Reason), nil
-		}
 	}
 	return &AuthzDecision{Decision: "allow", Stage: "intersection"}, nil
 }
@@ -689,14 +707,7 @@ func (c *Core) TestFunctionEval(ctx context.Context, req FunctionEvalRequest) (*
 // of verdicts by <state>_<reason> (dismissed_veto, parked_score, parked_quorum, ...), a seed of
 // 64 hex digits (a fresh one without it) and the blind answers over 180 days.
 func evalDigestSample(in map[string]any) (map[string]any, error) {
-	as := mmap(mmap(in, "commission"), "audit_sample")
-	minPer, share := defaultSampleMin, defaultSampleShare
-	if n, ok := toFloat(as["min_per_month"]); ok && int(n) >= defaultSampleMin {
-		minPer = int(n)
-	}
-	if n, ok := toFloat(as["share"]); ok {
-		share = n
-	}
+	minPer, share, perDigest := sampleConfigFrom(mmap(mmap(in, "commission"), "audit_sample"))
 	var pop []string
 	excluded := []string{}
 	keys := slices.Sorted(mapKeys(mmap(in, "verdicts")))
@@ -731,7 +742,7 @@ func evalDigestSample(in map[string]any) (map[string]any, error) {
 	n := sampleSize(len(pop), minPer, share)
 	out := map[string]any{
 		"population": len(pop), "size": n, "seed": hex.EncodeToString(seed[:]),
-		"drawn": strAny(sampleDraw(pop, n, seed)), "excluded_states": strAny(excluded),
+		"drawn": strAny(sampleDraw(pop, n, seed)), "excluded_states": strAny(excluded), "max_per_digest": perDigest,
 	}
 	if len(pop) > 0 {
 		out["inclusion_prob"] = math.Round(float64(n)/float64(len(pop))*1e6) / 1e6
@@ -760,47 +771,46 @@ func evalDigestSample(in map[string]any) (map[string]any, error) {
 	return out, nil
 }
 
-// evalNumberCheck is the number check of a model paragraph (REP-4): text is the paragraph,
-// snapshot holds the rows of the table (every string of a row is a name), the snapshot time
-// taken_at and the window; catalog_names are the names of the tenant catalog; binding.locale
-// chooses number.words; timezone is the tenant's zone (UTC by default).
+// evalNumberCheck is the number check of a model paragraph (REP-4) by the check a digest
+// builds (digestNumberCheck): text is the paragraph; snapshot.rows are the rows of the digest
+// table (their type, title and state are its names), snapshot.taken_at the snapshot time and
+// snapshot.window.from the window start (the window ends at the snapshot); catalog_names are
+// the names of the tenant catalog; binding.locale chooses number.words; timezone is the
+// tenant's zone (UTC by default).
 func (c *Core) evalNumberCheck(in map[string]any) (map[string]any, error) {
-	n := numberCheck{names: map[string]bool{}, exact: map[string]bool{}, loc: time.UTC}
-	whole := func(s string) string { return strings.ToLower(trimToken(strings.TrimSpace(s))) }
+	const own = "demo"
 	snap := mmap(in, "snapshot")
-	rows, _ := snap["rows"].([]any)
-	for _, r := range rows {
-		for _, v := range asMap(r) {
-			if s, ok := v.(string); ok {
-				if s = whole(s); s != "" && !strings.ContainsFunc(s, func(r rune) bool { return r == ' ' }) {
-					n.names[s] = true
-				}
-			}
-		}
-	}
-	names, _ := in["catalog_names"].([]any)
-	for _, v := range names {
-		if s, ok := v.(string); ok && whole(s) != "" {
-			n.exact[whole(s)] = true
-		}
-	}
-	if z := mstr(in, "timezone"); z != "" {
-		l, err := time.LoadLocation(z)
-		if err != nil || z == "Local" {
-			return nil, refuse("input_schema_invalid", "timezone")
-		}
-		n.loc = l
-	}
-	for _, s := range []string{mstr(snap, "taken_at"), mstr(mmap(snap, "window"), "from"), mstr(mmap(snap, "window"), "to")} {
-		if s == "" {
-			continue
-		}
-		t, err := time.Parse(time.RFC3339Nano, s)
-		if err != nil {
+	vs := &viewSnapshot{From: mstr(mmap(snap, "window"), "from")}
+	for _, at := range []string{mstr(snap, "taken_at"), vs.From} {
+		if _, err := time.Parse(time.RFC3339Nano, at); at != "" && err != nil {
 			return nil, refuse("input_schema_invalid", "snapshot times")
 		}
-		n.times = append(n.times, t)
 	}
+	if at := mstr(snap, "taken_at"); at != "" {
+		vs.ID = "snap:" + at
+	}
+	rows, _ := snap["rows"].([]any)
+	for _, r := range rows {
+		vs.Counts = append(vs.Counts, asMap(r))
+	}
+	var entries []any
+	names, _ := in["catalog_names"].([]any)
+	for _, v := range names {
+		if s, ok := v.(string); ok {
+			entries = append(entries, map[string]any{"name": s})
+		}
+	}
+	tv := &TenantView{Name: own}
+	if z := mstr(in, "timezone"); z != "" {
+		if _, err := time.LoadLocation(z); err != nil || z == "Local" {
+			return nil, refuse("input_schema_invalid", "timezone")
+		}
+		tv.Spec.Timezone = z
+	}
+	cat := &Catalog{Tenants: map[string]*TenantView{own: tv}, RawGlobals: map[manifest.Key]map[string]any{
+		{Kind: "Catalog", Tenant: own, Name: "catalog"}: {"spec": map[string]any{"resources": entries}},
+	}}
+	n := digestNumberCheck(cat, own, vs)
 	locale := mstr(mmap(in, "binding"), "locale")
 	if locale == "" {
 		locale = "en"

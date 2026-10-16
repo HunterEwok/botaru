@@ -151,17 +151,24 @@ func New(ctx context.Context, cfg Config, st *store.Store, sp *spec.Spec, tx *te
 	if cfg.Offline {
 		return c, nil
 	}
-	if err := c.settleRestore(ctx); err != nil {
-		return nil, err
-	}
-	if err := c.loadRestoring(ctx); err != nil {
-		return nil, err
-	}
-	c.warnNoticeFallbacks(cat)
-	if err := c.fillNoticeParams(ctx, cat); err != nil {
+	if err := c.startUp(ctx, cat); err != nil {
 		return nil, err
 	}
 	return c, nil
+}
+
+// startUp is what a core process does over its store before it serves: it settles a restore,
+// reads the restore mark and completes the parameters of waiting notices. New runs it, and so
+// does a test bench core that process.stop or store.restore starts again (teststand.go).
+func (c *Core) startUp(ctx context.Context, cat *Catalog) error {
+	if err := c.settleRestore(ctx); err != nil {
+		return err
+	}
+	if err := c.loadRestoring(ctx); err != nil {
+		return err
+	}
+	c.warnNoticeFallbacks(cat)
+	return c.fillNoticeParams(ctx, cat)
 }
 
 // Spec returns the loaded specification.
