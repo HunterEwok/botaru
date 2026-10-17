@@ -290,3 +290,12 @@ func TestUntrustedSource(t *testing.T) {
 		}
 	}
 }
+
+// MON-5: an alarm of the class unknown is alarm.monitor.problem with severity warn, as the
+// class table sets it.
+func TestMonitorProblemSeverity(t *testing.T) {
+	c := lintCore(t)
+	if s, err := c.alarmSeverity(Alarm{Name: "monitor.problem"}); err != nil || s != "warn" {
+		t.Fatalf("severity %q %v", s, err)
+	}
+}

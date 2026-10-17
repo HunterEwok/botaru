@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/HunterEwok/botaru/impl/internal/ids"
+	"github.com/HunterEwok/botaru/impl/internal/manifest"
 	"github.com/HunterEwok/botaru/impl/internal/money"
 	"github.com/HunterEwok/botaru/impl/internal/store"
 )
@@ -494,4 +495,37 @@ func (c *Core) ManagerCost(ctx context.Context, op Operator, req ManagerCostRequ
 		"lines": map[string]any{"review": money.CentsUp(review), "other": money.CentsUp(spent) - money.CentsUp(review)}}
 	out["tenant"] = tenant
 	return out, nil
+}
+
+// managerMonthGate decides a seat task of the manager line at claim from v0.3: sev1 work and
+// any other line run as before; work outside sev1 after 70% of the month runs on the farm
+// charter's fallback_profile when the eval index has a clean mgr-inj report for it, otherwise it
+// waits for the next month (MGR-49).
+func (c *Core) managerMonthGate(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tv *TenantView, rec []byte, tt manifest.TaskType) (string, bool, error) {
+	if line, _ := c.taskLine(rec, tt); line != "manager" || tv == nil {
+		return "", false, nil
+	}
+	var r struct {
+		Severity string `json:"severity"`
+	}
+	_ = json.Unmarshal(rec, &r)
+	if r.Severity == "sev1" {
+		return "", false, nil
+	}
+	spent, err := managerMonthSpent(ctx, tx, now, tv)
+	if err != nil || !spent {
+		return "", false, err
+	}
+	fb := mstr(managerCharter(cat), "fallback_profile")
+	if fb == "" {
+		return "", true, nil
+	}
+	fp, err := seatFingerprint(cat, fb)
+	if err != nil {
+		return "", false, err
+	}
+	if fp == "" || !seatEvalPassed(catalogEvalReports(cat), fb, fp) {
+		return "", true, nil
+	}
+	return fb, false, nil
 }

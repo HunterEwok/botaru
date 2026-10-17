@@ -17,6 +17,8 @@ import (
 	"github.com/HunterEwok/botaru/impl/internal/testbench"
 )
 
+// Tests of the P3 tool gateway: the catalog, tools/call, holds, deadlines and toolhosts.
+
 // newToolBench is the bench with the checks, logs and cmd plugins, a part of the demo catalog
 // and the hello role holding checks/latest, logs/tail and cmd/run.
 func newToolBench(t *testing.T) *bench { t.Helper(); return newToolBenchKeep(t, nil) }

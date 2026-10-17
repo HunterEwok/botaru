@@ -6,11 +6,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/HunterEwok/botaru/impl/internal/ids"
+	"github.com/HunterEwok/botaru/impl/internal/spec"
 )
 
 // storedPersonMemory gives the stored roles of the bench person memory, as a set applied
@@ -669,5 +672,41 @@ func TestSubjectFarmFallback(t *testing.T) {
 	var state, by string
 	if err := b.c.st.Pool.QueryRow(ctx, `SELECT state, decided_by FROM subject_requests WHERE id = $1 AND tenant = 'demo'`, d.ID).Scan(&state, &by); err != nil || state != "approved" || by != "human:p_farmadmin" {
 		t.Fatalf("request %s %s %v", state, by, err)
+	}
+}
+
+// MEM-2: while the personal assistant is deferred (DSP-10), apply at the v0.3 claim refuses a
+// role with memory: person (person_memory_deferred), and a role without person memory passes it.
+func TestPersonMemoryDeferred(t *testing.T) {
+	c := lintCore(t)
+	role := func(mem string) string {
+		return "apiVersion: botaru/v1alpha1\nkind: Role\nmetadata: {name: assistant}\nspec: {worker_kind: agent, memory: " + mem + ", models: {base: base-std}}\n"
+	}
+	has := func(mem string) bool {
+		return slices.ContainsFunc(lintFound(t, c, role(mem), ""), func(s string) bool { return strings.HasPrefix(s, "person_memory_deferred ") })
+	}
+	if !has("person") {
+		t.Fatal("MEM-2: memory: person passed on a core that claims v0.3")
+	}
+	if has("none") {
+		t.Fatal("MEM-2: memory: none refused")
+	}
+}
+
+// MEM-2: the core lint and the skeleton lint gate person_memory_deferred on the same version:
+// the core's claim spec.Version, outside tests, is the major and minor of spec/VERSION that
+// ci/check_manifests.py reads.
+func TestPersonMemoryVersionSource(t *testing.T) {
+	root, err := spec.FindRoot("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(root, "spec", "VERSION"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	parts := strings.SplitN(strings.TrimSpace(string(raw)), ".", 3)
+	if len(parts) < 2 || "v"+parts[0]+"."+parts[1] != spec.Version {
+		t.Fatalf("MEM-2: spec/VERSION %s and the core claim %s differ", raw, spec.Version)
 	}
 }

@@ -753,3 +753,30 @@ func recurringClasses(ctx context.Context, tx pgx.Tx, since, until time.Time) (s
 	}
 	return strings.Join(list, ", "), nil
 }
+
+// authorLevel is origin.level of a proposal: 2 for the farm manager seat (MGR-41, MGR-51), so its
+// proposals never make anyone answer for a link and give no rejected-proposal candidate (GOV-38,
+// GOV-41); 1 for an aggregator; 0 for a bot of a role.
+func authorLevel(seat bool, purpose string) int {
+	switch {
+	case seat:
+		return 2
+	case purpose == "aggregate":
+		return 1
+	}
+	return 0
+}
+
+// quietOnlyKinds are the notices that the person's quiet hours defer although their kind is not
+// deferrable in delivery-kinds.yaml: the manager's notice to people is not urgent, and quiet
+// hours apply to it (MGR-52). The daily digest does not collect it.
+func quietOnlyKinds() []string {
+	return []string{attentionNotice}
+}
+
+// attentionChecked checks the arguments of attention_notice by the skeleton schema too, whose
+// operation list is closed: an argument the core's own narrower schema would let through can
+// never reach people (MGR-52).
+func (c *Core) attentionChecked(args map[string]any) bool {
+	return c.spec.Validate("urn:botaru:schema:attention-notice:1", args) == nil
+}

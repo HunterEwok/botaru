@@ -5,6 +5,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/HunterEwok/botaru/impl/internal/ids"
+	"github.com/HunterEwok/botaru/impl/internal/manifest"
 )
 
 // The run card marks targets the typed text does not name (TRN-10): a machine named neither by
@@ -248,5 +250,64 @@ func TestScriptLinkRoleHold(t *testing.T) {
 	_, h = b.attemptTools(t, "3", false)
 	if r := proposeScriptCall(t, b.bench, h, checkStep, fixStep); r.reason() != "held" {
 		t.Fatalf("a draft with an action under the worker hold: %+v", r)
+	}
+}
+
+// The dependency hop of script_target (TRN-7) and the stricter tenant threshold of the role
+// hold (HLD-9): a resource on a machine a run named depends on it by one step, so an incident on
+// the resource is linked to the run; with the tenant catalog's role_incident_hold of one link
+// the first confirmed link sets the role hold. A looser catalog value never applies.
+func TestScriptLinkHopAndStricterHold(t *testing.T) {
+	ctx := context.Background()
+	b := newBenchWith(t, func(_ string, ms []map[string]any) []map[string]any {
+		return append(ms, map[string]any{
+			"apiVersion": "botaru/v1alpha1", "kind": "Catalog", "metadata": map[string]any{"name": "demo", "tenant": "demo"},
+			"spec": map[string]any{"hosts": []any{map[string]any{"id": "web1"}},
+				"resources":          []any{map[string]any{"id": "web1-logs", "title": "Web logs", "host": "web1"}},
+				"role_incident_hold": map[string]any{"links": 1, "window": "180d"}},
+		}, map[string]any{
+			"apiVersion": "botaru/v1alpha1", "kind": "IncidentClass", "metadata": map[string]any{"name": "web_down"},
+			"spec": map[string]any{"title": "Web down", "severity": "sev2", "change_sensitive": true,
+				"detect": map[string]any{"alarm": "alarm.disk.free.low.v1"}, "subject": map[string]any{"kind": "resource"}},
+		}, map[string]any{
+			"apiVersion": "botaru/v1alpha1", "kind": "Group", "metadata": map[string]any{"name": "governors", "tenant": "demo"},
+			"spec": map[string]any{"caps": []any{"governance.attribute"}, "data": []any{"summary", "internal"}},
+		}, storeLowManifest())
+	})
+	b.exec(t, `INSERT INTO memberships (tenant, principal, grp, state, created_at) VALUES ('demo', $1, 'governors', 'active', now())`, b.alice)
+	b.exec(t, `INSERT INTO governance_v03 (tenant, since, updated_at) VALUES ('demo', botaru_now() - interval '2 days', botaru_now())
+		ON CONFLICT (tenant) DO UPDATE SET since = excluded.since`)
+	run := ids.New(ids.Script)
+	b.exec(t, `INSERT INTO script_runs (id, tenant, initiator, state, plan_hash, record, nonce, expires_at, created_at, updated_at, targets, started_at, ended_at, role, data_mark)
+		VALUES ($1, 'demo', 'human:other', 'completed', 'x', '{}', 'nonce-of-the-run-01', botaru_now() + interval '1 day', botaru_now() - interval '1 day', botaru_now(),
+		ARRAY['web1'], botaru_now() - interval '1 day', botaru_now() - interval '23 hours', 'hello', 'internal')`, run)
+	cat := b.catalog(t)
+	if err := b.c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+		deps, err := subjectDeps(ctx, tx, cat, "demo", "resource", "web1-logs")
+		if err == nil && !slices.Equal(deps, []subjectRef{{"resource", "web1"}}) {
+			t.Errorf("deps %v", deps)
+		}
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	b.insertIncident(t, "web_down", "resource", "web1-logs")
+	b.insertIncident(t, "web_down", "resource", "db1") // depends on nothing the run named
+	b.loop(t, "governance")
+	if n := b.count(t, `SELECT count(*) FROM attributions WHERE kind = 'script_run' AND script_run = $1`, run); n != 1 {
+		t.Fatalf("script links %d", n)
+	}
+	cd, on := b.govCard(t, scriptLinkCard)
+	b.govDetails(t, cd, on)
+	if res, err := b.govDecide(t, cd, on, "yes", "", ""); err != nil || res.State != "confirmed" {
+		t.Fatalf("yes %+v %v", res, err)
+	}
+	if n := b.count(t, `SELECT count(*) FROM holds WHERE state = 'active' AND scope_kind = 'role' AND scope_name = 'hello' AND reason = 'role_incidents'`); n != 1 {
+		t.Fatal("no role hold after one link with the stricter threshold")
+	}
+	loose := &Catalog{RawGlobals: map[manifest.Key]map[string]any{{Kind: "Catalog", Tenant: "demo", Name: "demo"}: {
+		"spec": map[string]any{"role_incident_hold": map[string]any{"links": 5, "window": "30d"}}}}}
+	if n, w, err := b.c.roleIncidentLimits(loose, "demo"); err != nil || n != 3 || w != 90*24*time.Hour {
+		t.Fatalf("a looser catalog value %d %v %v", n, w, err)
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -23,6 +24,8 @@ import (
 // notice manager_preventable without buttons, and the seat goes into restricted mode in that
 // tenant: its decision attempts there only read and send notices, until an operator lifts it
 // with seat.resume --tenant, or the seat changes holder or is vacated. The epoch does not change.
+// Here too: the read mark of manager_preventable, the field restricted_in of the seat record,
+// the end of the v0.2 incident stop and the v0.2 fields a v0.3 core does not use.
 
 const (
 	preventableNotice = "manager_preventable"
@@ -376,35 +379,183 @@ func (c *Core) seatResumeTenant(ctx context.Context, op Operator, tenant string)
 	return &out, nil
 }
 
-// managerMonthGate decides a seat task of the manager line at claim from v0.3: sev1 work and
-// any other line run as before; work outside sev1 after 70% of the month runs on the farm
-// charter's fallback_profile when the eval index has a clean mgr-inj report for it, otherwise it
-// waits for the next month (MGR-49).
-func (c *Core) managerMonthGate(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tv *TenantView, rec []byte, tt manifest.TaskType) (string, bool, error) {
-	if line, _ := c.taskLine(rec, tt); line != "manager" || tv == nil {
-		return "", false, nil
+// preventableRead is P2 incident.ack with the operator credential of farm on the incident of a
+// restriction still in force: it marks the notice manager_preventable read, so its repeats stop;
+// the restriction stays until seat.resume, a new holder or a vacated seat (GOV-47). The incident
+// itself, a record of its tenant, is not acked: farm gets no tenant content. ok false means no
+// such restriction, and the call goes on as an ordinary incident.ack in farm.
+func (c *Core) preventableRead(ctx context.Context, op Operator, req IncidentRequest) (*Done, bool, error) {
+	id := req.target()
+	if id == "" {
+		return nil, false, nil
 	}
-	var r struct {
-		Severity string `json:"severity"`
-	}
-	_ = json.Unmarshal(rec, &r)
-	if r.Severity == "sev1" {
-		return "", false, nil
-	}
-	spent, err := managerMonthSpent(ctx, tx, now, tv)
-	if err != nil || !spent {
-		return "", false, err
-	}
-	fb := mstr(managerCharter(cat), "fallback_profile")
-	if fb == "" {
-		return "", true, nil
-	}
-	fp, err := seatFingerprint(cat, fb)
+	var out Done
+	found := false
+	err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+		var tenant, incident string
+		var read *time.Time
+		err := tx.QueryRow(ctx, `SELECT tenant, incident, read_at FROM manager_restrictions
+			WHERE lower(incident) = lower($1) AND until IS NULL FOR UPDATE`, id).Scan(&tenant, &incident, &read)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		found = true
+		// The answer names the seat and the read mark only: the tenant's incident and its state
+		// are not farm's to see.
+		out = Done{OK: true, ID: managerSeatID, State: "read"}
+		if read != nil {
+			return nil
+		}
+		if _, err := tx.Exec(ctx, `UPDATE manager_restrictions SET read_at = $2, read_by = $3 WHERE tenant = $1 AND until IS NULL`, tenant, now, op.Principal); err != nil {
+			return err
+		}
+		seq, err := c.appendAudit(ctx, tx, now, Audit{
+			Tenant: farmTenant, Kind: "command", Actor: Actor{Principal: principalOr(op.Principal), Via: "farmctl"},
+			Command: "incident.ack", Target: &Target{Kind: "seat", ID: managerSeatID}, OK: true,
+			After: withTenant(map[string]any{"notice": preventableNotice, "read": true, "incident": incident}, tenant),
+		})
+		out.AuditSeq = seq
+		return err
+	})
 	if err != nil {
-		return "", false, err
+		return nil, false, err
 	}
-	if fp == "" || !seatEvalPassed(catalogEvalReports(cat), fb, fp) {
-		return "", true, nil
+	if !found {
+		return nil, false, nil
 	}
-	return fb, false, nil
+	return &out, true, nil
+}
+
+// dropIncidentStop removes a stop reason incident a v0.2 core left on the seat: from v0.3 the
+// seat has only the reasons human and no_control, decide_within no longer retires the holder and
+// manager_stopped is not repeated (GOV-47, MGR-55). The change moves the seat like any other.
+func (c *Core) dropIncidentStop(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, m *managerSeat) error {
+	if !m.has("incident") {
+		return nil
+	}
+	// The seat leaves the stop: resumed, unless another reason still stops it.
+	reasons := m.without("incident")
+	event := "seat.resumed.v1"
+	if len(reasons) > 0 && m.Holder != "" {
+		event = "seat.stopped.v1"
+	}
+	if _, err := c.shiftManager(ctx, tx, now, cat, m, m.Holder, reasons, event, "incident_stop_ignored", "system"); err != nil {
+		return err
+	}
+	// The manager_stopped cards that the earlier core planned (a quiet hour, the card limit) are
+	// about a stop that no longer holds: they are withheld with the event delivery.withheld, as
+	// every withheld delivery. A card already sending stays: the channel may have sent it, and its
+	// outcome comes back on its lease, so withholding it would contradict what was sent.
+	rows, err := tx.Query(ctx, `UPDATE deliveries SET state = 'withheld', reason = 'superseded', updated_at = $1
+		WHERE kind = 'manager_stopped' AND state = 'planned' RETURNING id, tenant`, now)
+	if err != nil {
+		return err
+	}
+	type withheld struct{ id, tenant string }
+	ws, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (withheld, error) {
+		var w withheld
+		return w, r.Scan(&w.id, &w.tenant)
+	})
+	if err != nil {
+		return err
+	}
+	slices.SortFunc(ws, func(a, b withheld) int { return strings.Compare(a.id, b.id) })
+	for _, w := range ws {
+		if err := c.appendEvent(ctx, tx, now, w.tenant, Event{Type: "delivery.withheld", Subject: w.id,
+			Data: map[string]any{"delivery": w.id, "kind": "manager_stopped", "reason": "superseded"}}); err != nil {
+			return err
+		}
+	}
+	// A holder's seat back in held is told to the admins as seat.resume tells them (MGR-31).
+	if m.State != "held" {
+		return nil
+	}
+	return c.noticeManagerChanged(ctx, tx, now, cat, m, "resumed")
+}
+
+// managerSeatRecord is the record of the farm manager seat by spec/model/seat.schema.json: the
+// holder, epoch, state and stop reasons and, from v0.3, restricted_in, the tenants where the
+// seat is in restricted mode with the incident and the time (MGR-47).
+func (c *Core) managerSeatRecord(ctx context.Context, tx pgx.Tx) (map[string]any, error) {
+	m, err := loadManagerSeat(ctx, tx, false)
+	if err != nil || m == nil {
+		return nil, err
+	}
+	var holder any
+	if m.Holder != "" {
+		holder = m.Holder
+	}
+	reasons := []any{}
+	for _, r := range m.Reasons {
+		e := map[string]any{"reason": r.Reason, "at": r.At}
+		if r.Incident != "" {
+			e["incident"] = r.Incident
+		}
+		reasons = append(reasons, e)
+	}
+	rec := withTenant(map[string]any{"id": managerSeatID, "kind": "farm_manager", "holder": holder, "epoch": m.Epoch, "state": m.State,
+		"stop_reasons": reasons}, farmTenant)
+	if m.DecideUntil != nil {
+		rec["decide_until"] = fmtTime(*m.DecideUntil)
+	}
+	rows, err := tx.Query(ctx, `SELECT tenant, incident, since FROM manager_restrictions WHERE until IS NULL ORDER BY tenant LIMIT 1000`)
+	if err != nil {
+		return nil, err
+	}
+	list, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (any, error) {
+		var tenant, incident string
+		var since time.Time
+		err := row.Scan(&tenant, &incident, &since)
+		return withTenant(map[string]any{"incident": incident, "since": fmtTime(since)}, tenant), err
+	})
+	if err != nil {
+		return nil, err
+	}
+	if list == nil {
+		list = []any{}
+	}
+	rec["restricted_in"] = list
+	if err := c.spec.Validate("urn:botaru:schema:seat:1", rec); err != nil {
+		return nil, err
+	}
+	return rec, nil
+}
+
+// doctorRestricted shows from the seat record whether the farm manager seat is in restricted
+// mode in the tenant: the time since when, or null (MGR-47).
+func (c *Core) doctorRestricted(ctx context.Context, tx pgx.Tx, tenant string, add func(DoctorCheck)) error {
+	rec, err := c.managerSeatRecord(ctx, tx)
+	if err != nil || rec == nil {
+		return err
+	}
+	ch := DoctorCheck{ID: "manager.restricted_since", OK: true, Severity: "info", Value: nil, Tenant: tenant}
+	list, _ := rec["restricted_in"].([]any)
+	for _, e := range list {
+		if em := asMap(e); em["tenant"] == tenant {
+			ch.Value, ch.OK, ch.Severity = em["since"], false, "warn"
+		}
+	}
+	add(ch)
+	return nil
+}
+
+// ignoredV03 are the warnings of apply for the fields of v0.1 and v0.2 that a v0.3 core accepts
+// and does not use: stops_manager of an IncidentClass and incident_stop of the farm charter
+// (MGR-55, GOV-22, GOV-28). They do not fail the set.
+func ignoredV03(d manifest.Doc, v map[string]any, i int) []ApplyError {
+	spec, _ := v["spec"].(map[string]any)
+	var path string
+	switch {
+	case d.Kind == "IncidentClass" && spec["stops_manager"] != nil:
+		path = "/spec/stops_manager"
+	case d.Kind == "Governance" && isFarmCharter(d.Tenant, d.Name) && mmap(spec, "farm_manager")["incident_stop"] != nil:
+		path = "/spec/farm_manager/incident_stop"
+	default:
+		return nil
+	}
+	return []ApplyError{{Kind: d.Kind, Tenant: d.Tenant, Name: d.Name, Code: "version_unsupported", Path: fmt.Sprintf("/manifests/%d%s", i, path),
+		Detail: "a field of v0.2 that a v0.3 core does not use (MGR-55)"}}
 }

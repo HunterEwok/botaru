@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/HunterEwok/botaru/impl/internal/ids"
+	"github.com/HunterEwok/botaru/impl/internal/manifest"
 	"github.com/HunterEwok/botaru/impl/internal/mcp"
 	"github.com/HunterEwok/botaru/impl/internal/money"
 )
@@ -594,5 +595,77 @@ func TestManagerSeatFacts(t *testing.T) {
 	}
 	if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM facts WHERE tenant = 'demo' AND bot IN ($1, $2)`, old, holder).Scan(&n); err != nil || n != 0 {
 		t.Fatalf("seat facts after the opt-out %d %v", n, err)
+	}
+}
+
+// From v0.3 work outside sev1 stops at 70% of the manager line's month; sev1 and the fallback
+// profile run on (MGR-49).
+func TestManagerMonthLineV03(t *testing.T) {
+	ctx := context.Background()
+	b := newManagerBench(t)
+	day, month := 100.0, 10.0
+	tv := &TenantView{Name: "demo"}
+	tv.Spec.Budgets.Lines = map[string]manifest.LineBudget{"manager": {DayEUR: &day, MonthEUR: &month}}
+	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO spend (id, tenant, line, unit, state, eur_micros, time)
+		VALUES ('spd_mgr', 'demo', 'manager', 'tokens', 'committed', 7500000, botaru_now())`); err != nil {
+		t.Fatal(err)
+	}
+	check := func(ask budgetAsk) *Problem {
+		var p *Problem
+		err := b.c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+			p = b.c.checkBudget(ctx, tx, now, tv, ask)
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	if p := check(budgetAsk{subject: "system", line: "manager", extra: 1000}); p == nil || p.Reason != "budget_exhausted" {
+		t.Fatalf("outside sev1 over 70%% of the month: %v", p)
+	}
+	if p := check(budgetAsk{subject: "system", line: "manager", extra: 1000, sev1: true}); p != nil {
+		t.Fatalf("sev1: %v", p)
+	}
+	if p := check(budgetAsk{subject: "system", line: "manager", extra: 1000, fallback: true}); p != nil {
+		t.Fatalf("fallback: %v", p)
+	}
+	// Once the month is spent, sev1 runs only from the day's 30% reserve above today's other
+	// work: 10 + 30 EUR.
+	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO spend (id, tenant, line, unit, state, eur_micros, time)
+		VALUES ('spd_mgr2', 'demo', 'manager', 'tokens', 'committed', 2500000, botaru_now())`); err != nil {
+		t.Fatal(err)
+	}
+	if p := check(budgetAsk{subject: "system", line: "manager", extra: money.FromEUR(29), sev1: true}); p != nil {
+		t.Fatalf("sev1 within the reserve: %v", p)
+	}
+	if p := check(budgetAsk{subject: "system", line: "manager", extra: money.FromEUR(31), sev1: true}); p == nil {
+		t.Fatal("sev1 past the reserve with the month spent")
+	}
+	err := b.c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+		spent, err := managerMonthSpent(ctx, tx, now, tv)
+		if err != nil || !spent {
+			t.Fatalf("month spent %v %v", spent, err)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// The tenant lint of the manager line from v0.3: the day covers the review, the analyses and
+// three reads, the month covers the takeover ceiling (MGR-49).
+func TestManagerLineShortV03(t *testing.T) {
+	profile := map[string]any{"price": map[string]any{"input": 1.0, "output": 1.0}, "max_output_tokens": 1000.0}
+	fm := map[string]any{"daily_review_max_eur": 0.5}
+	ts := func(day, month float64) map[string]any {
+		return map[string]any{"budgets": map[string]any{"lines": map[string]any{"manager": map[string]any{"day_eur": day, "month_eur": month}}}}
+	}
+	if got := managerLineShort(ts(0.5, 5), fm, profile); !slices.Contains(got, "/budgets/lines/manager/day_eur") || !slices.Contains(got, "/budgets/lines/manager/month_eur") {
+		t.Fatalf("v0.3 short %v", got)
+	}
+	if got := managerLineShort(ts(5, 20), fm, profile); len(got) != 0 {
+		t.Fatalf("v0.3 enough %v", got)
 	}
 }

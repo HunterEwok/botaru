@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/HunterEwok/botaru/impl/internal/ids"
+	"github.com/HunterEwok/botaru/impl/internal/manifest"
 	"github.com/HunterEwok/botaru/impl/internal/mcp"
 )
 
@@ -408,5 +409,43 @@ func TestObserveRollupBackfill(t *testing.T) {
 	q := ObsQueryRequest{Series: "site.ms.v1", Subject: "host:web1", Window: "93d", Rollup: "day.max"}
 	if out, err := b.c.ObsSeries(ctx, b.op, q); err == nil {
 		t.Fatalf("a 93d window over 30 days of rollups: %v", out)
+	}
+}
+
+// An aggregator reads only the series of its sources, and only its own tenant's points: a
+// canary point of another tenant in the same series and subject is not in the answer (AGG-3,
+// AGG-5).
+func TestAggregatorReads(t *testing.T) {
+	ctx := context.Background()
+	b := newBench(t)
+	cat := &Catalog{Tenants: map[string]*TenantView{}, Roles: map[string]manifest.Role{"agg": {Profile: "aggregator",
+		Aggregate: &manifest.RoleAggregate{}}}, TaskTypes: map[string]manifest.TaskType{"agg.v1": {Purpose: "aggregate", Observes: []string{seriesTaskOutcome, seriesTaskAttempts}}}}
+	cat.Roles["agg"].Aggregate.Sources.Series = []string{seriesTaskAttempts}
+	if got := b.c.readableSeries(cat, "demo", "agg", "agg.v1"); len(got) != 1 || got[0] != seriesTaskAttempts {
+		t.Fatalf("readable %v", got)
+	}
+	live, err := b.c.Catalog(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO obs_points (tenant, series, subject, at, num, source, data_mark, key, created_at)
+		VALUES ('other', $1, 'task_type:hello.greet.v1', botaru_now(), 42, 'core', 'internal', 'canary', botaru_now())`, seriesTaskAttempts); err != nil {
+		t.Fatal(err)
+	}
+	err = b.c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+		out, err := b.c.queryObservations(ctx, tx, now, live, "demo", []string{seriesTaskAttempts}, "internal",
+			obsQuery{Series: seriesTaskAttempts, Subject: "task_type:hello.greet.v1", Window: "1d", Rollup: "window.mean"})
+		if err != nil {
+			return err
+		}
+		for _, g := range asList(out["groups"]) {
+			if len(asList(mmapAny(g)["points"])) != 0 {
+				t.Errorf("another tenant's point is visible: %v", out)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }

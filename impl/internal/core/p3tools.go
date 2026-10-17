@@ -22,6 +22,9 @@ import (
 	"github.com/HunterEwok/botaru/impl/internal/toolspec"
 )
 
+// The P3 tool gateway of the MCP binding: the tool catalog of an attempt, its hashes and
+// tools/call of a plugin tool with its checks, target and outcome (P3, GW-1, PRV-1).
+
 // P3Profile is the profile version of the gateway profile of the MCP binding.
 const P3Profile = "botaru-tool-gateway/1"
 
