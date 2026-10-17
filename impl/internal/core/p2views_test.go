@@ -149,7 +149,7 @@ func TestStatusDoctor(t *testing.T) {
 		t.Fatal(err)
 	}
 	validOut(t, b, "p2-status-response", st)
-	if st.Commit != strings.Repeat("0", 40) || st.ConformsTo.Skeleton != "0.3.0" || len(st.FarmManagerDisabled) != 1 ||
+	if st.Commit != strings.Repeat("0", 40) || st.ConformsTo.Skeleton != "0.3.0" || !slices.Equal(st.FarmManagerDisabled, []string{"demo"}) ||
 		!slices.Contains(st.ConformsTo.Profiles, "knowledge") || !slices.Contains(st.ConformsTo.Profiles, "ingress") || slices.Contains(st.ConformsTo.Profiles, "sandbox") {
 		t.Fatalf("status %+v", st)
 	}
@@ -168,5 +168,27 @@ func TestStatusDoctor(t *testing.T) {
 	doc, _ = b.c.Doctor(ctx, b.op, TenantRequest{})
 	if doc.OK {
 		t.Fatal("doctor ok with every loop a minute old")
+	}
+}
+
+// farm_manager_disabled names only the tenants with farm_manager.enabled: false, every such
+// tenant for the operator of farm and else the credential's own (D-77).
+func TestStatusFarmManagerDisabled(t *testing.T) {
+	ctx := context.Background()
+	// The manager bench turns the manager of demo on; demo2 has it off.
+	b := newManagerBenchWith(t, nil, []map[string]any{{"apiVersion": "botaru/v1alpha1", "kind": "Tenant", "metadata": map[string]any{"name": "demo2"},
+		"spec": map[string]any{"kind": "test", "farm_manager": map[string]any{"enabled": false}, "budgets": map[string]any{"month_eur": 10}}}})
+	for _, tc := range []struct {
+		tenant string
+		want   []string
+	}{{"demo", []string{}}, {"demo2", []string{"demo2"}}, {"farm", []string{"demo2"}}} {
+		st, err := b.c.Status(ctx, Operator{Principal: b.op.Principal, Tenant: tc.tenant}, TenantRequest{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		validOut(t, b, "p2-status-response", st)
+		if !slices.Equal(st.FarmManagerDisabled, tc.want) {
+			t.Fatalf("%s: farm_manager_disabled %v, want %v", tc.tenant, st.FarmManagerDisabled, tc.want)
+		}
 	}
 }

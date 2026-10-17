@@ -522,7 +522,7 @@ checks:
   group: Monitoring, export and audit witness
   spec:
     What: '`demo2` with `farm_manager.enabled: false`'
-    Expectation: '`status` shows "manager disabled"'
+    Expectation: '`status` lists `demo2` under `farm_manager_disabled`'
 - id: blackbox:core/service-stop-card
   method: blackbox
   rules:
@@ -727,7 +727,7 @@ checks:
   group: Holds, queue, backups and spend
   spec:
     What: a worker is silent for longer than two long-poll periods, its last self-report is `idle`
-    Expectation: event `worker.stale` and `alarm.worker.stale`; loop ticks are visible in `status`, `doctor`, `health`
+    Expectation: event `worker.stale` and `alarm.worker.stale`; loop ticks are visible in `doctor` and `health`
 - id: blackbox:core/store-down
   method: blackbox
   rules:

@@ -4,19 +4,36 @@ Skeleton versions: v0.1, v0.2, v0.3, v0.4. A skeleton version states which rules
 from that version on; what goes into each version is stated in the section "What is in which version" of every
 document.
 
+Entries are grouped by area; within a group the newest entry comes first.
+
 ## Unreleased
 
-Entries are grouped by area; within a group the newest entry comes first.
+## 0.3.0 - 2026-10-17
 
 ### Skeleton & Contracts
 
+- Skeleton release 0.3.0: this block, until now "Unreleased", is the release 0.3.0 of skeleton v0.3, the first
+  published release; the compatibility promise of `spec/versions.md` holds from its tag `v0.3.0`.
+- Decision D-119: the defaults of the skeleton questions in `docs/open-questions.md` are accepted as rules of
+  the skeleton for 0.3.0, and the tables of the skeleton questions are empty; the part "What every
+  installation decides" stays as the checklist of an installation's own repository.
+- The format `date` (a calendar date, RFC 3339 full-date) in `spec/model/formats.yaml`; its pattern takes only
+  the days that exist, which `ci/check_schemas.py` and `impl/internal/spec` check. `report.sensor.v1` gets the
+  optional parameter `date`.
+- `Schedule.spec.paused` (v0.2, TIM-5) and the `schedule.skipped` reason `paused`.
+- OBS-11, CAP-6 and DEP-10 describe only what the schemas hold: the alarm path lines are `doctor` checks and
+  `status` lists the tenants with the farm manager off under `farm_manager_disabled`; the volume free space
+  series is a tenant `ObservationSeries` written by the installation's `job` role; the deployment lint checks
+  the facts that `deploy-topology.schema.json` has fields for, so the agent's network (DEP-5) and the machine of
+  the monitoring system (MON-2) are not linted in 0.3; MON-11 names `health` and `doctor`; TIM-3 and TIM-5 define
+  the skip of a paused schedule.
 - The ten accepted architecture decisions of the table "Decisions (ADR)" in `docs/architecture.md`, which D-86
   (13) said would appear with the implementation, are files 0001 to 0010 in `docs/adr/` in MADR 4.0.0
   form with the rules that confirm them; the next ADR number is 0011.
-- Skeleton release 0.3.0, unreleased: `spec/VERSION` and the contract sheets of `spec/ports/` carry 0.3.0, and
-  there is no tag yet, so forms still change in place with an entry in `spec/removed.yaml`
-  (`spec/versions.md`). `examples/roles/assistant` has `memory: none` while the personal assistant is deferred
-  (DSP-10, `person_memory_deferred`, MEM-2), and flow 8 drops its `memory.search` step. The manifest fixtures
+- Skeleton release 0.3.0: `spec/VERSION` and the contract sheets of `spec/ports/` carry 0.3.0; until the tag,
+  forms changed in place with an entry in `spec/removed.yaml` (`spec/versions.md`). `examples/roles/assistant`
+  has `memory: none` while the personal assistant is deferred (DSP-10, `person_memory_deferred`, MEM-2), and
+  flow 8 drops its `memory.search` step. The manifest fixtures
   allow `person_memory_deferred` beside the memory lints, `approvals: 2` for a risk other than routine passes
   from v0.2, and the INJ-12 output coverage of `ci/check_evals.py` skips `monitor_note` of the deferred MON-7.
 - Decision D-118, skeleton gaps before a v0.3 claim: P2 `seat.resume` names exactly one of `incident` and
@@ -120,6 +137,10 @@ Entries are grouped by area; within a group the newest entry comes first.
 
 ### Reference Implementation (impl/)
 
+- impl: P2 `status` lists under `farm_manager_disabled` only the tenants with `farm_manager.enabled: false`
+  (D-77) instead of every tenant; each proposal dropped from a restricted farm manager seat writes
+  `proposal.rejected.v1` with `manager_restricted` (MGR-47, D-118); a schedule with `paused: true` skips its
+  slots (TIM-5); the matching items leave "Not in this version".
 - impl: the files of `impl/internal/core` named by version or stage get domain names, and the largest files
   are split by responsibility; declarations and tests move verbatim, nothing is renamed.
 - impl: `impl/README.md` is a short overview (programs, packages, key decisions, what is not built, checks),

@@ -414,9 +414,9 @@ Other outcomes: with enough space, `ask` and `clean` are `skipped` and the run s
 
 **A script step type.** Give the type `title` and `goal_templates`, mark the result fields conditions should read as `x-botaru-read-by: code`, and add it to the translator's `scripts.step_types`. For an action, set `script.allowed: true` and add it to `scripts.actions`.
 
-## Open question
+## Default of `queue_max`
 
-The default `queue_max` is not set: without it an item waits in `pending` until the tenant queue frees below `max_queued` and does not get `over_capacity` (see [docs/open-questions.md](open-questions.md)).
+The default `queue_max` is not set: without it an item waits in `pending` until the tenant queue frees below `max_queued` and does not get `over_capacity` (D-119, ORC-4).
 
 <!-- generated: rules -->
 ## Rules of this section

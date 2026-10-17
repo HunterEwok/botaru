@@ -9,7 +9,8 @@
     "PRM-10",
     "DLV-6",
     "PRP-10",
-    "SCR-12"
+    "SCR-12",
+    "TIM-5"
   ],
   "type": "object",
   "additionalProperties": false,
@@ -47,6 +48,12 @@
     "skip_if_waiting": {
       "type": "boolean",
       "description": "true by default: the slot is skipped while the previous task waits (TIM-3)."
+    },
+    "paused": {
+      "type": "boolean",
+      "default": false,
+      "description": "From v0.2: true pauses the schedule, and each of its slots is skipped with schedule.skipped(paused) and not caught up; false by default (TIM-5). A proposal sets it only with the kind none (PRP-10).",
+      "x-botaru-version": "v0.2"
     },
     "proposable": {
       "type": "boolean",

@@ -129,7 +129,7 @@ Once the control rules settle, they are run as a pipeline: `/run ctd-qc 2026-09 
 |---|---|
 | Who and where | nobody asks: the schedule `sensor-nightly` from git, the initiator is the system principal `system`; the result goes to the group chat `lab` with the ceiling `summary` |
 | Task types | `data.sensor_check.v1` (a job without a model), then `report.sensor.v1` (tier 0, role `reporter`) |
-| Machine form | v0.1 |
+| Machine form | v0.1; the parameter `date` of `report.sensor.v1` from v0.3 |
 
 ```yaml
 # tenants/demo/schedules.yaml (fragment)
@@ -231,7 +231,7 @@ observes: [farm.external.outcome, farm.external.duration, farm.schedule.slot, fa
 
 **What `alice` sees:** a table from the job result that the code draws, a paragraph marked as written by the model, and the file `report-2026-09.csv`.
 
-**Archive.** If a copy is needed on disk, the schedule `month-report-archive` on the first day of each month enqueues the same job for the previous month with the targets `group:lead` and `sink:archive`; both report task types are in `system-ops` (PRM-10). The sink `archive` claims the delivery (E2 `claim(delivery)` → `write` → `complete(location)`) and builds the path from the base in its manifest, the tenant and the delivery id, not from model text (DLV-6).
+**Archive.** There is no copy in the sink `archive` in this version: a person's task delivers only to its `origin` (DLV-6), and a schedule sets no parameter relative to its slot, such as "last month" (D-119), so no schedule `month-report-archive` can enqueue the job for the previous month with `deliver_to: [group:lead, sink:archive]`. A delivery a schedule sends to a sink is claimed by the sink (E2 `claim(delivery)` → `write` → `complete(location)`), which builds the path from the base in its manifest, the tenant and the delivery id, not from model text (DLV-6).
 
 **What must not happen:** the model computes or rounds numbers its own way: the code draws the table; numbers of another tenant, since the closed query sees only the series of `demo` (OBV-3); a connection from the job to the farm store; costs visible to everyone: the report with money exists only for groups `admin` and `lead`, and `user` does not have it (docs/permissions.md).
 

@@ -128,6 +128,10 @@ func (c *Core) runSchedule(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 			"schedule": name, "slot": slot, "reason": reason,
 		}})
 	}
+	// A paused schedule skips its slots without catch-up, like a hold (TIM-5).
+	if sc.Paused {
+		return skip("paused")
+	}
 	if due.Gap {
 		return skip("dst_gap")
 	}

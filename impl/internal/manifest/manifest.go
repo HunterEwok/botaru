@@ -822,6 +822,8 @@ type Schedule struct {
 	} `json:"task"`
 	DeliverTo     []any `json:"deliver_to"`
 	SkipIfWaiting *bool `json:"skip_if_waiting"`
+	// Paused true skips every slot with schedule.skipped(paused) (TIM-5).
+	Paused bool `json:"paused"`
 	// Proposable false keeps the schedule out of proposals (PRP-10).
 	Proposable *bool `json:"proposable"`
 	// Locale is the language of code texts for the schedule's addresses (DLV-18).

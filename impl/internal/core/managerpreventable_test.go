@@ -10,6 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/HunterEwok/botaru/impl/internal/ids"
 	"github.com/HunterEwok/botaru/impl/internal/manifest"
 )
 
@@ -326,5 +327,50 @@ spec:
 	}
 	if managerClass(map[string]any{"stops_manager": true}) || !managerClass(map[string]any{"manager_accountable": true}) {
 		t.Fatal("managerClass v0.3")
+	}
+}
+
+// In restricted mode the proposals of a seat task are dropped, and each one leaves a
+// proposal.rejected event with the reason manager_restricted (MGR-47, D-118).
+func TestRestrictedSeatProposalsRejectedV03(t *testing.T) {
+	ctx := context.Background()
+	b := newManagerBench(t)
+	cat, err := b.c.Catalog(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.exec(t, `INSERT INTO manager_restrictions (tenant, incident, holder, since) VALUES ('demo', 'inc_x', 'bot_x', botaru_now())`)
+	w := &Worker{ID: ids.New(ids.Worker), Tenant: "demo", Role: "farm-manager", Kind: "agent"}
+	task := ids.New(ids.Task)
+	bodies := []map[string]any{noneBody("slow", 1), noneBody("late", 2)}
+	if err := b.c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+		return b.c.createProposals(ctx, tx, now, cat, w, task, reviewType, []byte(`{"seat": "farm-manager"}`), bodies)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if n := b.count(t, `SELECT count(*) FROM proposals`); n != 0 {
+		t.Fatalf("proposals of a restricted seat written: %d", n)
+	}
+	rows, err := b.c.st.Pool.Query(ctx, `SELECT data FROM events WHERE type = $1 AND subject = $2 ORDER BY time, id`, proposalRejectedType, task)
+	if err != nil {
+		t.Fatal(err)
+	}
+	events, err := pgx.CollectRows(rows, pgx.RowTo[map[string]any])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != len(bodies) {
+		t.Fatalf("proposal.rejected events %d, want %d", len(events), len(bodies))
+	}
+	for _, e := range events {
+		if e["reason"] != restrictedReason || e["task"] != task || e["worker"] != w.ID || e["problem_code"] == nil {
+			t.Fatalf("proposal.rejected %v", e)
+		}
+		if err := b.c.spec.Validate("urn:botaru:schema:proposal-rejected:1", e); err != nil {
+			t.Fatalf("proposal.rejected off schema: %v", err)
+		}
+	}
+	if n := b.count(t, `SELECT count(*) FROM audit WHERE record->>'command' = 'proposal.create' AND record->>'reason' = $1`, restrictedReason); n != 1 {
+		t.Fatalf("audit records of the dropped proposals %d", n)
 	}
 }

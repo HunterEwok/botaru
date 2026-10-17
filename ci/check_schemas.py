@@ -130,6 +130,41 @@ def input_problems(n, parent_key):
 
 
 formats, retention = reg_ids('formats'), reg_ids('retention-classes')
+
+# The format registry: each pattern compiles, takes its example within max_length, and the
+# date format takes exactly the calendar dates that exist (RFC 3339 full-date).
+fmt_path = os.path.join(MODEL, 'formats.yaml')
+fmt_entries = (load_yaml(fmt_path) or {}).get('entries', []) if os.path.exists(fmt_path) else []
+for e in fmt_entries:
+    if not isinstance(e, dict) or not e.get('pattern'):
+        continue
+    where = f'spec/model/formats.yaml#{e.get("id")}'
+    try:
+        pat = re.compile(e['pattern'])
+    except re.error as err:
+        rep.error(where, f'[format_pattern_invalid] the pattern does not compile: {err}')
+        continue
+    ex = str(e.get('example', ''))
+    if 'example' in e and not pat.fullmatch(ex):
+        rep.error(where, f'[format_example_mismatch] the example {ex!r} does not match the pattern')
+    if 'example' in e and isinstance(e.get('max_length'), int) and len(ex) > e['max_length']:
+        rep.error(where, f'[format_example_mismatch] the example {ex!r} is longer than max_length')
+    if e.get('id') == 'date':
+        import datetime
+        for year in (1900, 1999, 2000, 2024, 2026, 2100, 2400):
+            for month in range(0, 14):
+                for day in range(0, 33):
+                    v = f'{year:04d}-{month:02d}-{day:02d}'
+                    try:
+                        datetime.date(year, month, day)
+                        real = True
+                    except ValueError:
+                        real = False
+                    if bool(pat.fullmatch(v)) != real:
+                        rep.error(where, f'[format_date_calendar] the pattern {"takes" if not real else "refuses"} {v}')
+        for v in ('2026-1-01', '2026-01-01T00:00:00Z', ' 2026-01-01', '20260101'):
+            if pat.fullmatch(v):
+                rep.error(where, f'[format_date_calendar] the pattern takes {v!r}')
 for sid, doc in schemas.items():
     rp = by_path[sid]
     m = re.fullmatch(r'urn:botaru:schema:([a-z0-9][a-z0-9.-]*):([1-9][0-9]*)', sid)

@@ -1,8 +1,8 @@
 # impl: the reference implementation in Go
 
 This folder holds the reference implementation of the botaru core (D-91, D-92 in
-[docs/decisions.md](../docs/decisions.md)). The implementation claims skeleton 0.3 (unreleased: `spec/VERSION` is 0.3.0
-and there is no tag yet) with the profiles `core`, `monitor`, `insights`, `governance`, `manager`, `messaging`,
+[docs/decisions.md](../docs/decisions.md)). The implementation claims skeleton 0.3 (release 0.3.0: `spec/VERSION`
+is 0.3.0, the tag `v0.3.0`) with the profiles `core`, `monitor`, `insights`, `governance`, `manager`, `messaging`,
 `campaign`, `knowledge` and `ingress`; the eval rules of the claim are not run (see Checks, "Eval rules not run"). It
 runs the first bot: the hello-bot sequence of [examples/hello-bot/](../examples/hello-bot/) works end to end over the
 wire, from a Telegram message to the model answer in the same chat. How to run it on a server: [DEPLOY.md](DEPLOY.md).
@@ -108,9 +108,8 @@ rotate with an overlap (SEC-5), and `secret.revoke` holds every scope a secret r
 ### Versions, profiles and deferred rules
 
 The core claims skeleton `v0.3` (`spec.Version`) with the profiles of `spec.Profiles` (MAN-8). P2 `status` shows the
-claim as `conforms_to`: `skeleton` is "0.3.0", the number of `spec/VERSION`, although that release is untagged
-(unreleased), and the profiles are those the installation claims, so `monitor` only with the monitoring system
-configured (D-88).
+claim as `conforms_to`: `skeleton` is "0.3.0", the number of `spec/VERSION` and of the release, and the profiles
+are those the installation claims, so `monitor` only with the monitoring system configured (D-88).
 
 - `apply` refuses with `version_unsupported` and the path a kind whose `since` is later, a field marked with a later
   `x-botaru-version`, the fields of the unclaimed profiles `connections`, `debug` and `sandbox` and tier 2 (MAN-11), and
@@ -170,12 +169,9 @@ Core, ports and people:
   `escalations_take` are not served.
 - The `sandbox` placement and tier 2 (the profile `sandbox` is not claimed), and plugins with secrets or network egress
   other than the own `monitor` plugin: such a plugin runs in its own container, which this build does not start (DEP-7).
-- A pause of a schedule (TIM-5): `Schedule` has no pause field.
 - The chat command `/invite`; merging a daily digest of preferences into one message.
-- A `proposal.rejected` event with `manager_restricted` for the dropped proposals of a restricted seat (MGR-47, D-118).
 - The purge of `runtime_internal` sessions by period (RET-11).
-- A known wrong output: P2 `status` for the operator of `farm` lists every tenant other than `farm` under `farm_manager_disabled` whatever its
-  manager setting, although the farm manager is on by default.
+- The line "improvement cycle disabled" in the `apply` lint (INS-6): `doctor` and the digest show it.
 
 Monitoring:
 
@@ -183,10 +179,6 @@ Monitoring:
   the task journal (MON-8).
 - A route task with a model for a monitoring problem, the history number of the catalog item, and a card for a
   monitoring script after untrusted text.
-- The free space series of a volume written by a `job` role from the monitoring system history (CAP-6):
-  `spec/model/core-series.yaml` names no such series, so it is a tenant's `ObservationSeries` with a job source, and
-  this build has no job program that reads the monitoring history.
-- A monitoring line in `status` (OBS-11: the status schema has none, the account line is in `doctor`).
 
 Privacy, export and connections:
 
@@ -195,15 +187,15 @@ Privacy, export and connections:
   act on (the bulk form answers `not_found`).
 - The period of class `content` for a `self` sink, and the content of files in an export (only their records).
 
-Deployment (DEP-10):
+Deployment:
 
-- The agent process kind (the schema has none, so DEP-5, the agent's network, is not linted; the compose agent is on the
-  core network only).
-- The comparison of the OS mechanism of the machine with the catalog (DEP-4 at doctor), plugin image digests and the
-  docker group or socket (no schema fields), and the monitoring system's host against the core machine (no host address
-  in the schema).
+- The comparison of the OS mechanism of the machine with the catalog (DEP-4 at doctor).
 - The reading of the workspace ceilings at the provider by doctor (GW-9: the provider binding has no such call; apply
   checks the ceilings the settings describe).
+
+A schema limit rather than a build gap: the deployment description has no process kind of the agent and no address of
+the described machines, so DEP-10 leaves the agent's network (DEP-5) and the machine of the monitoring system (MON-2)
+out of the lint; the compose agent is on the core network only.
 
 Governance and the farm manager:
 
@@ -288,7 +280,7 @@ the skeleton lint, which still lints the block.
 
 ### Eval rules not run
 
-The claim is 0.3 (unreleased), and no paid eval run was made for it: every rule of the claim with `check: eval` in
+The claim is 0.3 (release 0.3.0), and no paid eval run was made for it: every rule of the claim with `check: eval` in
 `conformance/requirements.yaml` is "eval not run", whatever its other checks show. There are 22: GOV-13, GOV-29, GOV-45,
 GOV-46, INJ-12, INJ-15, KNW-2, MGR-4, MGR-6, MGR-14, MGR-17, MGR-22, MGR-23, MGR-26, MGR-52, MSG-7, ORC-9, REP-2, REP-4,
 REP-8, TRN-5 and TRN-6. The mock and scripted-provider bench runs of `internal/evals` check the runner, not the models.

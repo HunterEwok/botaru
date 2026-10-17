@@ -14,13 +14,15 @@ This section describes how the farm lives on ordinary days and on bad days: what
 
 **Metrics.** The metrics catalog `spec/bindings/telemetry/metrics.yaml` (v0.2, OBS-13) is a contract for dashboards that survives a change of implementation. Its 14 metrics cover queue, outcomes and duration, model and tools, budget and approvals, deliveries, liveness and holds; only what the farm alone knows from its records. Machine, disk, network and service metrics stay with the monitoring system (D-59). No core decision reads a metric, and a core observation series that matches a catalog metric has the same name (OBV-5).
 
-**P2 `status` and `doctor`.** `status` gives a summary, `doctor` checks consistency and names the mismatches; both show metadata only:
+**P2 `status` and `doctor`.** `status` gives a summary, `doctor` checks consistency and names the mismatches; together they show, as metadata only:
 
 - holds; loop tick ages, `last_seen` of workers and a core drain deadline (OBS-4, LCY-6); the health indicators and store free space (OBS-9, CAP-5);
 - per tenant, the alarm path ([OBS-11](../conformance/rules.md#OBS-11)): `monitor_export_age_s`, E5 deliveries in `planned` older than 15 minutes, the adapter account's scope, the audit head's freshness, `seq` and history retention (MON-3, MON-4, MON-11);
 - open erasure requests (RET-7); backup age, the last restore check and whether the erasure log backup lags the store backup (RET-8);
 - usage reconciliation and an open spend gap (BUD-10, RET-6); the applied commit against the one the operator named (MAN-5); provider caps (GW-9), the `review` line (BUD-13), model `retires_at`, 30-day usage per line (BUD-15);
 - per tenant: "improvement cycle disabled" (INS-6), commission lens coverage (COM-7), "manager disabled" (D-77), "shadow disabled" (COM-10), from v0.2 "commission locked" (GOV-35).
+
+Each line lives where its response schema has the field. The alarm path lines are `doctor` checks; the `status` schema has no monitoring lines. Of the per tenant limits, `doctor` and the `apply` lint carry "improvement cycle disabled" (INS-6, not a `status` field), `status` carries "manager disabled" as the list `farm_manager_disabled`, and `commission.status` carries the commission ones (lens coverage, `shadow: off`, `commission_locked`).
 
 **Tenant debug journal.** An operator with `admin:debug` can read a tenant's attempt journals and transcripts. That is a read of the tenant's content, so the tenant decides with `Tenant.spec.operator_access.debug_journal`: `deny`, `notify` (the default: an audit record and a code message to the tenant admins) or `allow` (audit record only). An external client learns about every look into its data, and the operator can still analyze an incident. The journal is described under [People's data](#peoples-data).
 
@@ -68,7 +70,7 @@ loop_tick_age_s: {reaper: 8, delivery: 3, alarm: 11, hold: 9}
 monitor_export_age_s: {demo: 40, farm: 12}   # MON-11
 ```
 
-During a planned drain the answer is `alive: false`, `reason: draining` with `drain_until_s`, and the farm template stays quiet within that time (LCY-6). Otherwise no answer or "not alive" beyond the threshold makes the monitoring system wake people by its own path. This catches a stopped core, a hung or full store, a hung loop, a switched-off machine. The monitoring system does not run on the core machine and holds no farm credential but the `health` key; the deployment lint checks both. Each adapter process also writes a tick item once a minute, and the template raises a problem when it goes silent: then the alarm export has stopped.
+During a planned drain the answer is `alive: false`, `reason: draining` with `drain_until_s`, and the farm template stays quiet within that time (LCY-6). Otherwise no answer or "not alive" beyond the threshold makes the monitoring system wake people by its own path. This catches a stopped core, a hung or full store, a hung loop, a switched-off machine. The monitoring system does not run on the core machine and holds no farm credential but the `health` key; the deployment lint checks that no farm process but the adapter and the watchdog holds that key, while the machine the monitoring system runs on is not in the description and stays the installation's to keep (DEP-10). Each adapter process also writes a tick item once a minute, and the template raises a problem when it goes silent: then the alarm export has stopped.
 
 ### When the store is unavailable
 
@@ -416,7 +418,7 @@ spec:
 
 The only clock for deadlines is the store clock ([TIM-1](../conformance/rules.md#TIM-1)): leases, `deadline`, approval and handle deadlines, budget windows, slots, hold and retention periods. P1 answers carry remaining seconds, so a worker with a shifted clock works correctly. Contracts use UTC; a time zone is an IANA name and exists only in `Tenant.spec.timezone` (budget windows, texts for people) and `Schedule.spec.timezone` ([TIM-2](../conformance/rules.md#TIM-2), BUD-4).
 
-A schedule slot is a UTC instant with minute precision, and the slot task key is `system:schedule:<name>:<slot>` ([TIM-3](../conformance/rules.md#TIM-3), IDM-2). The slot format is part of the idempotency key, so it is fixed from v0.1: changing it later would run a slot twice at the seam. The time zone is checked against the database at `apply`; `CRON_TZ` inside `cron` is not allowed; a change applies from the next slot. Every schedule task type needs a `deadline`. A skipped slot is the event `schedule.skipped` with a reason (`dst_gap`, `waiting`, `held`, `over_capacity`) and is not caught up; `skip_if_waiting` (default `true`) skips while the previous slot's task waits or the provider circuit is open.
+A schedule slot is a UTC instant with minute precision, and the slot task key is `system:schedule:<name>:<slot>` ([TIM-3](../conformance/rules.md#TIM-3), IDM-2). The slot format is part of the idempotency key, so it is fixed from v0.1: changing it later would run a slot twice at the seam. The time zone is checked against the database at `apply`; `CRON_TZ` inside `cron` is not allowed; a change applies from the next slot. Every schedule task type needs a `deadline`. A skipped slot is the event `schedule.skipped` with a reason (`dst_gap`, `waiting`, `held`, `over_capacity`, and from v0.2 `paused` for a schedule with `paused: true`, TIM-5) and is not caught up; `skip_if_waiting` (default `true`) skips while the previous slot's task waits or the provider circuit is open.
 
 ```yaml
 # tenants/demo/schedules.yaml (fragment)
@@ -751,7 +753,7 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [OBS-8](../conformance/rules.md#OBS-8) | The store is unavailable | v0.1 | yes |
 | [OBS-9](../conformance/rules.md#OBS-9) | Three health indicators | v0.1 | no |
 | [OBS-10](../conformance/rules.md#OBS-10) | Health of plugins, channels and the provider | v0.1 | no |
-| [OBS-11](../conformance/rules.md#OBS-11) | The `doctor` and `status` lines of the alarm path per tenant | v0.1 | no |
+| [OBS-11](../conformance/rules.md#OBS-11) | The `doctor` lines of the alarm path per tenant | v0.1 | no |
 | [RET-1](../conformance/rules.md#RET-1) | A retention class for every stored object | v0.1 | yes |
 | [RET-2](../conformance/rules.md#RET-2) | Retention periods and deletion at expiry | v0.1 | yes |
 | [RET-3](../conformance/rules.md#RET-3) | Tombstones keep uniqueness | v0.1 | yes |

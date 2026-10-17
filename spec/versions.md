@@ -20,7 +20,7 @@ What the promise does not cover and may change in any 0.y.z release, with an ent
 - the fields of manifests with `apiVersion: botaru/v1alpha1`: this is an alpha version until release 1.0.0 (D-44), the changes are visible in the changelog, and `botaru/v1` after 1.0.0 follows the same addition rule;
 - fixtures, check suites and eval cases.
 
-The promise applies from the first published release 0.1.0. Before that tag (the "Unreleased" section of the changelog) the forms are still being assembled, and changes of forms are made without new major files: a removed schema, closed registry or registry value, or a schema changed incompatibly, is recorded in `spec/removed.yaml` with a reason and the deciding decisions, and `ci/check_additive.py` accepts the change only with that new entry.
+The promise applies from the first published release, 0.3.0 with the tag `v0.3.0`; the numbers 0.1.0 and 0.2.0 were never tagged. Before that tag the forms were still being assembled, and changes of forms were made without new major files: a removed schema, closed registry or registry value, or a schema changed incompatibly, was recorded in `spec/removed.yaml` with a reason and the deciding decisions, and `ci/check_additive.py` accepted the change only with that new entry. Once the repository has a tag `v<digit>...`, `ci/check_additive.py` refuses a new entry there, so a breaking change is a new major file.
 
 ## Number map
 
@@ -51,4 +51,4 @@ Only the sheets of the contract boundaries with foreign code carry a version (C1
 | `e3-tool-host.md` | 0.3.0 |
 | `e5-monitor.md` | 0.3.0 |
 
-The sheets and `spec/VERSION` carry 0.3.0, the release of skeleton v0.3 that the reference implementation claims. It is unreleased: there is no tag yet, its changes are in the "Unreleased" section of the changelog, and until the tag a change of forms is recorded in `spec/removed.yaml` as above. The machine map of the operations and their schemas lives in `spec/ports/operations.yaml`, and every row there has a `since` field.
+The sheets and `spec/VERSION` carry 0.3.0, the release of skeleton v0.3 that the reference implementation claims; its changes are in the section "0.3.0" of the changelog, and the changes after it go into "Unreleased" until the next release. An installation builds on a release in its own repository: it pins this repository at the tag `v0.3.0` and keeps its tenants' manifests, settings and keys there (D-92, [README.md](../README.md)). The machine map of the operations and their schemas lives in `spec/ports/operations.yaml`, and every row there has a `since` field.
