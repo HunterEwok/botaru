@@ -40,7 +40,7 @@ Rules of the registry (texts in [rules.md](../../conformance/rules.md)):
 - MAN-3, only additions inside a version: lint `lint:manifests/additive` and the CI step `ci/check_additive.py`.
 - MAN-8, the implementation declares the skeleton version and profiles, and the runner checks only those: lint `lint:manifests/conforms-to`.
 - MAN-11, a core rejects what it does not implement: black-box `blackbox:core/apply-later-version`.
-- MON-1, alarms to people along one installation path, through "the monitoring system" (D-66): fixture, lint and black-box `blackbox:core/alarm-path-monitor`, `blackbox:core/alarm-notice-no-monitor`.
+- MON-1, alarms to people along one installation path: the monitoring system with the profile `monitor`, otherwise `alarm_notice` (D-66, D-88): fixture, lint and black-box `blackbox:core/alarm-path-monitor`, `blackbox:core/alarm-notice-no-monitor`.
 - MON-12, alarm export to the monitoring system through E5 (D-66): fixture, lint and black-box `blackbox:monitor/export-stalled`.
 - RET-4, erase operations in every port with content (D-66): adapter and black-box `blackbox:core/erasure-v01-ports`, fixture `erasure/erasure`.
 
@@ -51,7 +51,7 @@ The skeleton checks hold the "one source per fact" side: `ci/check_text.py` chec
 ### The model first, contracts only at the boundaries
 
 - Good, because checks go where foreign code is on the other side (C10, D-114 (4)).
-- Bad, because the line between a boundary and a description is kept by hand in [spec/ports/README.md](../../spec/ports/README.md).
+- Bad, because the internal descriptions are not checked by a suite of their own (D-114).
 
 ### A checked contract for every port
 

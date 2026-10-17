@@ -23,7 +23,7 @@ The farm must get better over time (G5) without changing itself without a person
 - a bot that applies its own proposal: not recorded as compared; the skeleton text excludes it: "'The bot proposed, the bot applied' is closed by design" ([improvements.md](../improvements.md), "Why it works this way");
 - the leaver of a full commission proposed by code from forecast accuracy, with a person's button (D-115);
 - the secret mandatory vote of members that D-25 had, which D-115 replaced;
-- the service tenant `farm` holding only the seat registry, with the farm manager reading tenants through a separate reading bot (D-30, D-33);
+- the service tenant `farm` holding only the seat registry, with the farm manager reading tenants through a separate reading bot ([architecture.md](../architecture.md), the service tenant `farm`; D-30);
 - a main tenant: excluded by D-23, "There is no main tenant".
 
 ## Decision Outcome
@@ -45,7 +45,7 @@ Chosen option: "a bot proposes, code counts, a person decides; an identity grant
 - GOV-43, code proposes who leaves when a newcomer enters: fixture and black-box `blackbox:governance/accuracy-leaver`.
 - GOV-9, the case outcome after a person's button: adapter and black-box `adapter:channel/promotion-card-from-record`, `blackbox:channel/promotion-confirm-checks`.
 - IDN-9, identity and position grant no permissions: fixture and lint `gov-fx-05`.
-- IDN-10, only the core writes the seat holder: black-box `gov-fx-01`, `gov-fx-09`.
+- IDN-10, only the core writes the seat holder, up to v0.2: black-box `gov-fx-01`, `gov-fx-09`; from v0.3 IDN-16 replaces it.
 - MGR-1, one seat, one holder, one epoch: black-box `fx-mgr-01`, `fx-mgr-02`.
 - MGR-25, reading separate from deciding: lint, fixture and black-box `fx-mgr-reader-tools`, `mgr-inj-01`.
 
@@ -54,7 +54,7 @@ Chosen option: "a bot proposes, code counts, a person decides; an identity grant
 ### Code counts, a person decides
 
 - Good, because numbers, verdicts and trial outcomes are code; an injection can shift a number inside a schema but cannot add an instruction or choose an outcome ([improvements.md](../improvements.md)).
-- Bad, because review money is a budget line of its own (BUD-13).
+- Bad, because review costs need their own `review` line, which BUD-13 checks at `apply`.
 
 ### A bot that applies its own proposal
 

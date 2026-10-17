@@ -14,7 +14,7 @@ The agent runtime needs tools and a model, and both carry risk: a tool can write
 
 - the runtime must hold neither the worker token nor the provider key;
 - money and the tool catalog are decided by code in the trusted boundary;
-- a port without a second implementation should not carry a contract nobody tests;
+- a port without a second implementation should not carry a contract nobody tests.
 
 ## Considered Options
 

@@ -20,7 +20,7 @@ The farm serves several tenants on the provider API key of the organization (D-0
 ## Considered Options
 
 - a provider workspace, key and ceilings per tenant (D-42);
-- one workspace and key shared by the tenants: not recorded as compared; D-42 excludes it, "so that cache and invoices do not mix", because "the organization's limits at the provider are shared";
+- one workspace and key shared by the tenants: not recorded as compared; D-42 excludes it, "so that cache and invoices do not mix";
 - an external program as a `service` principal with its own key and groups, like a person (D-47); no alternative is recorded.
 
 ## Decision Outcome

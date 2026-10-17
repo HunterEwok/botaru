@@ -21,7 +21,7 @@ Bots must tell each other about their work, a bot sometimes needs the same step 
 
 - typed messages through the core, addressed to a role or a bot group, published at `complete` (D-14, D-32);
 - a personal address to a single bot, which [messaging.md](../messaging.md) ("Why it works this way") rejects because it "would bypass the dispatcher" (D-32);
-- a campaign as one frozen plan with one approval (D-14; the work order D-20 puts mass tasks after bot communication);
+- a campaign as one frozen plan with one approval (ORC-1, ORC-2; the work order D-20 puts mass tasks after bot communication);
 - a parent task with N children, which [coordination.md](../coordination.md) ("Why it works this way") compares with a campaign: "A campaign, not a parent with N children";
 - a strict script that the translator drafts, the core checks and a person confirms (D-15);
 - a script as code or a general process engine, which [coordination.md](../coordination.md) rejects: "A script is data, not code" and "No general process engine".

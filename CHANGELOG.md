@@ -11,7 +11,7 @@ Entries are grouped by area; within a group the newest entry comes first.
 ### Skeleton & Contracts
 
 - The ten accepted architecture decisions of the table "Decisions (ADR)" in `docs/architecture.md`, which D-86
-  (13) said would appear with the implementation, are files `docs/adr/0001` to `docs/adr/0010` in MADR 4.0.0
+  (13) said would appear with the implementation, are files 0001 to 0010 in `docs/adr/` in MADR 4.0.0
   form with the rules that confirm them; the next ADR number is 0011.
 - Skeleton release 0.3.0, unreleased: `spec/VERSION` and the contract sheets of `spec/ports/` carry 0.3.0, and
   there is no tag yet, so forms still change in place with an entry in `spec/removed.yaml`
