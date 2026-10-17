@@ -2310,9 +2310,9 @@
     rotation method of each named secret (SEC-5). The description follows
     `spec/model/deploy-topology.schema.json`, and the lint checks the facts that the schema has
     fields for; a fact the schema has no field for (for example a process kind of the agent, a
-    plugin image digest, the docker group or socket, an address of a machine) is not part of the
+    plugin image digest, the docker group or socket, an address of a described machine) is not part of the
     description and is not linted from it; the schema is closed, so a description with such a
-    field fails the schema. The schema has no process kind of the agent and no machine address, so
+    field fails the schema. The schema has no process kind of the agent and no address of the described machines, so
     the network of the agent (DEP-5) and the machine the monitoring system runs on (MON-2) are not
     linted; a later schema version that adds these fields lints them. The deployment lint checks the description before
     rollout and in `farmctl doctor` against the rules DEP-1, DEP-3, DEP-4, DEP-6, DEP-7,

@@ -11,7 +11,7 @@ Background loops are duties of the core that run by time, not by call: end expir
 - It is deterministic and works towards the desired state from the store records, without relying on missed events.
 - It is idempotent and safe with two running core copies (a lock in the store), and publishes an event for each of its transitions.
 - It fails on its own: the failure of one loop does not stop the others.
-- It marks its tick in the store. The tick age is visible in P2 `status` and `doctor` (OBS-4), and P2 `health` answers "alive" only if the store answers and every loop marked its tick in time, so a loop that failed silently is visible from outside (MON-2).
+- It marks its tick in the store. The tick age is visible in P2 `doctor` (OBS-4), and P2 `health` answers "alive" only if the store answers and every loop marked its tick in time, so a loop that failed silently is visible from outside (MON-2).
 - It changes nothing while the store is unavailable and waits until the core leaves `not_ready`.
 
 ## Loops
