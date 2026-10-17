@@ -83,6 +83,7 @@ func Main(kind string, args []string) error {
 	manifestPath := fs.String("manifest", "", "the plugin manifest tools/<plugin>/tool.yaml")
 	specRoot := fs.String("spec-root", "", "cmd: the skeleton checkout with spec/model/forbidden-programs.yaml (default: found as for the core)")
 	host := fs.String("host", "", "cmd: the catalog machine this plugin runs on")
+	programRoot := fs.String("program-root", "", "cmd: find every program under this directory (a test stand's sandbox), not on the machine")
 	results := fs.String("results", "", "checks: the results file of the checker")
 	systemctl := fs.String("systemctl", "/usr/bin/systemctl", "service: the path of systemctl")
 	queue := fs.String("queue", "", "queue: the tenant queue directory, for example /var/lib/botaru/demo/queue")
@@ -100,10 +101,13 @@ func Main(kind string, args []string) error {
 		}
 		return &UsageError{err}
 	}
-	return run(kind, *manifestPath, *specRoot, *host, *results, *systemctl, *queue, src, mon)
+	if *programRoot != "" && !filepath.IsAbs(*programRoot) {
+		return &UsageError{fmt.Errorf("-program-root must be an absolute directory")}
+	}
+	return run(kind, *manifestPath, *specRoot, *host, *results, *systemctl, *queue, *programRoot, src, mon)
 }
 
-func run(kind, manifestPath, specRoot, host, results, systemctl, queue string, src sources, mon monitorFlags) error {
+func run(kind, manifestPath, specRoot, host, results, systemctl, queue, programRoot string, src sources, mon monitorFlags) error {
 	docs, err := manifest.ReadFiles([]string{manifestPath})
 	if err != nil {
 		return err
@@ -136,7 +140,7 @@ func run(kind, manifestPath, specRoot, host, results, systemctl, queue string, s
 				}
 			}
 		}
-		c, err := plugins.NewCmd(p, host, forbidden)
+		c, err := plugins.NewCmdUnder(p, host, programRoot, forbidden)
 		if err != nil {
 			return err
 		}

@@ -201,11 +201,12 @@ func (b *Bench) collect(ctx context.Context, since time.Time, sender, key string
 }
 
 // pending says whether a case still has work: a task that is not terminal or a delivery of
-// tenant demo that is not done.
+// tenant demo that is not done. The exports of a monitoring adapter do not count: a stand with
+// the monitor profile (the simulator) exports them on its own pace.
 func (b *Bench) pending(ctx context.Context, since time.Time) (bool, error) {
 	var n int
 	err := b.st.Pool.QueryRow(ctx, `SELECT (SELECT count(*) FROM tasks WHERE tenant = 'demo' AND created_at >= $1 AND state IN ('submitted', 'working'))
-		+ (SELECT count(*) FROM deliveries WHERE tenant = 'demo' AND created_at >= $1 AND state IN ('planned', 'sending'))`, since).Scan(&n)
+		+ (SELECT count(*) FROM deliveries WHERE tenant = 'demo' AND created_at >= $1 AND state IN ('planned', 'sending') AND exec_kind <> 'monitor')`, since).Scan(&n)
 	return n > 0, err
 }
 
