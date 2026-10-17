@@ -55,7 +55,7 @@ type Meta struct {
 	Capabilities    map[string]any `json:"capabilities"`
 	Traceparent     string         `json:"traceparent,omitempty"`
 	// Resolved carries catalog fields of the arguments that a plugin needs, such as the unit
-	// of a service (implementation extension, see impl/README.md).
+	// of a service (implementation extension, see impl/ARCHITECTURE.md).
 	Resolved map[string]string `json:"botaru/resolved,omitempty"`
 	// WorkID is the id of the call, by which a plugin recognizes a repeated write (FEN-7).
 	WorkID string `json:"botaru/work_id,omitempty"`

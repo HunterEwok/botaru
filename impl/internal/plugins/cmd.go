@@ -122,7 +122,7 @@ func (c *Cmd) Call(ctx context.Context, tool string, args map[string]any, meta *
 }
 
 // expand builds the argv of a command: a placeholder element {param} takes the argument value,
-// {param.field} the catalog field the core resolved for the argument (impl/README.md). An
+// {param.field} the catalog field the core resolved for the argument (impl/ARCHITECTURE.md). An
 // element is replaced whole, never inside a string, so a value cannot become an option or a
 // second argument.
 func expand(cmd toolspec.Command, args map[string]any, meta *mcp.Meta) ([]string, error) {
