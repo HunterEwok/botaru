@@ -159,17 +159,23 @@ Scenarios and the continuous mode combine: `-scenario` runs first.
 ## The money fuse
 
 `-max-eur` is a hard cap on the spend in the store (table `spend`: reserved and settled lines with their
-corrections, without the task budget reservations). It is required with `-real`; `-mock` uses 1.00 EUR. The
-simulator reads the spend after every model call and every second. At the cap it:
+corrections, without the task budget reservations). It is required with `-real`; `-mock` uses 1.00 EUR.
+
+P4 reserves the worst case of a model call in the store before it calls the provider. The simulator stands between
+P4 and the provider and reads the spend before each call goes out, so the reading includes that call: a call whose
+worst case would reach the cap is refused with HTTP 402 and never reaches the provider. The spend is also read after
+every model call and every second. At the cap the simulator:
 
 1. holds every tenant through P2 `hold.set` with `no_enqueue`, `no_claim` and `cancel_running` (reason
    `budget_exhausted`);
-2. refuses every further model call before the provider with HTTP 402, so an attempt that runs on until its next
-   heartbeat calls no model again;
+2. refuses every further model call with HTTP 402, so an attempt that runs on until its next heartbeat calls no
+   model again;
 3. stops the director and ends the run with exit code 3.
 
-P4 reserves a call's worst case before it calls the provider, so the fuse trips early rather than late: the spend at
-the stop can be above the cap by at most the reservations of the calls already in flight.
+Calls already sent to the provider when another call reaches the cap still finish, so the real spend can pass the
+cap by what those calls cost, never by more than their reservations. The spend reported at the stop counts a call
+that was canceled while its answer was coming back at its reserved worst case, so it can be above what the provider
+charged.
 
 A real run counts the list price of `-model` in USD as EUR (a little more than it costs); `-price-in` and
 `-price-out` set the EUR per million tokens.

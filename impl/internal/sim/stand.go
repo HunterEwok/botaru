@@ -203,7 +203,7 @@ func Start(ctx context.Context, cfg Config) (_ *Stand, err error) {
 		},
 		OnBotAPI:    s.onBotAPI,
 		OnModelCall: s.onModelCall,
-		ModelGate:   func() bool { return !s.Tripped() },
+		ModelGate:   s.gate,
 	}
 	if err := os.MkdirAll(bcfg.WorkDir, 0o755); err != nil {
 		return nil, err
@@ -371,8 +371,20 @@ func (s *Stand) physics(ctx context.Context) {
 			continue
 		}
 		for _, c := range changes {
-			if err := s.Mon.Notify(ctx, w, c); err != nil && ctx.Err() == nil {
-				s.log.Addf(KindMonitor, "the problem webhook failed: %v", err)
+			// Like a Zabbix media type, the webhook is tried up to three times.
+			for try := 1; ; try++ {
+				err := s.Mon.Notify(ctx, w, c)
+				if err == nil || ctx.Err() != nil {
+					break
+				}
+				if try == 3 {
+					s.log.Addf(KindMonitor, "the problem webhook failed: %v", err)
+					break
+				}
+				select {
+				case <-ctx.Done():
+				case <-time.After(time.Duration(try) * time.Second):
+				}
 			}
 		}
 	}
@@ -408,6 +420,11 @@ func (s *Stand) queueWorker(ctx context.Context) {
 			var q queued
 			if json.Unmarshal(raw, &q) != nil {
 				_ = os.Rename(f, filepath.Join(doneDir, filepath.Base(f)+".bad"))
+				continue
+			}
+			// A retried request of a run already played is not played again.
+			if _, err := os.Stat(filepath.Join(doneDir, filepath.Base(f))); err == nil {
+				_ = os.Remove(f)
 				continue
 			}
 			s.runQueued(q)
@@ -792,6 +809,8 @@ func (s *Stand) Say(who, chat, text string) (string, error) {
 // onModelCall prints a model call: the model, the tokens, the stop reason and the tool calls
 // the model asked for.
 func (s *Stand) onModelCall(req, resp []byte, status int) {
+	// The fuse is checked after every model call as well as every second.
+	defer s.checkFuseNow()
 	var r struct {
 		Model      string  `json:"model"`
 		StopReason string  `json:"stop_reason"`
@@ -832,13 +851,40 @@ func (s *Stand) onModelCall(req, resp []byte, status int) {
 	}
 	s.log.Add(KindModel, msg, map[string]any{"model": r.Model, "input_tokens": in, "output_tokens": r.Usage.Out, "stop": r.StopReason,
 		"cost_micros": cost, "tools": tools})
-	// The fuse is checked after every model call as well as every second: P4 reserved the
-	// call's spend in the store before it called the provider.
+}
+
+// checkFuseNow checks the fuse after a model call, answered or not.
+func (s *Stand) checkFuseNow() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := s.CheckFuse(ctx); err != nil {
 		s.log.Addf(KindFuse, "the fuse check failed: %v", err)
 	}
+}
+
+// gate lets a model call reach the provider only below the cap. P4 reserved the call's worst
+// case in the store before it calls the provider, so the spend read here includes this call: a
+// call whose worst case would reach the cap is refused, and so is every call once the fuse
+// tripped. A spend that cannot be read refuses the call too.
+func (s *Stand) gate() bool {
+	if s.Tripped() {
+		return false
+	}
+	if s.cfg.MaxMicros <= 0 {
+		return true
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	n, err := s.Bench.SpendTotal(ctx)
+	if err != nil {
+		s.log.Addf(KindFuse, "the spend could not be read, the model call is refused: %v", err)
+		return false
+	}
+	if n >= s.cfg.MaxMicros {
+		go s.checkFuseNow()
+		return false
+	}
+	return true
 }
 
 // errStopped is the error of a director step after the fuse tripped.

@@ -45,7 +45,8 @@ type Log struct {
 	// quiet hides the kinds it names from the console; the file keeps every line.
 	quiet map[string]bool
 	// subs see each line, for the checks of the director.
-	subs []func(Line)
+	subs []sub
+	next int
 }
 
 // NewLog writes to the console and to the file at path ("" for none).
@@ -69,11 +70,23 @@ func (l *Log) Quiet(kind string) {
 	l.quiet[kind] = true
 }
 
-// Subscribe adds a function that sees each later line.
-func (l *Log) Subscribe(f func(Line)) {
+// Subscribe adds a function that sees each later line; the returned function removes it.
+func (l *Log) Subscribe(f func(Line)) func() {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.subs = append(l.subs, f)
+	l.next++
+	id := l.next
+	l.subs = append(l.subs, sub{id, f})
+	return func() {
+		l.mu.Lock()
+		defer l.mu.Unlock()
+		l.subs = slices.DeleteFunc(l.subs, func(s sub) bool { return s.id == id })
+	}
+}
+
+type sub struct {
+	id int
+	f  func(Line)
 }
 
 // Add writes a line.
@@ -90,7 +103,8 @@ func (l *Log) Add(kind, text string, data map[string]any) {
 		_ = l.enc.Encode(ln)
 	}
 	l.mu.Unlock()
-	for _, f := range subs {
+	for _, sb := range subs {
+		f := sb.f
 		f(ln)
 	}
 }

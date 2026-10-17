@@ -110,7 +110,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	fs.StringVar(&o.model, "model", "", "the model of every profile in a real run, for example claude-haiku-4-5-20251001")
 	fs.StringVar(&o.keyFile, "key-file", "", "a file holding the provider key, instead of $"+keyEnv)
 	fs.StringVar(&o.providerURL, "provider-url", "", "the provider address (default: the binding's own)")
-	fs.Float64Var(&o.maxEUR, "max-eur", 0, "the money fuse in EUR: at this spend in the store every tenant is held and the run stops (required with -real; 1.00 for -mock)")
+	fs.Float64Var(&o.maxEUR, "max-eur", 0, "the money fuse in EUR: no model call whose reserved worst case would reach this spend goes out; at it every tenant is held and the run stops (required with -real; 1.00 for -mock)")
 	fs.Float64Var(&o.priceIn, "price-in", 0, "the input price in EUR per million tokens (default: the list price of -model)")
 	fs.Float64Var(&o.priceOut, "price-out", 0, "the output price in EUR per million tokens (default: the list price of -model)")
 	fs.BoolVar(&o.interactive, "interactive", false, "the continuous mode with commands on the standard input (approve N, reject N, say, fault, status, quit)")
@@ -200,6 +200,10 @@ func (o *options) check() (int, error) {
 		}
 	} else if o.maxEUR == 0 {
 		o.maxEUR = 1
+	}
+	// A cap that rounds to nothing, or one past any real budget, would leave no fuse.
+	if o.maxEUR < 0.000001 || o.maxEUR > 1_000_000 {
+		return 2, errors.New("-max-eur must be between 0.000001 and 1000000")
 	}
 	if o.priceIn < 0 || o.priceOut < 0 {
 		return 2, errors.New("the prices must not be negative")
@@ -350,8 +354,7 @@ var faults = []struct {
 	{"slow-site", "alice", "/logs Why is the site so slow right now?", func(w *sim.World) { w.Faults[sim.FaultSlowSite] = true }},
 	{"disk-filling", "bob", "/logs The disk on db1 is filling up, can you free some space?", func(w *sim.World) {
 		d := w.Hosts["db1"].Disks["/data"]
-		d.TmpBytes += int64((d.FreeRatio - 0.10) * float64(d.SizeBytes))
-		d.FreeRatio = 0.10
+		d.Fill(0.10)
 		w.Faults[sim.FaultDiskFilling] = true
 	}},
 }

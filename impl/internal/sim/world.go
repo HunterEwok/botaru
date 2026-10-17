@@ -26,7 +26,7 @@ type World struct {
 	Hosts map[string]*Host `json:"hosts"`
 	// Problems are the problems of the monitoring system, newest last.
 	Problems []*Problem `json:"problems"`
-	// Series are the metric samples by "<host>/<field>", oldest first, at most maxSamples.
+	// Series are the metric samples by "<host>|<item key>", oldest first, at most maxSamples.
 	Series map[string][]Sample `json:"series"`
 	// Faults are the faults in play by name (the scenario faults of the director).
 	Faults map[string]bool `json:"faults"`
@@ -50,6 +50,16 @@ type Disk struct {
 	SizeBytes int64   `json:"size_bytes"`
 	FreeRatio float64 `json:"free_space_ratio"`
 	TmpBytes  int64   `json:"tmp_bytes"`
+}
+
+// Fill brings the disk down to the given free share with pipeline temporary files; a disk
+// already fuller stays as it is.
+func (d *Disk) Fill(free float64) {
+	if d.FreeRatio <= free {
+		return
+	}
+	d.TmpBytes += int64((d.FreeRatio - free) * float64(d.SizeBytes))
+	d.FreeRatio = free
 }
 
 // Service is one unit: active, inactive or failed, with its restarts and the time it last
@@ -90,7 +100,7 @@ type Event struct {
 	Detail string    `json:"detail"`
 }
 
-// maxSamples bounds a series: a day of samples every 30 seconds.
+// maxSamples bounds a series: 2880 steps (4 hours at the default step of 5 seconds).
 const maxSamples = 2880
 
 // Units of the demo machines.

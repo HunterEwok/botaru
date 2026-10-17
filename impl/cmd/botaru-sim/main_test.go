@@ -21,6 +21,8 @@ func TestOptions(t *testing.T) {
 		{[]string{"-scenario", "nope"}, "no scenario nope"},
 		{[]string{"-max-eur", "-1"}, "-max-eur must be a positive amount"},
 		{[]string{"-dsn", ""}, "-dsn"},
+		{[]string{"-max-eur", "0.0000001"}, "-max-eur must be between"},
+		{[]string{"-max-eur", "1e13"}, "-max-eur must be between"},
 	} {
 		var out, errb bytes.Buffer
 		code := run(c.args, strings.NewReader(""), &out, &errb)

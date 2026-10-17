@@ -790,7 +790,7 @@ func (r *recorder) RoundTrip(req *http.Request) (*http.Response, error) {
 	if r.gate != nil && !r.gate() {
 		resp = &http.Response{StatusCode: http.StatusPaymentRequired, Status: "402 Payment Required", Proto: "HTTP/1.1", ProtoMajor: 1, ProtoMinor: 1,
 			Header: http.Header{"Content-Type": {"application/json"}}, Request: req,
-			Body: io.NopCloser(strings.NewReader(`{"type":"error","error":{"type":"billing_error","message":"the money fuse of the stand is tripped"}}`))}
+			Body: io.NopCloser(strings.NewReader(`{"type":"error","error":{"type":"billing_error","message":"the money fuse of the stand refuses the call"}}`))}
 	} else {
 		resp, err = r.next.RoundTrip(req)
 	}

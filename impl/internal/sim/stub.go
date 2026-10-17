@@ -88,11 +88,8 @@ func RunStub(name, work, host string, args []string, stdout io.Writer) int {
 	return 1
 }
 
-// unitArg is the last argument after "--", else the last argument.
+// unitArg is the last argument (the unit, also after "--").
 func unitArg(args []string) string {
-	if i := slices.Index(args, "--"); i >= 0 && i+1 < len(args) {
-		return args[len(args)-1]
-	}
 	if len(args) > 0 {
 		return args[len(args)-1]
 	}
