@@ -120,6 +120,9 @@ Entries are grouped by area; within a group the newest entry comes first.
 
 ### Reference Implementation (impl/)
 
+- impl: `impl/README.md` is a short overview (programs, packages, key decisions, what is not built, checks),
+  and the subsystem notes move to `impl/ARCHITECTURE.md`, grouped by domain and written as current behaviour;
+  statements left from the v0.1 core are corrected.
 - impl: the reference core claims 0.3 (unreleased) with the profiles `core`, `monitor`, `insights`,
   `governance`, `manager`, `messaging`, `campaign`, `knowledge` and `ingress`; `spec.Ahead` is empty and the
   v0.1 and v0.2 paths are gone: no incident stops the farm manager seat (MGR-55, GOV-47), `seat.resume` takes
