@@ -51,7 +51,7 @@ The skeleton checks hold the "one source per fact" side: `ci/check_text.py` chec
 ### The model first, contracts only at the boundaries
 
 - Good, because checks go where foreign code is on the other side (C10, D-114 (4)).
-- Bad, because the internal descriptions are not checked by a suite of their own (D-114).
+- Bad, because the internal descriptions are not checked by a suite of their own (D-114 (4)).
 
 ### A checked contract for every port
 

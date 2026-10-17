@@ -21,20 +21,20 @@ The organization already has a monitoring system that watches machines, wakes pe
 ## Considered Options
 
 - alarms and liveness through the organization's monitoring system and E5 (D-59, D-60, D-62);
-- a farm watchdog of its own: D-60 cancels the earlier D-06 and records "The farm has no watchdog of its own";
+- a farm watchdog of its own inside the farm (not the deployment watchdog of D-88, which runs outside the core): D-60 cancels the earlier D-06 and records "The farm has no watchdog of its own";
 - start, stop and restart of a service from the allowed list without a card (D-67, D-68 as first written);
 - only `restart` from the list without a card, start and stop with a card (D-74 refines D-68), and a card when the task saw untrusted text (D-70, D-82).
 
 ## Decision Outcome
 
-Chosen option: "external monitoring through E5; only `restart` from the allowed list without a card", because the monitoring system already pages people reliably and a narrow, reversible action at night should not wait for a person. The monitoring system polls P2 `health` from another machine; alarms go to people only through it, exported by the E5 adapter, and an installation without one gets a minimal core delivery (D-88). The farm's account reads data, writes only its own hosts and templates, and runs scripts only on hosts of its tenant's catalog (D-69). A restart from the catalog's allowed list goes without a card when the role has the right and the initiator has `service.control:<service>`; with untrusted text in the task it becomes a card, and a problem from the tenant's own monitoring triggers does not count as untrusted (D-82).
+Chosen option: "external monitoring through E5; only `restart` from the allowed list without a card", because the monitoring system already pages people reliably and a narrow, reversible action at night should not wait for a person. The monitoring system polls P2 `health` from another machine (without the profile `monitor`, the deployment watchdog `kind: watch` does, MON-2, D-88); alarms go to people only through it, exported by the E5 adapter, and an installation without one gets a minimal core delivery (D-88). The farm's account reads data, writes only its own hosts and templates, and runs scripts only on hosts of its tenant's catalog (D-69). A restart from the catalog's allowed list goes without a card when the role has the right and the initiator has `service.control:<service>`; with untrusted text in the task it becomes a card, and a problem from the tenant's own monitoring triggers does not count as untrusted (D-82).
 
 ### Consequences
 
 - Good, because people acknowledge and silence alarms in one system, and the farm adds tasks, bots, money and the commission.
 - Good, because a night restart does not wait, and every action is visible in the audit, the task log and a note in the monitoring system.
 - Good, because a stolen farm account cannot close problems or run scripts on farm nodes.
-- Bad, because an installation depends on the monitoring system for liveness, or takes the reduced single-server path of D-88.
+- Bad, because an installation depends on the monitoring system for liveness, or takes the reduced path without a monitoring system of D-88.
 - Bad, because item values and log lines from monitoring stay untrusted, so many restarts still need a card.
 
 ### Confirmation
