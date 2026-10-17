@@ -12,13 +12,13 @@ Four layers:
 2. **Ports**: the contracts at the boundaries with foreign code (P1, E1, P3 with E3, P4, E5) and the descriptions of how the core is built (`spec/ports/`).
 3. **Contracts and checks**, the machine layer: JSON Schema for data and manifests, closed registries, assembled lifecycles, port bindings, fixtures, conformance suites, eval cases and the `ci/` checks (`spec/`, `conformance/`, `evals/`, `ci/`).
 
-4. **Implementation**: the reference implementation in Go (`impl/`, decisions D-91 to D-93 in `docs/decisions.md`). It claims skeleton 0.3 (unreleased) with the profiles `core`, `monitor`, `insights`, `governance`, `manager`, `messaging`, `campaign`, `knowledge` and `ingress`. The programs are the core `botaru-core`, the operator tool `farmctl`, the workers `botaru-agent`, `botaru-telegram`, `botaru-toolhost`, `botaru-zabbix`, `botaru-ingress` and `botaru-kbjob`, the own plugins `botaru-plugin`, the eval runner `botaru-eval` with the mock provider `botaru-mockmodel`, and the black-box conformance runner `internal/conform`. See [impl/README.md](impl/README.md) and, for a server, [impl/DEPLOY.md](impl/DEPLOY.md).
+4. **Implementation**: the reference implementation in Go (`impl/`, decisions D-91 to D-93 in `docs/decisions.md`). It claims skeleton 0.3 (unreleased) with the profiles `core`, `monitor`, `insights`, `governance`, `manager`, `messaging`, `campaign`, `knowledge` and `ingress`. The programs are the core `botaru-core`, the operator tool `farmctl`, the workers and adapters `botaru-agent`, `botaru-telegram`, `botaru-toolhost`, `botaru-zabbix`, `botaru-ingress` and `botaru-kbjob`, `botaru-plugin`, which serves the own plugins, and the eval runner `botaru-eval` with the mock provider `botaru-mockmodel`; the black-box conformance runner is the package `internal/conform`, run by `go test`. See [impl/README.md](impl/README.md) and, for a server, [impl/DEPLOY.md](impl/DEPLOY.md).
 
 There are also examples on the training tenants `demo` and `demo2` (`examples/`).
 
 ## What is not here
 
-Installation files (tenants, keys, machines, people) never go into this repository: an installation keeps its manifests in its own repository and checks them with `ci/` (D-92). There is no release tag yet: 0.3.0 is unreleased, so forms may still change in place with an entry in `spec/removed.yaml` ([spec/versions.md](spec/versions.md)). No paid eval run with a real model has been made for the claim of the reference core; its eval rules are listed as not run in [impl/README.md](impl/README.md#eval-rules-not-run). What the reference core does not build yet is listed in [impl/README.md](impl/README.md#not-in-this-version).
+Installation files (tenants, keys, machines, people) never go into this repository: an installation keeps its manifests in its own repository (D-92) and checks them from there with `ci/` (D-87). There is no release tag yet: 0.3.0 is unreleased, so forms may still change in place with an entry in `spec/removed.yaml` ([spec/versions.md](spec/versions.md)). No paid eval run with a real model has been made for the claim of the reference core; its eval rules are listed as not run in [impl/README.md](impl/README.md#eval-rules-not-run). What the reference core does not build yet is listed in [impl/README.md](impl/README.md#not-in-this-version).
 
 The executable code is the reference implementation in `impl/` with its own checks (`.github/workflows/go.yml`) and the `ci/` checks of the skeleton that run on every pull request (`.github/workflows/skeleton.yml`). The `ci/` checks see the shape of files; the behaviour of a bot, MCP calls and delivery are checked by the conformance runner and the evals of an implementation.
 
@@ -60,7 +60,7 @@ python3 -I ci/readiness.py v0.1   # 377 rules on 2026-10-17: 21, 162 and 194; co
 python3 -I ci/readiness.py v0.3   # 30 rules on 2026-10-17: 0, 0 and 30; core waivable: false by a description only 1 of 1
 ```
 
-A version's report counts only the rules of that version; an implementation claiming v0.3 keeps the rules of v0.1, v0.2 and v0.3. What the reference core passes on the conformance runner is in [impl/README.md](impl/README.md#rule-coverage).
+A version's report counts only the rules of that version; an implementation claiming v0.3 keeps the rules of v0.1, v0.2 and v0.3, except those whose `until` is earlier (D-113). What the reference core passes on the conformance runner is in [impl/README.md](impl/README.md#rule-coverage).
 
 ## Layout
 
@@ -90,10 +90,10 @@ A version's report counts only the rules of that version; an implementation clai
 
 | Version | In short |
 |---|---|
-| v0.1 | model, ports and their sheets, the core and the first bot, bot messaging, stop, the improvement cycle with the trial outcome of a change, retention and deletion, money in micro-euros (`eur_micros`, D-87), plugin placement, notices for people and the privacy block; then contracts without procedures: campaigns, scripts and the translator, the farm manager seat, bot identity and memory |
+| v0.1 | model, ports and their sheets, the core and the first bot, bot messaging, stop, the improvement cycle with the trial outcome of a change, retention and deletion, money in euro cents (call usage in micro-euros `eur_micros`, D-87), plugin placement, notices for people and the privacy block; then contracts without procedures: campaigns, scripts and the translator, the farm manager seat, bot identity and memory |
 | v0.2 | commission and promotion procedures, model grants, metrics and escalation, tenant lifecycles, knowledge and skills, people's rights to their data |
-| v0.3 | the commission answers for its outcomes: every review is a forecast scored by code, member accuracy, a stronger model for the most accurate member (D-109 to D-113); links between incidents and rejected proposals confirmed by a person, the farm manager's restricted mode, takeover, monthly line and incident analysis, auto-hold of a role, replay of a rejected change, translator checks from confirmed script incidents and the incident `cause` (D-118) |
-| v0.4 | the simplification (D-114): the goals and constraints of the farm in `docs/goals.md` with a `goal` on every rule, contracts with checks only at the boundaries, deferred rules (`conformance/deferred.md`), rules that end without a replacement, the commission without a vote (D-115, D-116), simpler money and reports; it adds no rules of its own yet |
+| v0.3 | the commission answers for its outcomes: every review is a forecast scored by code and each member has an accuracy (D-109); code finds links between incidents and rejected proposals and a person confirms them; the farm manager's restricted mode after a preventable incident, takeover, monthly line and incident analysis (D-110); the candidate link of an incident to a script run and the card marks of a run (D-112); resubmission of a rejected proposal and the farm guards of every trial; the incident `cause` (D-118) |
+| v0.4 | the simplification (D-114): the goals and constraints of the farm in `docs/goals.md` with a `goal` on every rule, contracts with checks only at the boundaries, deferred rules (`conformance/deferred.md`), rules that end without a replacement, the commission without a vote (D-115), simpler money and reports; it adds no rules of its own yet |
 
 A version says from which release the conformance suite checks a rule. What compatibility promises before 1.0.0 is written in [spec/versions.md](spec/versions.md).
 
