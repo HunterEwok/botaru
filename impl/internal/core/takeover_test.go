@@ -8,7 +8,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/HunterEwok/botaru/impl/internal/ids"
+	"github.com/HunterEwok/botaru/impl/internal/money"
 )
 
 // grantManagers adds a group with model_grant.manage and puts a new person with telegram:1002
@@ -156,5 +159,126 @@ metadata: {name: t1}
 spec: {kind: test, timezone: UTC, takeover: {types: [hello.greet.v1], confirm_above_eur: 5}}
 `); !strings.Contains(strings.Join(codes, ","), "takeover_confirm_threshold") {
 		t.Fatalf("lint %v", codes)
+	}
+}
+
+// A takeover from v0.3 is paid from the manager line, at most takeover.max_eur each and
+// takeover.manager_month_eur a month with the others staged, pending or approved (MGR-48).
+func TestTakeoverCeilingsV03(t *testing.T) {
+	ctx := context.Background()
+	b := newManagerBench(t)
+	if takeoverLine() != "manager" {
+		t.Fatal("line")
+	}
+	tv := &TenantView{Name: "demo", Raw: map[string]any{"spec": map[string]any{"takeover": map[string]any{"manager_month_eur": 10.0, "max_eur": 5.0}}}}
+	fits := func(eur float64, self ...string) bool {
+		var ok bool
+		err := b.c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+			var err error
+			ok, err = takeoverFits(ctx, tx, now, tv, money.FromEUR(eur), self...)
+			return err
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ok
+	}
+	if fits(5.5) || !fits(4) {
+		t.Fatal("max_eur")
+	}
+	for i, id := range []string{"tko_a", "tko_b"} {
+		if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO takeovers (id, tenant, task, type, seat_task, lease_no, profile, state, estimate_micros, nonce, created_at, updated_at)
+			VALUES ($1, 'demo', $2, 'hello.v1', 't_seat', $4, 'manager-std', $3, 4000000, 'n', botaru_now(), botaru_now())`, id, "t_"+id, []string{"approved", "pending"}[i], i); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if fits(4) || !fits(2) || !fits(4, "tko_b") {
+		t.Fatal("manager_month_eur")
+	}
+	cat, err := b.c.Catalog(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := takeoverEvalPassed(cat, "demo", "hello", "manager-std"); err != nil || ok {
+		t.Fatalf("eval gate without a report %v %v", ok, err)
+	}
+}
+
+// From v0.3 a takeover grant goes only to the role its eval gate checked (MGR-48).
+func TestTakeoverGrantRoleV03(t *testing.T) {
+	ctx := context.Background()
+	b := newManagerBench(t)
+	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO model_grants (id, tenant, task, role, kind, line, profile, attempts, attempts_left, estimate_micros, cap_micros, expires_at,
+		decided_at, state, created_at, updated_at) VALUES ('mg_x', 'demo', 't_x', 'hello', 'takeover', 'manager', 'manager-std', 1, 1, 1000, 1000, botaru_now() + interval '1 hour',
+		botaru_now(), 'approved', botaru_now(), botaru_now())`); err != nil {
+		t.Fatal(err)
+	}
+	cat, err := b.c.Catalog(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claim := func(role string) bool {
+		var ok bool
+		err := b.c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+			var err error
+			_, ok, err = claimGrant(ctx, tx, now, cat, "demo", "t_x", role)
+			return err
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ok
+	}
+	if claim("other") || !claim("hello") {
+		t.Fatal("takeover grant role")
+	}
+}
+
+// From v0.3 every takeover counts in farm.takeover.count, a series without an outcome block, and
+// the lease, task and event points of a takeover task stay out of the trial computations of the
+// role (MGR-48, PRP-22).
+func TestTakeoverSeriesV03(t *testing.T) {
+	ctx := context.Background()
+	b := newManagerBench(t)
+	cat, err := b.c.Catalog(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, ok := b.c.tenantSeries(cat, "demo")[seriesTakeoverCount]
+	if !ok || d.Outcome != nil || d.CatalogKind != "task_type" {
+		t.Fatalf("series %+v %v", d, ok)
+	}
+	if err := b.c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+		for range 2 {
+			if err := takeoverPoint(ctx, tx, now, "demo", "hello.greet.v1", "hello", "tko_x"); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM obs_points WHERE series = $1 AND subject = 'task_type:hello.greet.v1' AND role = 'hello' AND num = 1`,
+		seriesTakeoverCount).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("takeover points %d %v", n, err)
+	}
+	took, other := b.hello(t, "u1"), b.hello(t, "u2")
+	b.exec(t, `UPDATE tasks SET record = record || jsonb_build_object('takeover_of', $2::text) WHERE id = $1`, took, other)
+	b.exec(t, `INSERT INTO events (id, tenant, type, source, time, data) VALUES ('evt_take', 'demo', $1, 'core', botaru_now(), jsonb_build_object('task', $2::text))`,
+		runFinishedType, took)
+	for _, key := range []string{"task:" + took, "lease:" + took + ":1", "event:evt_take", "task:" + other} {
+		b.exec(t, `INSERT INTO obs_points (tenant, series, subject, at, num, source, data_mark, key, created_at)
+			VALUES ('demo', 'farm.task.attempts', 'task_type:hello.greet.v1', botaru_now() - interval '1 minute', 2, 'core', 'internal', $1, botaru_now())`, key)
+	}
+	s := seriesDef{Name: "farm.task.attempts", Outcome: &seriesOutcome{Compare: "window.mean"}}
+	if err := b.c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+		v, err := trialValue(ctx, tx, "demo", s, "task_type:hello.greet.v1", now.Add(-time.Hour), now.Add(time.Second), "", "")
+		if err == nil && v["samples"] != 1 {
+			t.Errorf("trial samples %v, want only the point of the other task", v)
+		}
+		return err
+	}); err != nil {
+		t.Fatal(err)
 	}
 }

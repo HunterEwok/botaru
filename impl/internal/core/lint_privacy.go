@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -298,4 +299,28 @@ func (c *Core) privacyNotices(ctx context.Context, tx pgx.Tx, now time.Time, cat
 		}
 	}
 	return nil
+}
+
+// reProviderName is the shape of a provider name that may name a binding note: one path segment.
+var reProviderName = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+
+// nonEURegion says whether a region of a provider is outside the EU by the provider binding's
+// table: a row of the "Region" section of spec/bindings/model-providers/<provider>.md whose
+// name does not start with eu, as ci/check_manifests.py reads it (D-86 (6), GW-14). A provider
+// without a binding note, such as the test providers of the examples, has no such region.
+func (c *Core) nonEURegion(provider, region string) bool {
+	return region != "" && c.bindingRegions(provider)[region] && !strings.HasPrefix(region, "eu")
+}
+
+// transferBasis says whether the tenant spec has a model_transfer entry for the provider (all
+// its regions or this one) or for the region without a provider (GW-14, D-87 (2)).
+func transferBasis(ts map[string]any, provider, region string) bool {
+	for _, e := range mlist(ts, "model_transfer") {
+		em, _ := e.(map[string]any)
+		p, r := mstr(em, "provider"), mstr(em, "region")
+		if p == provider && (r == "" || r == region) || p == "" && r == region {
+			return true
+		}
+	}
+	return false
 }

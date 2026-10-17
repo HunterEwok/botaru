@@ -192,3 +192,63 @@ func TestDeploySecretScopes(t *testing.T) {
 		t.Errorf("provider key %+v", got)
 	}
 }
+
+// The core refuses to start with a failing deployment description or one whose farm nodes
+// differ from the settings, and doctor lints it again (DEP-10, DEP-11).
+func TestDeployStartAndDoctor(t *testing.T) {
+	dir := t.TempDir()
+	good, bad := filepath.Join(dir, "good.yaml"), filepath.Join(dir, "bad.yaml")
+	if err := os.WriteFile(good, []byte(deployBase), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(bad, []byte(strings.Replace(deployBase, "user: botaru-ch, ", "", 1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	checks := func(c *Core) map[string]DoctorCheck {
+		out := map[string]DoctorCheck{}
+		c.doctorDeploy(func(ch DoctorCheck) { out[ch.ID] = ch })
+		return out
+	}
+	c := lintCore(t)
+	c.cfg.DeployFile = bad
+	if err := c.loadDeploy(); err == nil {
+		t.Fatal("a failing description started")
+	}
+	if ch := checks(c); ch["deploy.lint"].OK || ch["deploy.process_user_missing"].Severity != "fail" {
+		t.Fatalf("doctor %+v", ch)
+	}
+	c = lintCore(t, "core2")
+	c.cfg.DeployFile = good
+	if err := c.loadDeploy(); err == nil || !strings.Contains(err.Error(), "farm_hosts") {
+		t.Fatalf("farm_hosts mismatch: %v", err)
+	}
+	// The core's secrets fail closed (SEC-6): one that is neither a provider key nor the core's
+	// own stops the start, and so does a provider key the core does not hold.
+	c = lintCore(t)
+	c.cfg.DeployFile = good
+	if err := c.loadDeploy(); err == nil || !strings.Contains(err.Error(), "store-core") {
+		t.Fatalf("an unknown core secret: %v", err)
+	}
+	c = lintCore(t)
+	c.cfg.DeployFile, c.cfg.CoreSecrets = good, []string{"store-core"}
+	c.cfg.ProviderKeySecrets = map[string][]string{"anthropic-demo": {"demo"}}
+	if err := c.loadDeploy(); err == nil || !strings.Contains(err.Error(), "anthropic-demo") {
+		t.Fatalf("a provider key outside the description: %v", err)
+	}
+	// The shipped compose description with the secrets of compose core.yaml starts.
+	c = lintCore(t)
+	c.cfg.DeployFile = filepath.Join(c.spec.Root, "impl/deploy/compose/deploy.yaml")
+	c.cfg.CoreSecrets = []string{"operator", "store-dsn", "token-key"}
+	c.cfg.ProviderKeySecrets = map[string][]string{"provider-key-demo": {"demo"}}
+	if err := c.loadDeploy(); err != nil {
+		t.Fatalf("compose: %v", err)
+	}
+	c = lintCore(t)
+	c.cfg.DeployFile, c.cfg.CoreSecrets = good, []string{"store-core"}
+	if err := c.loadDeploy(); err != nil || c.deploy == nil || !slices.Equal(c.cfg.FarmHosts, []string{"core1"}) {
+		t.Fatalf("good description: %v %v", err, c.cfg.FarmHosts)
+	}
+	if ch := checks(c); !ch["deploy.lint"].OK {
+		t.Fatalf("doctor %+v", ch)
+	}
+}

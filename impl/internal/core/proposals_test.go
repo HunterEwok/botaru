@@ -501,3 +501,39 @@ func TestSelfInfluencePartial(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// A bot has one open proposal on top of the role limits: the second body of the same analysis
+// is refused proposal_rate_limited; a proposal parked as conflict behind another author's
+// change does not take the slot (PRP-16).
+func TestProposalOnePerBot(t *testing.T) {
+	ctx := context.Background()
+	b := newInsightBench(t, map[string]any{"max_open_proposals": 5})
+	b.helloDone(t, "1", "", "hi")
+	b.loop(t, "observe")
+	if _, err := b.analysis(t, "1", false, map[string]any{"proposals": []any{noneBody("one", 1), noneBody("two", 1)}}); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(proposals(t, b)); n != 1 {
+		t.Fatalf("records %d", n)
+	}
+	if got := rejections(t, b); len(got) != 1 || got[0] != "proposal_rate_limited" {
+		t.Fatalf("rejections %v", got)
+	}
+	// The open one waits behind another author's change: the bot may propose again.
+	holder := ids.New(ids.Proposal)
+	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO proposals (id, tenant, role, worker, task, fingerprint, kind, state, record, created_at, updated_at, state_at)
+		SELECT $1, tenant, role, worker, task, 'other', kind, 'realizing', jsonb_set(record, '{origin,acting_bot}', to_jsonb($2::text)), created_at, updated_at, state_at FROM proposals`,
+		holder, ids.New(ids.Bot)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE proposals SET state = 'parked', record = record || jsonb_build_object('state', 'parked', 'state_reason', 'conflict', 'conflicts_with', jsonb_build_array($1::text))
+		WHERE id <> $1`, holder); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.analysis(t, "2", false, map[string]any{"proposals": []any{noneBody("three", 1)}}); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(proposals(t, b)); n != 3 {
+		t.Fatalf("records %d, rejections %v", n, rejections(t, b))
+	}
+}

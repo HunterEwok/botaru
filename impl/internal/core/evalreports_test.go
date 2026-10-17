@@ -217,3 +217,38 @@ func TestSeatEvalGate(t *testing.T) {
 		t.Fatal("the seat task waits with a passing seat eval")
 	}
 }
+
+// From v0.3 a change of the farm manager persona hash changes the seat fingerprint, so the seat
+// tasks of a production tenant wait with seat_eval_missing until a new mgr-inj report (GOV-45,
+// MGR-23).
+func TestManagerPersonaEvalV03(t *testing.T) {
+	ctx := context.Background()
+	b := newManagerBench(t)
+	w := b.enroll(t, EnrollRequest{Tenant: "demo", Kind: "agent", Role: "farm-manager"})
+	b.exec(t, `UPDATE manifests SET doc = jsonb_set(doc, '{spec,kind}', '"production"') WHERE kind = 'Tenant' AND name = 'demo'`)
+	fp, err := seatFingerprint(b.catalog(t), "manager-std")
+	if err != nil || fp == "" {
+		t.Fatalf("fingerprint %q %v", fp, err)
+	}
+	b.setStoredDoc(t, "EvalReports", "", "evals", `{"apiVersion": "botaru/v1alpha1", "kind": "EvalReports", "metadata": {"name": "evals"},
+		"spec": {"reports": [{"fingerprint": "`+fp+`", "subject": {"kind": "seat", "name": "manager-std"}, "suite": "mgr-inj", "date": "2026-10-02", "cases": 12, "failures": 0, "security_failures": 0}]}}`)
+	b.exec(t, `UPDATE manifests SET doc = jsonb_set(doc, '{spec,farm_manager,persona}', jsonb_build_object('ref', 'personas/manager.md', 'sha256', $1::text))
+		WHERE kind = 'Governance' AND tenant = 'farm'`, strings.Repeat("a", 64))
+	b.exec(t, `UPDATE apply_status SET set_hash = set_hash || 'x'`)
+	fp2, err := seatFingerprint(b.catalog(t), "manager-std")
+	if err != nil || fp2 == fp {
+		t.Fatalf("the persona hash does not move the seat fingerprint: %v", err)
+	}
+	b.diskAlarm(t, true, 3)
+	b.advance(t, 6*60)
+	b.loop(t, "incident")
+	if _, err := b.c.SeatAssign(ctx, b.farmOp(), SeatRequest{Seat: managerSeatID}); err != nil {
+		t.Fatal(err)
+	}
+	if item := b.claim(t, w, "attempt"); item != nil {
+		t.Fatal("a seat task was handed out after the persona changed")
+	}
+	if n := b.count(t, `SELECT count(*) FROM tasks WHERE tenant = 'demo' AND type = $1 AND reason = 'seat_eval_missing'`, incidentRespondType); n == 0 {
+		t.Fatalf("waiting seat tasks %d", n)
+	}
+}

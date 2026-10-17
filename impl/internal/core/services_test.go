@@ -9,6 +9,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/HunterEwok/botaru/impl/internal/ids"
 	"github.com/HunterEwok/botaru/impl/internal/manifest"
@@ -402,4 +405,57 @@ func TestRunMarkedHost(t *testing.T) {
 	if a = b.approval(t, id); a.State != "executing" {
 		t.Fatalf("approval %s %s", a.State, a.Reason)
 	}
+}
+
+// FEN-7: the service_grant record whose number a bot's write call carries names, beside the
+// bot as author, the initiator whose own right service.control:<service> the run stands on
+// (D-73); a person's own call names the person.
+func TestServiceGrantInitiator(t *testing.T) {
+	ctx := context.Background()
+	b := newServiceBench(t)
+	_, h := b.attemptTools(t, "2", true)
+	ch := callAsync(b.bench, h, mcp.CallParams{Name: serviceToolName, Arguments: map[string]any{"service": "nginx", "verb": "restart"}})
+	item := b.claimTool(t, b.svc)
+	if _, err := b.c.Complete(ctx, b.svc, header(t, item), CompleteRequest{Output: map[string]any{"content": []any{}, "structuredContent": map[string]any{"state": "active"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := <-ch; got.err != nil {
+		t.Fatal(got.err)
+	}
+	gs := b.grants(t)
+	if len(gs) != 1 {
+		t.Fatalf("grants %v", gs)
+	}
+	g := gs[0]["service_grant"].(map[string]any)
+	if g["author"].(map[string]any)["kind"] != "bot" || g["initiator"] != b.alice || gs[0]["target"].(map[string]any)["id"] != item.Payload["grant_id"] {
+		t.Fatalf("FEN-7: grant %v, write call %v", g, item.Payload["grant_id"])
+	}
+	validOut(t, b.bench, "audit-record", gs[0])
+}
+
+// FEN-7: every service_grant record names an initiator: a bot's grant whose task has no
+// initiator names the bot itself, and the author kind follows the author's principal, so an
+// operator credential of an external program is not recorded as a person.
+func TestServiceGrantInitiatorFallback(t *testing.T) {
+	ctx := context.Background()
+	b := newServiceBench(t)
+	for p, want := range map[string]string{"human:p_01JB00000000000000000000A1": "human", "bot:bot_01jb": "bot", "worker:wk_01": "bot", "service:ci-exporter": "service", "system": "service"} {
+		if got := grantAuthorKind(p); got != want {
+			t.Errorf("FEN-7: author kind of %s is %s", p, got)
+		}
+	}
+	bot := "bot:bot_01jbtest"
+	if err := b.c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+		_, err := b.c.writeGrant(ctx, tx, now, "demo", map[string]any{"kind": "bot", "principal": bot}, Actor{Principal: bot, Via: "bot"},
+			map[string]any{"service": "nginx", "verb": "restart", "initiator": ""}, "sha256:"+strings.Repeat("0", 64))
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	gs := b.grants(t)
+	g := gs[len(gs)-1]["service_grant"].(map[string]any)
+	if g["initiator"] != bot {
+		t.Fatalf("FEN-7: a grant without a task initiator %v", g)
+	}
+	validOut(t, b.bench, "audit-record", gs[len(gs)-1])
 }

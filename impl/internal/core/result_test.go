@@ -290,3 +290,26 @@ func TestResultSchemaFixedAtClaim(t *testing.T) {
 		t.Fatalf("a result valid for the type at claim: %v", err)
 	}
 }
+
+// The result schema a runtime may send for constrained decoding is only a hint: a result that
+// the projection of the attempt accepts, where x-botaru-format is no assertion, is still
+// checked against the full schema at complete and refused (OUT-2, OUT-1).
+func TestResultProjectionHint(t *testing.T) {
+	ctx := context.Background()
+	b := newBench(t)
+	applyResultCheckSet(t, b)
+	b.hello(t, "41")
+	att := b.claim(t, b.agent, "attempt")
+	proj, _ := att.Payload["result_schema"].(map[string]any)
+	if proj == nil {
+		t.Fatalf("no projection: %v", att.Payload)
+	}
+	result := map[string]any{"answer": "a", "month": "2026-13"}
+	if err := b.c.rs.validate(proj, result); err != nil {
+		t.Fatalf("the projection refused the result: %v", err)
+	}
+	_, err := b.c.Complete(ctx, b.agent, header(t, att), CompleteRequest{Result: result})
+	if p, _ := AsProblem(err); p == nil || p.Reason != "output_schema_invalid" {
+		t.Fatalf("complete: %v", err)
+	}
+}
