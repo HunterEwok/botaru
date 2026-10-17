@@ -13,27 +13,7 @@ import (
 
 	"github.com/HunterEwok/botaru/impl/internal/manifest"
 	"github.com/HunterEwok/botaru/impl/internal/money"
-	"github.com/HunterEwok/botaru/impl/internal/spec"
 )
-
-// withV03 makes the core claim v0.3 for the rest of the test. Benches apply their catalog
-// before the override, so the v0.3 lint of the bench manifests stays out of these tests.
-func withV03(t *testing.T) {
-	t.Helper()
-	setClaimsV03(t, true)
-}
-
-// setClaimsV03 makes claimsV03 answer on (or off) for the rest of the test, whatever the claimed
-// version.
-func setClaimsV03(t *testing.T, on bool) {
-	t.Helper()
-	v := "v0.2"
-	if on {
-		v = "v0.3"
-	}
-	prev := spec.SetClaimOverride(v)
-	t.Cleanup(func() { spec.SetClaimOverride(prev) })
-}
 
 // accountableEdit marks the disk class manager_accountable and adds disk_filling on the same
 // alarm (MGR-55, MGR-45).
@@ -79,7 +59,6 @@ func restricted(t *testing.T, b *bench, tenant, incident string) bool {
 func TestManagerPreventableV03(t *testing.T) {
 	ctx := context.Background()
 	// manager_accountable is a v0.3 field, which apply accepts only under the v0.3 claim (MAN-11).
-	withV03(t)
 	b := newManagerBenchWith(t, nil, []map[string]any{fillingClass()}, accountableEdit)
 	op := b.farmOperator(t)
 	if _, err := b.c.SeatAssign(ctx, b.farmOp(), SeatRequest{Seat: managerSeatID}); err != nil {
@@ -166,18 +145,18 @@ func TestManagerPreventableV03(t *testing.T) {
 	}
 }
 
-// Before v0.3 seat.resume takes no tenant and stops_manager still answers for the manager
-// (GOV-22).
-func TestManagerPreventableV01(t *testing.T) {
-	setClaimsV03(t, false)
+// The v0.1 forms of the manager are gone at the v0.3 claim: seat.resume without a tenant is
+// refused, stops_manager does not answer for the manager while manager_accountable does, and a
+// takeover is paid from the manager line (GOV-47, MGR-55, MGR-48).
+func TestManagerV01FormsGone(t *testing.T) {
 	b := newManagerBench(t)
-	_, err := b.c.SeatResume(context.Background(), b.farmOp(), SeatResumeRequest{Seat: managerSeatID, Tenant: "demo"})
+	_, err := b.c.SeatResume(context.Background(), b.farmOp(), SeatResumeRequest{Seat: managerSeatID, Incident: "inc_x"})
 	wantReason(t, err, "input_schema_invalid")
-	if !managerClass(map[string]any{"stops_manager": true}) || managerClass(map[string]any{"manager_accountable": true}) {
-		t.Fatal("managerClass v0.1")
+	if managerClass(map[string]any{"stops_manager": true}) || !managerClass(map[string]any{"manager_accountable": true}) {
+		t.Fatal("managerClass at v0.3")
 	}
-	if restricted(t, b, "demo", "") || takeoverLine() != "takeover" {
-		t.Fatal("v0.1 paths")
+	if takeoverLine() != "manager" {
+		t.Fatal("the takeover line at v0.3")
 	}
 }
 
@@ -196,7 +175,6 @@ func TestPreventableRepeats(t *testing.T) {
 func TestTakeoverCeilingsV03(t *testing.T) {
 	ctx := context.Background()
 	b := newManagerBench(t)
-	withV03(t)
 	if takeoverLine() != "manager" {
 		t.Fatal("line")
 	}
@@ -239,7 +217,6 @@ func TestTakeoverCeilingsV03(t *testing.T) {
 func TestManagerMonthLineV03(t *testing.T) {
 	ctx := context.Background()
 	b := newManagerBench(t)
-	withV03(t)
 	day, month := 100.0, 10.0
 	tv := &TenantView{Name: "demo"}
 	tv.Spec.Budgets.Lines = map[string]manifest.LineBudget{"manager": {DayEUR: &day, MonthEUR: &month}}
@@ -299,10 +276,6 @@ func TestManagerLineShortV03(t *testing.T) {
 	ts := func(day, month float64) map[string]any {
 		return map[string]any{"budgets": map[string]any{"lines": map[string]any{"manager": map[string]any{"day_eur": day, "month_eur": month}}}}
 	}
-	if got := managerLineShort(ts(0.5, 5), fm, profile); len(got) != 0 {
-		t.Fatalf("v0.1 %v", got)
-	}
-	withV03(t)
 	if got := managerLineShort(ts(0.5, 5), fm, profile); !slices.Contains(got, "/budgets/lines/manager/day_eur") || !slices.Contains(got, "/budgets/lines/manager/month_eur") {
 		t.Fatalf("v0.3 short %v", got)
 	}
@@ -351,7 +324,6 @@ func TestManagerAttentionV03(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	withV03(t)
 	w := b.enroll(t, EnrollRequest{Tenant: "demo", Kind: "agent", Role: "farm-manager"})
 	if _, err := b.c.SeatAssign(ctx, b.farmOp(), SeatRequest{Seat: managerSeatID}); err != nil {
 		t.Fatal(err)
@@ -434,7 +406,6 @@ func TestManagerAttentionCardLimitV03(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	withV03(t)
 	w := b.enroll(t, EnrollRequest{Tenant: "demo", Kind: "agent", Role: "farm-manager"})
 	if _, err := b.c.SeatAssign(ctx, b.farmOp(), SeatRequest{Seat: managerSeatID}); err != nil {
 		t.Fatal(err)
@@ -519,7 +490,6 @@ func claimPostmortem(ms []map[string]any) {
 func TestPostmortemOnceV03(t *testing.T) {
 	ctx := context.Background()
 	b := newManagerBenchWith(t, nil, []map[string]any{postmortemDoc()}, claimPostmortem)
-	withV03(t)
 	cycle := func(free float64) {
 		b.diskAlarm(t, true, free)
 		b.advance(t, 6*60)
@@ -594,7 +564,6 @@ func TestPostmortemOnceV03(t *testing.T) {
 func TestTakeoverGrantRoleV03(t *testing.T) {
 	ctx := context.Background()
 	b := newManagerBench(t)
-	withV03(t)
 	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO model_grants (id, tenant, task, role, kind, line, profile, attempts, attempts_left, estimate_micros, cap_micros, expires_at,
 		decided_at, state, created_at, updated_at) VALUES ('mg_x', 'demo', 't_x', 'hello', 'takeover', 'manager', 'manager-std', 1, 1, 1000, 1000, botaru_now() + interval '1 hour',
 		botaru_now(), 'approved', botaru_now(), botaru_now())`); err != nil {

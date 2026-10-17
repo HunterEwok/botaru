@@ -92,7 +92,7 @@ func (s *Server) p2(w http.ResponseWriter, r *http.Request) {
 		Problem(w, &core.Problem{Reason: "unauthenticated", Detail: "unknown P2 credentials"})
 		return
 	}
-	m, ok := s.body(w, r, info.Request)
+	m, ok := s.opBody(w, r, "P2."+op, info)
 	if !ok {
 		return
 	}

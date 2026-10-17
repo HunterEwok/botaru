@@ -33,7 +33,6 @@ func kindTo(t *testing.T, b *bench, kind, recipient string) int {
 func TestPreventableReadV03(t *testing.T) {
 	ctx := context.Background()
 	b := newManagerBench(t)
-	withV03(t)
 	op := b.farmOperator(t)
 	if _, err := b.c.SeatAssign(ctx, b.farmOp(), SeatRequest{Seat: managerSeatID}); err != nil {
 		t.Fatal(err)
@@ -115,10 +114,6 @@ func TestTakeoverSeriesV03(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := b.c.tenantSeries(cat, "demo")[seriesTakeoverCount]; ok {
-		t.Fatal("farm.takeover.count before v0.3")
-	}
-	withV03(t)
 	d, ok := b.c.tenantSeries(cat, "demo")[seriesTakeoverCount]
 	if !ok || d.Outcome != nil || d.CatalogKind != "task_type" {
 		t.Fatalf("series %+v %v", d, ok)
@@ -174,10 +169,6 @@ func TestAttentionClosedQuietV03(t *testing.T) {
 			t.Fatalf("op %q passed the closed list", op)
 		}
 	}
-	if quietOnlyKinds() != nil {
-		t.Fatal("quiet hours for manager_attention before v0.3")
-	}
-	withV03(t)
 	cat, err := b.c.Catalog(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -231,7 +222,6 @@ func sev2Postmortem(ms []map[string]any) {
 func TestPostmortemRequestV03(t *testing.T) {
 	ctx := context.Background()
 	b := newManagerBenchWith(t, nil, []map[string]any{postmortemDoc()}, claimPostmortem, sev2Postmortem)
-	withV03(t)
 	b.diskAlarm(t, true, 3)
 	b.advance(t, 6*60)
 	b.loop(t, "incident")
@@ -329,7 +319,6 @@ func TestPostmortemRequestV03(t *testing.T) {
 func TestHolderReportV03(t *testing.T) {
 	ctx := context.Background()
 	b := newManagerBench(t)
-	withV03(t)
 	op := b.farmOperator(t)
 	b.loop(t, "identity")
 	b.loop(t, "identity")
@@ -359,11 +348,10 @@ func TestManagerProposalsV03(t *testing.T) {
 		t.Fatal("author levels")
 	}
 	p := &proposalRow{Rec: map[string]any{"origin": map[string]any{"level": 2, "seat": managerSeatID}, "body": map[string]any{"category": "schedule"}}}
-	if in := reviewInput(p, true); in["author_level"] != nil || in["seat"] != nil || in["origin"] != nil {
+	if in := reviewInput(p); in["author_level"] != nil || in["seat"] != nil || in["origin"] != nil {
 		t.Fatalf("reviewer input %v", in)
 	}
 	b := newManagerBench(t)
-	withV03(t)
 	if !managerProposer(reviewType) || !managerProposer(postmortemType) || managerProposer(incidentRespondType) {
 		t.Fatal("which seat tasks propose")
 	}
@@ -402,10 +390,6 @@ func TestIgnoredV02FieldsV03(t *testing.T) {
 	charter := manifest.Doc{Kind: "Governance", Tenant: farmTenant, Name: "farm"}
 	cv := map[string]any{"spec": map[string]any{"stops_manager": true}}
 	gv := map[string]any{"spec": map[string]any{"farm_manager": map[string]any{"incident_stop": map[string]any{"decide_within": "3d"}}}}
-	setClaimsV03(t, false)
-	if ignoredV03(class, cv, 0) != nil {
-		t.Fatal("a warning before v0.3")
-	}
 	c := lintCore(t)
 	storeLow := `apiVersion: botaru/v1alpha1
 kind: IncidentClass
@@ -417,10 +401,6 @@ spec:
   detect: {alarm: alarm.store.free.low.v1}
   subject: {kind: farm}
 `
-	if codes := lintCodes(t, c, storeLow); !slices.Contains(codes, "incident_store_low") {
-		t.Fatalf("v0.1 lint %v", codes)
-	}
-	setClaimsV03(t, true)
 	w := ignoredV03(class, cv, 3)
 	if len(w) != 1 || w[0].Code != "version_unsupported" || w[0].Path != "/manifests/3/spec/stops_manager" {
 		t.Fatalf("class warning %+v", w)
@@ -430,6 +410,11 @@ spec:
 	}
 	if w := ignoredV03(manifest.Doc{Kind: "Governance", Tenant: "demo"}, gv, 1); w != nil {
 		t.Fatalf("a tenant charter %+v", w)
+	}
+	// The farm charter by name without a tenant is the farm charter too, as for the charter
+	// bounds lint (isFarmCharter).
+	if w := ignoredV03(manifest.Doc{Kind: "Governance", Name: "farm"}, gv, 2); len(w) != 1 || w[0].Path != "/manifests/2/spec/farm_manager/incident_stop" {
+		t.Fatalf("farm charter without a tenant %+v", w)
 	}
 	if codes := lintCodes(t, c, storeLow); slices.Contains(codes, "incident_store_low") {
 		t.Fatalf("v0.3 lint %v", codes)

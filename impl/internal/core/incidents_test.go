@@ -232,8 +232,6 @@ func TestIncidentStoreLow(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		// The example's v0.3 area stays out at the v0.1 claim (MAN-11).
-		delete(docs[0].Value["spec"].(map[string]any), "area")
 		return append(ms, docs[0].Value)
 	})
 	err := b.c.tx(context.Background(), func(tx pgx.Tx, now time.Time) error {

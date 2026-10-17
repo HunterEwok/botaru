@@ -66,3 +66,22 @@ func TestRuleInScope(t *testing.T) {
 		t.Error("cmpVersion")
 	}
 }
+
+// A case that names a rule ended before the claim stays selected, and EndedRule names that rule
+// (D-113), so the runner can report its failure as unchecked.
+func TestSelectEndedRule(t *testing.T) {
+	claim := Claim{Version: "v0.3", Profiles: []string{"core"}}
+	rules := map[string]*Rule{
+		"A-1": {Status: "active", Version: "v0.1", Profile: "core"},
+		"B-1": {Status: "active", Version: "v0.1", Until: "v0.2", Profile: "core"},
+	}
+	both := &Case{ID: "both", Rules: []string{"A-1", "B-1"}}
+	one := &Case{ID: "one", Rules: []string{"A-1"}}
+	in, _ := Select(rules, []*Case{both, one}, claim)
+	if len(in) != 2 {
+		t.Fatalf("selected %v", in)
+	}
+	if EndedRule(rules, both, claim) != "B-1" || EndedRule(rules, one, claim) != "" {
+		t.Fatal("EndedRule")
+	}
+}

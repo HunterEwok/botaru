@@ -21,6 +21,7 @@ import (
 
 	"github.com/HunterEwok/botaru/impl/internal/jcs"
 	"github.com/HunterEwok/botaru/impl/internal/manifest"
+	"github.com/HunterEwok/botaru/impl/internal/spec"
 	"github.com/HunterEwok/botaru/impl/internal/store"
 	"github.com/HunterEwok/botaru/impl/internal/yamlx"
 )
@@ -339,7 +340,7 @@ func skillsRefusal(r *RuntimeDecl, role manifest.Role) string {
 	switch {
 	case !knowledgeOn():
 		return ""
-	case r != nil && r.Skills == "farm":
+	case r != nil && r.Skills == "farm" && !spec.Offered("SKL-4"):
 		return "runtime.skills: farm and skill_read are not offered by this core (SKL-4)"
 	case len(role.Skills) > 0 && knowledgeOn() && (r == nil || r.Skills != "runtime_files"):
 		return "the role has skills, and this core gives them only to a runtime with runtime.skills: runtime_files (SKL-2)"

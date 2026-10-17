@@ -24,7 +24,7 @@ import (
 )
 
 // Version is the skeleton version this implementation claims (MAN-8).
-const Version = "v0.1"
+const Version = "v0.3"
 
 // EnvRoot names the environment variable with the path of the skeleton root.
 const EnvRoot = "BOTARU_SPEC_ROOT"

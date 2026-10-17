@@ -25,9 +25,6 @@ const commissionWeekly = "commission_weekly"
 // weeklyStep sends the summary of the last 7 days once in an ISO week of the store clock, from
 // the week governance_v03_since is recorded.
 func (c *Core) weeklyStep(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tv *TenantView) error {
-	if !claimsV03() {
-		return nil
-	}
 	since, _, err := v03State(ctx, tx, tv.Name)
 	if err != nil || since == nil {
 		return err

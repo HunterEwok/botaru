@@ -5,6 +5,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -16,11 +17,11 @@ import (
 	"github.com/HunterEwok/botaru/impl/internal/spec"
 )
 
-// ingressOnT makes the build claim the ingress profile for the rest of the test (the seam the
-// flip replaces by the claim).
-func ingressOnT(t *testing.T) {
+// withoutProfile makes the build claim every profile of spec.Profiles but the given one for the
+// rest of the test, to run a path without the claim of its profile (MAN-11).
+func withoutProfile(t *testing.T, profile string) {
 	t.Helper()
-	prev := spec.SetProfileOverride("ingress")
+	prev := spec.SetProfileOverride(slices.DeleteFunc(slices.Clone(spec.Profiles), func(p string) bool { return p == profile })...)
 	t.Cleanup(func() { spec.SetProfileOverride(prev...) })
 }
 
@@ -86,9 +87,6 @@ type ingressBench struct {
 
 func newIngressBench(t *testing.T) *ingressBench {
 	t.Helper()
-	// The routes on job events are of the profile messaging (MSG-16).
-	prev := spec.SetProfileOverride("ingress", "messaging")
-	t.Cleanup(func() { spec.SetProfileOverride(prev...) })
 	var ms []map[string]any
 	b := newToolBenchWith(t, &ms, func(ms []map[string]any) []map[string]any {
 		for _, m := range ms {
@@ -198,16 +196,16 @@ func TestIngressClaimSeam(t *testing.T) {
 		t.Fatal(err)
 	}
 	doc := sourceChannelDoc("pipeline", "ext.pipeline.run_failed.v1", "signature")
+	if ptrs, err := sp.Unsupported(doc); err != nil || len(ptrs) != 0 {
+		t.Fatalf("with the claim: %v %v", ptrs, err)
+	}
+	withoutProfile(t, "ingress")
 	ptrs, err := sp.Unsupported(doc)
 	if err != nil || len(ptrs) == 0 {
 		t.Fatalf("without the claim a source channel passes: %v %v", ptrs, err)
 	}
 	if err := sp.Droppable(doc, "/spec/direction"); err == nil {
 		t.Fatal("the direction of a source channel would be dropped")
-	}
-	ingressOnT(t)
-	if ptrs, err := sp.Unsupported(doc); err != nil || len(ptrs) != 0 {
-		t.Fatalf("with the claim: %v %v", ptrs, err)
 	}
 }
 
@@ -593,7 +591,7 @@ func TestEventRouteJobEvent(t *testing.T) {
 	}
 	// Without the messaging claim a job event starts no route, the ingress claim
 	// notwithstanding (MAN-11).
-	prev := spec.SetProfileOverride("ingress")
+	prev := spec.SetProfileOverride("core", "ingress")
 	emit("r4", "web1-logs", "failed")
 	spec.SetProfileOverride(prev...)
 	if n := len(routeTasks(t, b.bench, "done")); n != 1 {
@@ -615,7 +613,6 @@ func TestEventRouteJobEvent(t *testing.T) {
 // above tier 0, an ext.* route outside system-ops or to action.* (ING-1, ING-3, ING-4, PRM-10,
 // manifests/v02-lints, manifests/v02-security-lints, manifests/ingress-routes).
 func TestIngressLintFixtures(t *testing.T) {
-	ingressOnT(t)
 	got := map[string]bool{}
 	for _, id := range runLintFixtures(t) {
 		got[id] = true
@@ -685,6 +682,8 @@ func TestIngressTokenChain(t *testing.T) {
 func TestEventRoutesClaims(t *testing.T) {
 	ctx := context.Background()
 	b := newIngressBench(t)
+	// The installation claims monitor only with the monitoring system configured (D-88).
+	b.c.cfg.Monitor = MonitorConfig{Enabled: true}
 	cat, err := b.c.Catalog(ctx)
 	if err != nil {
 		t.Fatal(err)

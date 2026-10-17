@@ -144,20 +144,21 @@ func TestRegionFromBindingTable(t *testing.T) {
 	}
 }
 
-// MEM-2: from v0.2, while the personal assistant is deferred, apply refuses a role with memory:
-// person (person_memory_deferred); a core that claims v0.1 keeps it.
+// MEM-2: while the personal assistant is deferred (DSP-10), apply at the v0.3 claim refuses a
+// role with memory: person (person_memory_deferred), and a role without person memory passes it.
 func TestPersonMemoryDeferred(t *testing.T) {
 	c := lintCore(t)
-	role := "apiVersion: botaru/v1alpha1\nkind: Role\nmetadata: {name: assistant}\nspec: {worker_kind: agent, memory: person, models: {base: base-std}}\n"
-	has := func() bool {
-		return slices.ContainsFunc(lintFound(t, c, role, ""), func(s string) bool { return strings.HasPrefix(s, "person_memory_deferred ") })
+	role := func(mem string) string {
+		return "apiVersion: botaru/v1alpha1\nkind: Role\nmetadata: {name: assistant}\nspec: {worker_kind: agent, memory: " + mem + ", models: {base: base-std}}\n"
 	}
-	if has() {
-		t.Fatal("MEM-2: refused on a core that claims v0.1")
+	has := func(mem string) bool {
+		return slices.ContainsFunc(lintFound(t, c, role(mem), ""), func(s string) bool { return strings.HasPrefix(s, "person_memory_deferred ") })
 	}
-	setClaimsV03(t, true)
-	if !has() {
+	if !has("person") {
 		t.Fatal("MEM-2: memory: person passed on a core that claims v0.3")
+	}
+	if has("none") {
+		t.Fatal("MEM-2: memory: none refused")
 	}
 }
 

@@ -71,13 +71,11 @@ func (c *Core) CommissionStatus(ctx context.Context, op Operator, req TenantRequ
 						m["holder"] = s.holder
 						// From v0.3 people see the accuracy of every holder in its lens, with
 						// the number of scored and missed forecasts (COM-17, GOV-36).
-						if claimsV03() {
-							a, err := lensAccuracy(ctx, tx, now, tenant, l, s.holder)
-							if err != nil {
-								return err
-							}
-							m["accuracy"], m["scored_forecasts"], m["missed_forecasts"] = a.view(), a.N, a.Missed
+						a, err := lensAccuracy(ctx, tx, now, tenant, l, s.holder)
+						if err != nil {
+							return err
 						}
+						m["accuracy"], m["scored_forecasts"], m["missed_forecasts"] = a.view(), a.N, a.Missed
 					}
 					out = append(out, m)
 				}
@@ -107,14 +105,12 @@ func (c *Core) CommissionStatus(ctx context.Context, op Operator, req TenantRequ
 			return err
 		}
 		out = map[string]any{"tenant": tv.Name, "lenses": list, "review_line": rl, "audit_sample": sample, "decision_stats": stats, "governance_since": since}
-		if claimsV03() {
-			acc, err := c.accountabilityStatus(ctx, tx, cat, tenant)
-			if err != nil {
-				return err
-			}
-			for k, v := range acc {
-				out[k] = v
-			}
+		acc, err := c.accountabilityStatus(ctx, tx, cat, tenant)
+		if err != nil {
+			return err
+		}
+		for k, v := range acc {
+			out[k] = v
 		}
 		return nil
 	})

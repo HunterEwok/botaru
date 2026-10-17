@@ -49,7 +49,7 @@ const (
 // attentionTool is attention_notice in a decision attempt of the farm manager seat from v0.3
 // (MGR-52): only closed codes, an object id and a proposal reference.
 func (c *Core) attentionTool(cat *Catalog, g *toolsGrant) *catalogTool {
-	if !claimsV03() || g.Purpose != "manage" || profileOf(cat, g.Role) != "farm-manager" {
+	if g.Purpose != "manage" || profileOf(cat, g.Role) != "farm-manager" {
 		return nil
 	}
 	codes := func(kind string) []any {
@@ -637,7 +637,7 @@ func (c *Core) postmortemDone(ctx context.Context, tx pgx.Tx, now time.Time, cat
 // managerProposer says whether a completed task of the seat may carry proposals: from v0.3 the
 // daily review and the analysis (MGR-51).
 func managerProposer(typ string) bool {
-	return claimsV03() && (typ == reviewType || typ == postmortemType)
+	return (typ == reviewType || typ == postmortemType)
 }
 
 // managerProposalLimited applies the manager's 2 proposals per tenant per month (MGR-51).
@@ -709,7 +709,7 @@ func share(part, all int) string {
 
 // holderReportWeek sends holder_report to the farm operators once a week, numbers only (MGR-50).
 func (c *Core) holderReportWeek(ctx context.Context, cat *Catalog) error {
-	if !claimsV03() || managerRole(cat) == "" {
+	if managerRole(cat) == "" {
 		return nil
 	}
 	return c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
@@ -729,9 +729,7 @@ func (c *Core) holderReportWeek(ctx context.Context, cat *Catalog) error {
 			return err
 		}
 		key := "notice.holder_report"
-		if claimsV03() {
-			key = "notice.holder_report_v03"
-		}
+		key = "notice.holder_report_v03"
 		return c.noticeAdmins(ctx, tx, now, cat, []string{farmTenant}, holderReport, key, map[string]any{
 			"preventable": n.Preventable, "notices": n.Notices, "notices_useful": share(n.NoticesUseful, n.Notices),
 			"takeovers": n.Asked, "approved": n.Approved, "done": n.Done, "failed": n.Failed,

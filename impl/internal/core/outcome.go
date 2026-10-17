@@ -416,7 +416,7 @@ func (c *Core) completeAttempt(ctx context.Context, tx pgx.Tx, now time.Time, w 
 		return err
 	}
 	// The report of an analysis goes out with its result (MGR-53).
-	if typ == postmortemType && claimsV03() {
+	if typ == postmortemType {
 		var tb map[string]any
 		var raw []byte
 		if err := tx.QueryRow(ctx, `SELECT body FROM tasks WHERE id = $1`, l.WorkID).Scan(&raw); err != nil {

@@ -507,20 +507,18 @@ func (c *Core) Doctor(ctx context.Context, op Operator, req TenantRequest) (*Doc
 		add(urgent)
 		// Parked bots and how long the longest has waited for a worker of its role, on a core
 		// that claims v0.3 (GOV-42).
-		if claimsV03() {
-			var parked int
-			var since *time.Time
-			if err := tx.QueryRow(ctx, `SELECT count(*), min((record->'parked'->>'since')::timestamptz) FROM bots WHERE tenant = $1 AND state = 'unbound' AND record ? 'parked'`,
-				tenant).Scan(&parked, &since); err != nil {
-				return err
-			}
-			add(DoctorCheck{ID: "governance.parked_bots", OK: true, Severity: "info", Value: parked})
-			wait := DoctorCheck{ID: "governance.parked_longest_wait_s", OK: true, Severity: "info", Value: nil}
-			if since != nil {
-				wait.Value = int64(now.Sub(*since).Seconds())
-			}
-			add(wait)
+		var parked int
+		var since *time.Time
+		if err := tx.QueryRow(ctx, `SELECT count(*), min((record->'parked'->>'since')::timestamptz) FROM bots WHERE tenant = $1 AND state = 'unbound' AND record ? 'parked'`,
+			tenant).Scan(&parked, &since); err != nil {
+			return err
 		}
+		add(DoctorCheck{ID: "governance.parked_bots", OK: true, Severity: "info", Value: parked})
+		wait := DoctorCheck{ID: "governance.parked_longest_wait_s", OK: true, Severity: "info", Value: nil}
+		if since != nil {
+			wait.Value = int64(now.Sub(*since).Seconds())
+		}
+		add(wait)
 		share := DoctorCheck{ID: "health.delivered_10m_ratio", OK: true, Severity: "info", Value: nil}
 		if in.share != nil {
 			share.Value = *in.share

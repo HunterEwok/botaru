@@ -156,9 +156,6 @@ func (c *Core) AttributionCreate(ctx context.Context, op Operator, req Attributi
 	if !slices.Contains(attributionKinds, kind) || req.Incident == "" || (kind == "script_run") != (req.ScriptRun != "") || (kind != "script_run") != (req.Proposal != "") {
 		return nil, refuse("input_schema_invalid", "attribution.create needs the incident and the proposal, or the script run for kind script_run")
 	}
-	if kind == "rejected_proposal" && !claimsV03() {
-		return nil, refuse("input_schema_invalid", "links to rejected proposals arrive with v0.3")
-	}
 	cat, err := c.Catalog(ctx)
 	if err != nil {
 		return nil, err
@@ -297,9 +294,6 @@ var incidentCauses = []string{"external_load", "attack", "unknown"}
 // that kind are canceled in the same transaction, and nobody answers for it: the departures that
 // wait for its links end and those done return (GOV-41, GOV-42, externalCause).
 func (c *Core) IncidentCause(ctx context.Context, op Operator, req IncidentCauseRequest) (*Done, error) {
-	if !claimsV03() {
-		return nil, refuse("not_found", "incident.cause arrives with v0.3")
-	}
 	if !slices.Contains(incidentCauses, req.Cause) || req.Incident == "" {
 		return nil, refuse("input_schema_invalid", "the cause is external_load, attack or unknown")
 	}

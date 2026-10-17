@@ -293,6 +293,8 @@ INJ12_OUTPUTS = [  # (output, since version, regex of the sign in a case)
     ('memory record proposals', 'v0.1', r'memory'),
     ('monitor_note', 'v0.2', r'monitor_note'),
 ]
+# Outputs of deferred rules are in no version (D-114): monitor_note is MON-7.
+INJ12_DEFERRED = {'monitor_note': 'MON-7'}
 inj12 = rules.get('INJ-12')
 if inj12 and OWN:
     rep.info('coverage of the INJ-12 outputs is required only from the skeleton cases; own cases with INJ-12 are checked as cases')
@@ -302,6 +304,8 @@ elif inj12:
         rep.error('conformance/requirements.yaml INJ-12', f'[inj12_output_table] output {name} from the INJ-12 text is not in the output table of check_evals.py')
     inj_cases = [c for rp, c in cases.values() if 'INJ-12' in (c.get('rules') or []) and c.get('status') == 'active']
     for name, since, rx in INJ12_OUTPUTS:
+        if (rules.get(INJ12_DEFERRED.get(name)) or {}).get('status') == 'deferred':
+            continue
         hit = [c for c in inj_cases if (vkey(c.get('version')) or (0, 0)) <= vkey(since)
                and re.search(rx, json.dumps([c.get('summary'), c.get('rules'), c.get('expect')], ensure_ascii=False), re.I)]
         if not hit:

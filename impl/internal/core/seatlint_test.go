@@ -43,8 +43,9 @@ func TestSeatProfileLint(t *testing.T) {
 	}
 }
 
-// An incident catalog without store_low, or with a store_low that stops the manager, fails
-// (MGR-38, fx-mgr-store-low).
+// An incident catalog without store_low fails; a store_low with stops_manager passes at the
+// v0.3 claim, which does not use the field and only warns of it (MGR-38, MGR-55,
+// fx-mgr-store-low).
 func TestStoreLowLint(t *testing.T) {
 	c := lintCore(t)
 	disk := `apiVersion: botaru/v1alpha1
@@ -69,10 +70,10 @@ spec:
   detect: {alarm: alarm.store.free.low.v1}
   subject: {kind: farm}
 `
-	if codes := lintCodes(t, c, stop); !slices.Contains(codes, "incident_store_low") {
+	if codes := lintCodes(t, c, stop); slices.Contains(codes, "incident_store_low") {
 		t.Fatalf("store_low with stops_manager: %v", codes)
 	}
-	if codes := lintCodes(t, c, disk+"---\n"+stop); !slices.Contains(codes, "incident_store_low") {
+	if codes := lintCodes(t, c, disk+"---\n"+stop); slices.Contains(codes, "incident_store_low") {
 		t.Fatalf("codes %v", codes)
 	}
 }

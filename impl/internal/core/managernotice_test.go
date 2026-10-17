@@ -267,79 +267,64 @@ func stoppedNotices(t *testing.T, b *bench, person string) []map[string]any {
 	return out
 }
 
-// The manager_stopped card goes to the farm operators with admin:governance without buttons,
-// with the class, number and tenant of the incident, the stop time, the incidents of the stop,
-// the decide_within expiry and the ready farmctl commands; it repeats after 24 h and 72 h, and
-// the repeats end when the seat is assigned (MGR-35, MGR-36).
+// At the v0.3 claim an incident of a class with stops_manager sends no manager_stopped notice
+// and nothing repeats one: the seat is not stopped by incidents (GOV-47, MGR-55); a
+// preventable incident sends manager_preventable instead (TestPreventableRepeats).
 func TestManagerStoppedCard(t *testing.T) {
+	b := newManagerBench(t)
+	op := b.farmOperator(t)
+	if _, err := b.c.SeatAssign(context.Background(), b.farmOp(), SeatRequest{Seat: managerSeatID}); err != nil {
+		t.Fatal(err)
+	}
+	b.stopAlarm(t, true)
+	b.advance(t, 6*60)
+	b.loop(t, "incident")
+	if len(incidentsOf(t, b, "spend_storm")) != 1 {
+		t.Fatal("no incident")
+	}
+	if cards := stoppedNotices(t, b, op); len(cards) != 0 {
+		t.Fatalf("cards %+v", cards)
+	}
+	b.advance(t, 72*3600)
+	b.loop(t, "identity")
+	if cards := stoppedNotices(t, b, op); len(cards) != 0 {
+		t.Fatalf("after 72 h %+v", cards)
+	}
+	if n := b.count(t, `SELECT count(*) FROM deliveries WHERE kind = 'manager_stopped'`); n != 0 {
+		t.Fatalf("manager_stopped deliveries %d", n)
+	}
+}
+
+// The repeats of manager_stopped (MGR-36) end with v0.2: a stop reason incident and an expired
+// decide_within that an earlier core left on the seat are dropped by the manager loop, the
+// holder stays, and no repeat is sent (GOV-47, MGR-55).
+func TestStopRepeats(t *testing.T) {
 	ctx := context.Background()
 	b := newManagerBench(t)
 	op := b.farmOperator(t)
 	if _, err := b.c.SeatAssign(ctx, b.farmOp(), SeatRequest{Seat: managerSeatID}); err != nil {
 		t.Fatal(err)
 	}
-	b.stopAlarm(t, true)
-	b.advance(t, 6*60)
-	b.loop(t, "incident")
-	inc := incidentsOf(t, b, "spend_storm")[0]
-	m := b.managerSeat(t)
-	cards := stoppedNotices(t, b, op)
-	if len(cards) != 1 || cards[0]["form"] != "text_code" || cards[0]["text_key"] != "notice.manager_stopped" {
-		t.Fatalf("cards %+v", cards)
-	}
-	p := cards[0]["params"].(map[string]any)
-	if p["incident"] != inc.ID || p["class"] != "spend_storm" || p["tenant"] != "demo" || p["until"] != fmtTime(*m.DecideUntil) || p["at"] != m.reason("incident").At {
-		t.Fatalf("card params %+v", p)
-	}
-	text := b.c.texts.Render("en", "notice.manager_stopped", p)
-	for _, want := range []string{"farmctl seat resume farm-manager --incident " + inc.ID, "farmctl seat assign farm-manager", "farmctl seat vacate farm-manager"} {
-		if !strings.Contains(text, want) {
-			t.Fatalf("card %q lacks %q", text, want)
-		}
-	}
-	// The tenant admin of demo is not an operator of farm.
-	var demo int
-	if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM deliveries WHERE kind = 'manager_stopped' AND tenant <> 'farm'`).Scan(&demo); err != nil || demo != 0 {
-		t.Fatalf("cards outside farm %d %v", demo, err)
-	}
-	b.advance(t, 24*3600)
+	holder := b.managerSeat(t).Holder
+	b.exec(t, `UPDATE seats SET state = 'stopped', stop_reasons = '[{"reason": "incident", "incident": "inc_x", "repeats": 1}]',
+		decide_until = botaru_now() - interval '1 hour' WHERE id = $1`, managerSeatID)
+	// A manager_stopped card the earlier core planned for a quiet hour is withheld, not sent.
+	b.exec(t, `INSERT INTO deliveries (id, tenant, kind, addr, target_kind, target_id, exec_kind, exec_name, state, dataorigin,
+		created_at, updated_at) VALUES ('dl_stopped', 'farm', 'manager_stopped', 'admins', 'chat', 'direct:1001', 'channel', 'telegram',
+		'planned', 'code', botaru_now(), botaru_now())`)
+	b.advance(t, 72*3600)
 	b.loop(t, "identity")
-	b.loop(t, "identity")
-	if cards = stoppedNotices(t, b, op); len(cards) != 2 || cards[1]["text_key"] != "notice.manager_stopped_repeat" {
-		t.Fatalf("after 24 h %+v", cards)
+	var state, reason string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT state, coalesce(reason, '') FROM deliveries WHERE id = 'dl_stopped'`).Scan(&state, &reason); err != nil || state != "withheld" || reason != "superseded" {
+		t.Fatalf("planned manager_stopped %s %s %v", state, reason, err)
 	}
-	b.advance(t, 48*3600)
-	b.loop(t, "identity")
-	if cards = stoppedNotices(t, b, op); len(cards) != 3 {
-		t.Fatalf("after 72 h %d", len(cards))
+	if n := b.count(t, `SELECT count(*) FROM events WHERE type = 'delivery.withheld' AND subject = 'dl_stopped' AND data->>'reason' = 'superseded'`); n != 1 {
+		t.Fatalf("delivery.withheld events %d", n)
 	}
-	if _, err := b.c.SeatAssign(ctx, b.farmOp(), SeatRequest{Seat: managerSeatID}); err != nil {
-		t.Fatal(err)
+	if m := b.managerSeat(t); m.State != "held" || m.Holder != holder || len(m.Reasons) != 0 || m.DecideUntil != nil {
+		t.Fatalf("seat %+v", m)
 	}
-	b.advance(t, 3*24*3600)
-	b.loop(t, "identity")
-	if cards = stoppedNotices(t, b, op); len(cards) != 3 {
-		t.Fatalf("a repeat after the assignment: %d", len(cards))
-	}
-}
-
-// The repeat times of fx-mgr-stopped-repeat (MGR-36).
-func TestStopRepeats(t *testing.T) {
-	at := time.Date(2026, 11, 24, 5, 10, 0, 0, time.UTC)
-	for _, c := range []struct {
-		days int
-		want []string
-	}{
-		{7, []string{"2026-11-25T05:10:00Z", "2026-11-27T05:10:00Z", "2026-11-30T05:10:00Z"}},
-		{4, []string{"2026-11-25T05:10:00Z", "2026-11-27T05:10:00Z"}},
-		{2, []string{"2026-11-25T05:10:00Z"}},
-	} {
-		var got []string
-		for _, r := range stopRepeats(at, at.Add(time.Duration(c.days)*24*time.Hour)) {
-			got = append(got, r.Format(time.RFC3339))
-		}
-		if strings.Join(got, ",") != strings.Join(c.want, ",") {
-			t.Errorf("decide_within %dd: %v, want %v", c.days, got, c.want)
-		}
+	if cards := stoppedNotices(t, b, op); len(cards) != 0 {
+		t.Fatalf("repeats %+v", cards)
 	}
 }

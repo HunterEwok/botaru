@@ -49,6 +49,14 @@ func TestTakeover(t *testing.T) {
 		}
 	})
 	bob := b.grantManagers(t)
+	// The functionary role runs the takeover on the seat profile only with its eval report on
+	// that profile (MGR-48).
+	fp, err := takeoverFingerprint(b.catalog(t), "demo", "hello", "manager-std")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.setStoredDoc(t, "EvalReports", "", "evals", `{"apiVersion": "botaru/v1alpha1", "kind": "EvalReports", "metadata": {"name": "evals"},
+		"spec": {"reports": [{"fingerprint": "`+fp+`", "subject": {"kind": "role", "name": "hello"}, "suite": "takeover", "date": "2026-10-02", "cases": 12, "failures": 0, "security_failures": 0}]}}`)
 	orig := b.hello(t, "u1")
 	mw := b.enroll(t, EnrollRequest{Tenant: "demo", Kind: "agent", Role: "farm-manager"})
 	b.diskAlarm(t, true, 3)
@@ -127,7 +135,7 @@ func TestTakeover(t *testing.T) {
 		WHERE t.idempotency_key LIKE '%system:takeover:' || $1`, orig).Scan(&newTask, &kind, &line, &profile, &attempts, &by); err != nil {
 		t.Fatal(err)
 	}
-	if kind != "takeover" || line != "takeover" || profile != "manager-std" || attempts != 1 || by != bob {
+	if kind != "takeover" || line != "manager" || profile != "manager-std" || attempts != 1 || by != bob {
 		t.Fatalf("grant %s %s %s %d %s", kind, line, profile, attempts, by)
 	}
 	if err := b.c.st.Pool.QueryRow(ctx, `SELECT state, reason FROM tasks WHERE id = $1`, orig).Scan(&state, &reason); err != nil || state != "canceled" || reason != "superseded_by_takeover" {
@@ -137,7 +145,7 @@ func TestTakeover(t *testing.T) {
 	if att == nil || att.WorkID != newTask {
 		t.Fatalf("takeover attempt %+v", att)
 	}
-	if mg, err := b.c.ResolveModelHandle(ctx, att.Payload["handles"].(map[string]any)["model"].(string)); err != nil || mg.Slot != grantedSlot || mg.ProfileName != "manager-std" || mg.Line != "takeover" {
+	if mg, err := b.c.ResolveModelHandle(ctx, att.Payload["handles"].(map[string]any)["model"].(string)); err != nil || mg.Slot != grantedSlot || mg.ProfileName != "manager-std" || mg.Line != "manager" {
 		t.Fatalf("handle %+v %v", mg, err)
 	}
 

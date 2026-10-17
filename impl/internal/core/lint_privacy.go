@@ -147,9 +147,9 @@ func (c *Core) lintPrivacy(S *lintSet, f *lintFindings, prior []manifest.Doc) {
 			}
 		}
 	}
-	// From v0.2, while the personal assistant is deferred, no role holds person memory
-	// (MEM-2, DSP-10, D-114).
-	if !spec.VersionLater("v0.2", spec.Effective()) {
+	// While the personal assistant is deferred, no role holds person memory (MEM-2, DSP-10,
+	// D-114).
+	if !spec.Offered("DSP-10") {
 		for _, o := range S.each("Role") {
 			if mstr(o.spec, "memory") == "person" {
 				f.add(o, "person_memory_deferred", "/memory")

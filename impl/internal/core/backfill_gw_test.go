@@ -20,6 +20,7 @@ kind: Tenant
 metadata: {name: demo}
 spec:
   kind: ` + kind + `
+  farm_manager: {enabled: false}
   models_allowed: [base-std]
   privacy:
     subprocessors:

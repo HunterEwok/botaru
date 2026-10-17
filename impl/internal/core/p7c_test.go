@@ -44,10 +44,7 @@ spec:
 	if got := lintCodes(t, c, strings.Replace(charter, "lens: x_privacy", "lens: x_other", 1)); !has(got, "lens_unknown") {
 		t.Fatalf("a seat with a lens of no charter: %v", got)
 	}
-	if got := lintCodes(t, c, com("{farm_manager: 1}")); !has(got, "lens_unknown") {
-		t.Fatalf("farm_manager in a v0.1 commission: %v", got)
-	}
-	setClaimsV03(t, false) // v0.2
+	// farm_manager is a lens of the claimed version (since v0.2) whose weight is set by rule.
 	if got := lintCodes(t, c, com("{farm_manager: 1}")); !has(got, "lens_weight_fixed") || has(got, "lens_unknown") {
 		t.Fatalf("farm_manager weight from v0.2: %v", got)
 	}
@@ -194,9 +191,9 @@ func TestLintPrivilegeRaised(t *testing.T) {
 	}
 }
 
-// GOV-33, GOV-22: what TestBackfillOnlyCharterDeclaresSeats and TestBackfillFarmCharterByTenant
-// leave out: a decide_within of the farm charter above 7 days fails apply, a shorter one passes,
-// and seats without an id are not a seat declared twice.
+// GOV-33, MGR-55: what TestBackfillOnlyCharterDeclaresSeats and TestBackfillFarmCharterByTenant
+// leave out: seats without an id are not a seat declared twice, and decide_within of the farm
+// charter is not linted at all, since a v0.3 core does not use incident_stop.
 func TestLintCharterBounds(t *testing.T) {
 	c := lintCore(t)
 	charter := func(tenant, spec string) string {
@@ -205,11 +202,10 @@ func TestLintCharterBounds(t *testing.T) {
 	if got := lintCodes(t, c, charter("demo", `{commission: {seats: [{lens: cost}, {lens: value}]}}`)); slices.Contains(got, "charter_seat_twice") {
 		t.Fatalf("seats without an id: %v", got)
 	}
-	if got := lintCodes(t, c, charter("farm", `{farm_manager: {incident_stop: {decide_within: 10d}}}`)); !slices.Contains(got, "charter_direction") {
-		t.Fatalf("decide_within above 7 days: %v", got)
-	}
-	if got := lintCodes(t, c, charter("farm", `{farm_manager: {incident_stop: {decide_within: 3d}}}`)); slices.Contains(got, "charter_direction") {
-		t.Fatalf("decide_within shortened: %v", got)
+	for _, d := range []string{"10d", "3d"} {
+		if got := lintCodes(t, c, charter("farm", `{farm_manager: {incident_stop: {decide_within: `+d+`}}}`)); slices.Contains(got, "charter_direction") {
+			t.Fatalf("decide_within %s: %v", d, got)
+		}
 	}
 }
 

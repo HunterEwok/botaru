@@ -547,13 +547,11 @@ func (c *Core) doctorManager(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 		return err
 	}
 	add(DoctorCheck{ID: "budget.used_30d_eur_micros.manager_review", OK: true, Severity: "info", Value: review, Tenant: tenant})
-	if claimsV03() {
-		if err := doctorManagerMonth(ctx, tx, now, tv, add); err != nil {
-			return err
-		}
-		if err := c.doctorRestricted(ctx, tx, tenant, add); err != nil {
-			return err
-		}
+	if err := doctorManagerMonth(ctx, tx, now, tv, add); err != nil {
+		return err
+	}
+	if err := c.doctorRestricted(ctx, tx, tenant, add); err != nil {
+		return err
 	}
 	if !incidentReviewOn(tv) {
 		return nil

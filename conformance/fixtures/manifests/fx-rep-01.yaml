@@ -61,7 +61,7 @@ cases:
         kind: Role
         metadata: {name: reporter}
         spec: {profile: reporter, worker_kind: agent, claims: [report.sensor.v1], memory: person, models: {base: base-std}}
-    expect: {error: role_profile_memory}
+    expect: {error: role_profile_memory, also: [person_memory_deferred]}
   - name: reporter with an analysis slot
     manifests:
       - apiVersion: botaru/v1alpha1

@@ -108,7 +108,7 @@ func (c *Core) ChatBind(ctx context.Context, op Operator, req ChatBindRequest) (
 		return nil, refuse("forbidden", "the operator credential is for another tenant")
 	}
 	if req.Assistant || req.Chat.Kind != "group" {
-		return nil, refuse("version_unsupported", "this build binds group chats only; the personal assistant comes in v0.2")
+		return nil, refuse("version_unsupported", "this core binds group chats only; the personal assistant is of the deferred rule DSP-10")
 	}
 	tv, _, err := c.requireTenant(ctx, op.Tenant)
 	if err != nil {

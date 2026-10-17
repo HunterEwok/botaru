@@ -31,11 +31,9 @@ func TestMain(m *testing.M) { pgtest.Main(m) }
 
 var update = flag.Bool("update", false, "rewrite testdata/passing.txt from this run")
 
-// claim is what the reference core is checked against while v0.1 is being built: every
-// profile of v0.1, so the table shows the whole way to the claim.
-var claim = Claim{Version: "v0.1", Profiles: []string{
-	"core", "insights", "governance", "manager", "messaging", "campaign", "monitor", "knowledge", "ingress", "connections", "debug", "sandbox",
-}}
+// claim is the claim of the reference core: the skeleton version and the profiles it claims
+// (MAN-8); the cases of rules outside it are not run.
+var claim = Claim{Version: spec.Version, Profiles: spec.Profiles}
 
 // inProcess is a bench of a fresh database and a core with its P1, P2 and test-control
 // listeners in this process; the runner reaches it only over HTTP.

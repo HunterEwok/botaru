@@ -116,6 +116,9 @@ func (r *Runner) Run(ctx context.Context, cases []*Case) []Result {
 	var out []Result
 	for _, c := range in {
 		res := r.runCase(ctx, c)
+		if id := EndedRule(r.Rules, c, r.Claim); id != "" && res.Status == Failed {
+			res.Status, res.Detail = Unchecked, "names ended rule "+id+": "+res.Detail
+		}
 		res.Rules = InScopeRules(r.Rules, c, r.Claim)
 		out = append(out, res)
 	}

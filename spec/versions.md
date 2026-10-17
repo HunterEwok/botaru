@@ -44,11 +44,11 @@ Only the sheets of the contract boundaries with foreign code carry a version (C1
 
 | Sheet | Sheet version |
 |---|---|
-| `p1-worker-protocol.md` | 0.1.0 |
-| `p3-tool-gateway.md` | 0.1.0 |
-| `p4-model-gateway.md` | 0.1.0 |
-| `e1-channel.md` | 0.1.0 |
-| `e3-tool-host.md` | 0.1.0 |
-| `e5-monitor.md` | 0.1.0 |
+| `p1-worker-protocol.md` | 0.3.0 |
+| `p3-tool-gateway.md` | 0.3.0 |
+| `p4-model-gateway.md` | 0.3.0 |
+| `e1-channel.md` | 0.3.0 |
+| `e3-tool-host.md` | 0.3.0 |
+| `e5-monitor.md` | 0.3.0 |
 
-The v0.2 operations are already written in the sheets as rows with version v0.2; when 0.2.0 comes out, the sheets get the minor version 0.2.0. The machine map of the operations and their schemas lives in `spec/ports/operations.yaml`, and every row there has a `since` field.
+The sheets and `spec/VERSION` carry 0.3.0, the release of skeleton v0.3 that the reference implementation claims. It is unreleased: there is no tag yet, its changes are in the "Unreleased" section of the changelog, and until the tag a change of forms is recorded in `spec/removed.yaml` as above. The machine map of the operations and their schemas lives in `spec/ports/operations.yaml`, and every row there has a `since` field.

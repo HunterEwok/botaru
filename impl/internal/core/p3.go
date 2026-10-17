@@ -17,6 +17,7 @@ import (
 	"github.com/HunterEwok/botaru/impl/internal/jcs"
 	"github.com/HunterEwok/botaru/impl/internal/manifest"
 	"github.com/HunterEwok/botaru/impl/internal/mcp"
+	"github.com/HunterEwok/botaru/impl/internal/spec"
 	"github.com/HunterEwok/botaru/impl/internal/store"
 	"github.com/HunterEwok/botaru/impl/internal/toolspec"
 )
@@ -489,6 +490,14 @@ func (c *Core) P3ToolsCall(ctx context.Context, handle string, p mcp.CallParams)
 		if err := pinnedCatalog(ctx, tx, g.Task, tools); err != nil {
 			return err
 		}
+		// A built-in tool of a deferred rule is not offered by this core: version_unsupported
+		// (D-114, MAN-11). A deferred field of a served tool's arguments is refused by the tool
+		// in its own outcome: propose_campaign (ORC-15), control_ops pin_task (MGR-12). A tool
+		// of a catalog plugin whose model name is the same (<plugin>_<tool>) is not a built-in.
+		if _, ok := spec.DeferredCall(spec.SurfaceTool, p.Name, nil); ok && !pluginToolName(cat, p.Name) {
+			refusal = &toolRefusal{state: "error", reason: "version_unsupported"}
+			return nil
+		}
 		if p.Name == requestActionName {
 			offered := slices.ContainsFunc(tools, func(t catalogTool) bool { return t.Builtin && t.Name == requestActionName })
 			args := p.Arguments
@@ -663,6 +672,21 @@ func (c *Core) P3ToolsCall(ctx context.Context, handle string, p mcp.CallParams)
 		return c.serviceOutcome(ctx, callID, grantID)
 	}
 	return c.awaitToolCall(ctx, cat, callID)
+}
+
+// pluginToolName says whether a model tool name is a tool of a catalog plugin: the first
+// underscore separates the plugin from its tool (tool_ref).
+func pluginToolName(cat *Catalog, name string) bool {
+	plugin, tool, ok := strings.Cut(name, "_")
+	if !ok {
+		return false
+	}
+	pl, have := cat.Plugins[plugin]
+	if !have {
+		return false
+	}
+	_, have = pl.Tool(tool)
+	return have
 }
 
 // recordToolCall checks a call and writes its record: queued, or denied or error at once.

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -92,6 +93,30 @@ func (c *Core) dropIncidentStop(ctx context.Context, tx pgx.Tx, now time.Time, c
 	if _, err := c.shiftManager(ctx, tx, now, cat, m, m.Holder, reasons, event, "incident_stop_ignored", "system"); err != nil {
 		return err
 	}
+	// The manager_stopped cards that the earlier core planned (a quiet hour, the card limit) are
+	// about a stop that no longer holds: they are withheld with the event delivery.withheld, as
+	// every withheld delivery. A card already sending stays: the channel may have sent it, and its
+	// outcome comes back on its lease, so withholding it would contradict what was sent.
+	rows, err := tx.Query(ctx, `UPDATE deliveries SET state = 'withheld', reason = 'superseded', updated_at = $1
+		WHERE kind = 'manager_stopped' AND state = 'planned' RETURNING id, tenant`, now)
+	if err != nil {
+		return err
+	}
+	type withheld struct{ id, tenant string }
+	ws, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (withheld, error) {
+		var w withheld
+		return w, r.Scan(&w.id, &w.tenant)
+	})
+	if err != nil {
+		return err
+	}
+	slices.SortFunc(ws, func(a, b withheld) int { return strings.Compare(a.id, b.id) })
+	for _, w := range ws {
+		if err := c.appendEvent(ctx, tx, now, w.tenant, Event{Type: "delivery.withheld", Subject: w.id,
+			Data: map[string]any{"delivery": w.id, "kind": "manager_stopped", "reason": "superseded"}}); err != nil {
+			return err
+		}
+	}
 	// A holder's seat back in held is told to the admins as seat.resume tells them (MGR-31).
 	if m.State != "held" {
 		return nil
@@ -124,25 +149,23 @@ func (c *Core) managerSeatRecord(ctx context.Context, tx pgx.Tx) (map[string]any
 	if m.DecideUntil != nil {
 		rec["decide_until"] = fmtTime(*m.DecideUntil)
 	}
-	if claimsV03() {
-		rows, err := tx.Query(ctx, `SELECT tenant, incident, since FROM manager_restrictions WHERE until IS NULL ORDER BY tenant LIMIT 1000`)
-		if err != nil {
-			return nil, err
-		}
-		list, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (any, error) {
-			var tenant, incident string
-			var since time.Time
-			err := row.Scan(&tenant, &incident, &since)
-			return withTenant(map[string]any{"incident": incident, "since": fmtTime(since)}, tenant), err
-		})
-		if err != nil {
-			return nil, err
-		}
-		if list == nil {
-			list = []any{}
-		}
-		rec["restricted_in"] = list
+	rows, err := tx.Query(ctx, `SELECT tenant, incident, since FROM manager_restrictions WHERE until IS NULL ORDER BY tenant LIMIT 1000`)
+	if err != nil {
+		return nil, err
 	}
+	list, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (any, error) {
+		var tenant, incident string
+		var since time.Time
+		err := row.Scan(&tenant, &incident, &since)
+		return withTenant(map[string]any{"incident": incident, "since": fmtTime(since)}, tenant), err
+	})
+	if err != nil {
+		return nil, err
+	}
+	if list == nil {
+		list = []any{}
+	}
+	rec["restricted_in"] = list
 	if err := c.spec.Validate("urn:botaru:schema:seat:1", rec); err != nil {
 		return nil, err
 	}
@@ -206,9 +229,6 @@ func authorLevel(seat bool, purpose string) int {
 // deferrable in delivery-kinds.yaml: the manager's notice to people is not urgent, and quiet
 // hours apply to it (MGR-52). The daily digest does not collect it.
 func quietOnlyKinds() []string {
-	if !claimsV03() {
-		return nil
-	}
 	return []string{attentionNotice}
 }
 
@@ -291,15 +311,12 @@ func (c *Core) paragraphAsked(ctx context.Context, tx pgx.Tx, now time.Time, cat
 // and does not use: stops_manager of an IncidentClass and incident_stop of the farm charter
 // (MGR-55, GOV-22, GOV-28). They do not fail the set.
 func ignoredV03(d manifest.Doc, v map[string]any, i int) []ApplyError {
-	if !claimsV03() {
-		return nil
-	}
 	spec, _ := v["spec"].(map[string]any)
 	var path string
 	switch {
 	case d.Kind == "IncidentClass" && spec["stops_manager"] != nil:
 		path = "/spec/stops_manager"
-	case d.Kind == "Governance" && d.Tenant == farmTenant && mmap(spec, "farm_manager")["incident_stop"] != nil:
+	case d.Kind == "Governance" && isFarmCharter(d.Tenant, d.Name) && mmap(spec, "farm_manager")["incident_stop"] != nil:
 		path = "/spec/farm_manager/incident_stop"
 	default:
 		return nil
@@ -351,7 +368,7 @@ func setPostmortemParagraph(ctx context.Context, tx pgx.Tx, task string) error {
 // enqueuePostmortem (MGR-53).
 func postmortemOn(cat *Catalog, tenant string) bool {
 	role := managerRole(cat)
-	if !claimsV03() || cat.Tenants[tenant] == nil || !managerEnabled(cat, tenant) || managerCharter(cat)["postmortem"] == false || role == "" ||
+	if cat.Tenants[tenant] == nil || !managerEnabled(cat, tenant) || managerCharter(cat)["postmortem"] == false || role == "" ||
 		!slices.Contains(cat.Roles[role].Claims, postmortemType) {
 		return false
 	}

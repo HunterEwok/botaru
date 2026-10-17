@@ -5,6 +5,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
@@ -148,7 +149,8 @@ func TestStatusDoctor(t *testing.T) {
 		t.Fatal(err)
 	}
 	validOut(t, b, "p2-status-response", st)
-	if st.Commit != strings.Repeat("0", 40) || st.ConformsTo.Skeleton != "0.1.0" || len(st.FarmManagerDisabled) != 1 {
+	if st.Commit != strings.Repeat("0", 40) || st.ConformsTo.Skeleton != "0.3.0" || len(st.FarmManagerDisabled) != 1 ||
+		!slices.Contains(st.ConformsTo.Profiles, "knowledge") || !slices.Contains(st.ConformsTo.Profiles, "ingress") || slices.Contains(st.ConformsTo.Profiles, "sandbox") {
 		t.Fatalf("status %+v", st)
 	}
 	if err := b.c.Tick(ctx); err != nil {

@@ -20,6 +20,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/HunterEwok/botaru/impl/internal/jcs"
+	"github.com/HunterEwok/botaru/impl/internal/spec"
 	"github.com/HunterEwok/botaru/impl/internal/store"
 )
 
@@ -599,15 +600,19 @@ func sevOf(ok bool, bad string) string {
 
 // profiles are the conformance profiles this installation claims (MAN-8, D-88).
 func (c *Core) profiles() []string {
-	out := []string{"core"}
-	if c.monitorOn() {
-		out = append(out, "monitor")
-	}
-	// The knowledge profile once the claim lists it (spec.Claims, KNW-*, SKL-*).
-	if knowledgeOn() {
-		out = append(out, "knowledge")
+	var out []string
+	for _, p := range spec.Profiles {
+		if c.claims(p) {
+			out = append(out, p)
+		}
 	}
 	return out
+}
+
+// claims says whether the installation claims a profile: the build claims it, and an
+// installation without the monitoring system does not claim monitor (D-88).
+func (c *Core) claims(profile string) bool {
+	return spec.Claims(profile) && (profile != "monitor" || c.monitorOn())
 }
 
 // exportSuperseded withholds a failed export that a newer one replaces: an alarm change with a

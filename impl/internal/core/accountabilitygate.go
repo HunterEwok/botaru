@@ -20,7 +20,7 @@ const suiteUnawareness = "gov-res-aware"
 // unawareReported says whether a role passes the GOV-46 gate at fingerprint fp: always for a role
 // outside the commission position or on a core before v0.3.
 func (x evalIndex) unawareReported(role, fp string) bool {
-	if !claimsV03() || profilePosition(mstr(x.spec("Role", "", role), "profile")) != "commission" {
+	if profilePosition(mstr(x.spec("Role", "", role), "profile")) != "commission" {
 		return true
 	}
 	return slices.ContainsFunc(x.reports(), func(r evalReport) bool {

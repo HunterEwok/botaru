@@ -98,9 +98,16 @@ func proposalState(t *testing.T, b *bench) (string, map[string]any) {
 	return recs[0]["state"].(string), recs[0]
 }
 
-// review claims the next lens review of w and hands in result.
+// review claims the next lens review of w and hands in result. A result without a forecast
+// of a proposal lens gets one that agrees with its score, as review-result.v2 of the v0.3 claim
+// requires (COM-15, COM-16); the necessity review of an escalation has none.
 func (b *bench) review(t *testing.T, w *Worker, result map[string]any) error {
 	t.Helper()
+	if _, ok := result["forecast"]; !ok && result["lens"] != necessityLens {
+		if score, ok := result["score"].(int); ok {
+			result["forecast"] = reviewForecast(asString(result["lens"]), score)
+		}
+	}
 	att := b.claim(t, w, "attempt")
 	if att == nil {
 		t.Fatal("no review attempt")

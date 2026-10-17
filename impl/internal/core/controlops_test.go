@@ -288,11 +288,11 @@ func TestClassNamedProtected(t *testing.T) {
 	}
 }
 
-// The types that publish the alarm of a class with stops_manager, and the roles that claim
-// them, are out of reach of seat operations (GOV-28, MGR-9).
+// The types that publish the alarm of a class with manager_accountable, and the roles that
+// claim them, are out of reach of seat operations (GOV-48, MGR-9).
 func TestStopWriters(t *testing.T) {
 	cat := newCatalog()
-	cat.RawGlobals[manifest.Key{Kind: "IncidentClass", Name: "disk_full"}] = map[string]any{"spec": map[string]any{"stops_manager": true,
+	cat.RawGlobals[manifest.Key{Kind: "IncidentClass", Name: "disk_full"}] = map[string]any{"spec": map[string]any{"manager_accountable": true,
 		"detect": map[string]any{"alarm": "alarm.disk.free.low.v1"}}}
 	cat.RawGlobals[manifest.Key{Kind: "IncidentClass", Name: "slow"}] = map[string]any{"spec": map[string]any{
 		"detect": map[string]any{"alarm": "alarm.slow.v1"}}}
@@ -333,7 +333,8 @@ func TestControlOpsPerson(t *testing.T) {
 	if _, err := b.c.ControlApply(ctx, b.op, ControlRequest{Op: "release", Target: ControlTarget{Kind: "hold", ID: hold}}); err == nil {
 		t.Fatal("a person's hold was released by control.apply")
 	}
-	if _, err := b.c.ControlApply(ctx, b.op, ControlRequest{Op: "pin_task", Target: ControlTarget{Kind: "worker", ID: "wk_x"}}); err == nil {
-		t.Fatal("an operation this version does not serve was applied")
+	// pin_task is of the deferred rule MGR-12: version_unsupported (D-114).
+	if _, err := b.c.ControlApply(ctx, b.op, ControlRequest{Op: "pin_task", Target: ControlTarget{Kind: "worker", ID: "wk_x"}}); reasonOf(err) != "version_unsupported" {
+		t.Fatalf("pin_task: %v", err)
 	}
 }

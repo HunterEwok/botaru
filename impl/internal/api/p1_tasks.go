@@ -43,7 +43,7 @@ func (s *Server) programCall(ctx context.Context, w http.ResponseWriter, r *http
 		s.fail(w, err)
 		return true
 	}
-	m, ok := s.body(w, r, info.Request)
+	m, ok := s.opBody(w, r, "P1."+op, info)
 	if !ok {
 		return true
 	}

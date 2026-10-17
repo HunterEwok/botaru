@@ -1,10 +1,10 @@
 # Flow 8 from examples/flows.md: personal assistant, a letter draft.
 # In the text it is erin; here it is alice with group assist (the brief's training names).
 id: flow-08-assistant-draft
-rules: [DSP-10, IDN-5, IDN-6, MEM-1, MEM-2, MEM-3]
+rules: [DSP-10, IDN-5, IDN-6]
 description: >-
   alice enqueues /a. The assistant is the pool of role assistant: on claim the core grants a lease with owner alice.
-  Memory is searched in the space (demo, person, alice) that the core computes.
+  The role holds no memory while the personal assistant is deferred (DSP-10, person_memory_deferred, MEM-2).
 given:
   tenant: demo
   people: [{principal: alice, kind: user, groups: [user, assist]}]
@@ -14,7 +14,6 @@ steps:
      activity: {kind: message, channel: telegram, update_id: "6", sender: {identity: "telegram:1001", verified: true}, chat: {kind: direct, external_id: "1001"}, text: "/a draft a letter to the contractor about the field trip on October 14-16"},
      expect: {task: {type: assist.chat.v1, record: {max_tier: 0, data_mark: summary}}}}
   - {port: P1, op: claim, by: role:assistant, request: {kinds: [attempt]}, expect: {lease: {owner: alice}}}
-  - {port: P1, op: memory.search, by: role:assistant, expect: {space: {tenant: demo, scope: person, subject: alice}}}
   - {port: P1, op: complete, by: role:assistant, result: {answer: "Dear captain, ..."},
      expect: {deliveries: [{kind: task_result, to: origin, dataorigin: model}]}}
 expect:
@@ -23,4 +22,4 @@ expect:
     - {free_text_without_command: {from: "telegram:alice", chat: direct, text: "draft a letter"}, type_chosen: ops.summary.v1}
   not:
     - "the assistant sending the letter: it has no write tool"
-    - "a memory write without a person's button (MEM-3)"
+    - "a memory of alice at the assistant: the role has memory: none"

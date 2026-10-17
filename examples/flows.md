@@ -241,7 +241,7 @@ observes: [farm.external.outcome, farm.external.duration, farm.schedule.slot, fa
 |---|---|
 | Who and where | `erin` (`assist`), private chat with her assistant |
 | Request | `/a draft a letter to the contractor about the field trip on October 14-16: my stations as usual, we need a CTD probe and two places for students` |
-| Task type | `assist.chat.v1`: tier 0, class `summary`, role `assistant` with `memory: person`; enqueued by the command `/a`, it is not in `default_types` (DSP-10) |
+| Task type | `assist.chat.v1`: tier 0, class `summary`, role `assistant` (`memory: person` in this flow; while the personal assistant is deferred, DSP-10, the example role has `memory: none`, because `apply` refuses person memory with `person_memory_deferred`, MEM-2); enqueued by the command `/a`, it is not in `default_types` (DSP-10) |
 | Machine form | v0.1 |
 
 1. Earlier `erin` wrote to the assistant: "remember: my stations are st-07 and st-09; I write letters in English; I coordinate field trips with alice". The assistant proposed a record (P1 `memory.propose` through the E4 adapter), the channel showed `erin` a card in her private chat with the record text and the button "Remember", and `erin` pressed it (P1 `decide`, subject `memory_record`, APR-4). Only then did the record become `active`; without an answer within 7 days it would have been `discarded` (MEM-3).

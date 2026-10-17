@@ -85,7 +85,6 @@ func TestAttributionDependencyAndP2(t *testing.T) {
 // incident.manage: they get the weekly summary and record an incident's cause.
 func linkBench(t *testing.T) *bench {
 	t.Helper()
-	setClaimsV03(t, true)
 	b := newCommissionBenchWith(t, true, []map[string]any{{
 		"apiVersion": "botaru/v1alpha1", "kind": "Group", "metadata": map[string]any{"name": "governors", "tenant": "demo"},
 		"spec": map[string]any{"caps": []any{"governance.confirm:commission", "governance.attribute", "admin:governance", "incident.manage"}, "data": []any{"summary", "internal"}},
@@ -334,10 +333,6 @@ func TestRejectionLinksV03(t *testing.T) {
 	if managerAgainst(&proposalRow{Rec: map[string]any{"reviews": []any{map[string]any{"lens": "security", "state": "done"}}}}) {
 		t.Fatal("a proposal the manager was not asked about counts as against")
 	}
-	setClaimsV03(t, false)
-	if _, err := b.c.IncidentCause(ctx, alice, IncidentCauseRequest{Incident: inc, Cause: "unknown"}); reasonOf(err) != "not_found" {
-		t.Fatalf("incident.cause before v0.3: %v", err)
-	}
 }
 
 // The dependency hop of script_target (TRN-7) and the stricter tenant threshold of the role
@@ -346,7 +341,6 @@ func TestRejectionLinksV03(t *testing.T) {
 // the first confirmed link sets the role hold. A looser catalog value never applies.
 func TestScriptLinkHopAndStricterHold(t *testing.T) {
 	ctx := context.Background()
-	setClaimsV03(t, true)
 	b := newBenchWith(t, func(_ string, ms []map[string]any) []map[string]any {
 		return append(ms, map[string]any{
 			"apiVersion": "botaru/v1alpha1", "kind": "Catalog", "metadata": map[string]any{"name": "demo", "tenant": "demo"},
@@ -381,13 +375,6 @@ func TestScriptLinkHopAndStricterHold(t *testing.T) {
 	}
 	b.insertIncident(t, "web_down", "resource", "web1-logs")
 	b.insertIncident(t, "web_down", "resource", "db1") // depends on nothing the run named
-	// Before v0.3 the hop is not taken: the run named the machine, not the resource.
-	setClaimsV03(t, false)
-	b.loop(t, "governance")
-	if n := b.count(t, `SELECT count(*) FROM attributions WHERE kind = 'script_run'`); n != 0 {
-		t.Fatalf("script links by the hop before v0.3: %d", n)
-	}
-	setClaimsV03(t, true)
 	b.loop(t, "governance")
 	if n := b.count(t, `SELECT count(*) FROM attributions WHERE kind = 'script_run' AND script_run = $1`, run); n != 1 {
 		t.Fatalf("script links %d", n)
@@ -412,7 +399,6 @@ func TestScriptLinkHopAndStricterHold(t *testing.T) {
 // MGR-23).
 func TestManagerPersonaEvalV03(t *testing.T) {
 	ctx := context.Background()
-	setClaimsV03(t, true)
 	b := newManagerBench(t)
 	w := b.enroll(t, EnrollRequest{Tenant: "demo", Kind: "agent", Role: "farm-manager"})
 	b.exec(t, `UPDATE manifests SET doc = jsonb_set(doc, '{spec,kind}', '"production"') WHERE kind = 'Tenant' AND name = 'demo'`)
@@ -478,16 +464,11 @@ func TestCommissionUnawareGate(t *testing.T) {
 		}
 		return errs
 	}
-	setClaimsV03(t, true)
 	if errs := gate(append(slices.Clone(base), reports("com"))); len(errs) != 1 || errs[0].Code != "eval_report_missing" {
 		t.Fatalf("a commission role without gov-res-aware: %+v", errs)
 	}
 	if errs := gate(append(slices.Clone(base), reports("com", suiteUnawareness))); len(errs) != 0 {
 		t.Fatalf("with gov-res-aware: %+v", errs)
-	}
-	setClaimsV03(t, false)
-	if errs := gate(append(slices.Clone(base), reports("com"))); len(errs) != 0 {
-		t.Fatalf("before v0.3: %+v", errs)
 	}
 }
 
@@ -495,7 +476,6 @@ func TestCommissionUnawareGate(t *testing.T) {
 // as numbers with their samples (PRP-26).
 func TestManagerReviewFarmGuards(t *testing.T) {
 	ctx := context.Background()
-	setClaimsV03(t, true)
 	b := newManagerWorkBench(t)
 	b.exec(t, `INSERT INTO obs_points (tenant, series, subject, at, enum, source, data_mark, key, created_at)
 		SELECT 'demo', 'farm.task.outcome', 'task_type:hello.greet.v1', botaru_now() - interval '1 day', CASE WHEN g % 4 = 0 THEN 'failed' ELSE 'done' END, 'core', 'internal', 'o' || g, botaru_now()

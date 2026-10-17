@@ -576,17 +576,17 @@ func (c *Core) acceptScriptAs(ctx context.Context, tx pgx.Tx, now time.Time, cat
 	role := cat.Roles[g.Role]
 	index := map[string]int{}
 	ancestors := make([]map[string]bool, len(steps))
-	// SCR-1 and the v0.1 kinds; SCR-3: needs only point back, so the graph has no cycle.
+	// SCR-1 and the kinds this core offers (wait and await are of SCR-13, deferred); SCR-3: needs only point back, so the graph has no cycle.
 	for i, s := range steps {
 		n := i + 1
 		raw, _ := rawSteps[i].(map[string]any)
 		for _, f := range []string{"for", "event", "match", "timeout"} {
 			if _, ok := raw[f]; ok {
-				return nil, &scriptProblem{Step: n, Reason: "script_invalid", Detail: "the field " + f + " comes in v0.2"}, nil
+				return nil, &scriptProblem{Step: n, Reason: "script_invalid", Detail: "the field " + f + " is of the deferred rule SCR-13"}, nil
 			}
 		}
 		if s.Kind == "wait" || s.Kind == "await" {
-			return nil, &scriptProblem{Step: n, Reason: "script_invalid", Detail: "the kind " + s.Kind + " comes in v0.2"}, nil
+			return nil, &scriptProblem{Step: n, Reason: "script_invalid", Detail: "the kind " + s.Kind + " is of the deferred rule SCR-13"}, nil
 		}
 		if _, dup := index[s.ID]; dup {
 			return nil, &scriptProblem{Step: n, Reason: "script_invalid", Detail: "a repeated step id"}, nil
@@ -606,7 +606,7 @@ func (c *Core) acceptScriptAs(ctx context.Context, tx pgx.Tx, now time.Time, cat
 		index[s.ID] = i
 		for _, v := range s.values() {
 			if m, ok := v.(map[string]any); ok && m["param"] != nil {
-				return nil, &scriptProblem{Step: n, Reason: "script_invalid", Detail: "a parameter reference comes in v0.2"}, nil
+				return nil, &scriptProblem{Step: n, Reason: "script_invalid", Detail: "a parameter reference is of the deferred rule SCR-14"}, nil
 			}
 		}
 	}

@@ -200,6 +200,38 @@ func (s *Server) body(w http.ResponseWriter, r *http.Request, schema string) (ma
 	return s.object(w, raw, schema)
 }
 
+// opBody reads the body of the operation name ("P1.enqueue") as body does, and refuses an
+// operation or a field of its body that belongs to a deferred rule with version_unsupported
+// and the path (D-114, MAN-11): the operation alone before its schema, a field after.
+func (s *Server) opBody(w http.ResponseWriter, r *http.Request, name string, info opInfo) (map[string]any, bool) {
+	if deferredOp(w, name, nil) {
+		return nil, false
+	}
+	m, ok := s.body(w, r, info.Request)
+	if !ok || deferredOp(w, name, m) {
+		return nil, false
+	}
+	return m, true
+}
+
+// deferredOp writes the refusal of a deferred operation or body field, if any; body nil
+// checks the operation alone. The hello body is checked for its deferred fields too.
+func deferredOp(w http.ResponseWriter, name string, body map[string]any) bool {
+	h, ok := spec.DeferredCall(spec.SurfaceOp, name, body)
+	if !ok && name == "P1.hello" && body != nil {
+		h, ok = spec.DeferredCall(spec.SurfaceHello, "", body)
+	}
+	if !ok {
+		return false
+	}
+	detail := name + " is of the deferred rule " + h.Rule + " and not served by this core"
+	if h.Ptr != "" {
+		detail = h.Ptr + " of " + name + " is of the deferred rule " + h.Rule + " and not served by this core"
+	}
+	Problem(w, &core.Problem{Reason: "version_unsupported", Detail: detail})
+	return true
+}
+
 // object parses and checks a JSON object body against a schema.
 func (s *Server) object(w http.ResponseWriter, raw []byte, schema string) (map[string]any, bool) {
 	if len(raw) == 0 {

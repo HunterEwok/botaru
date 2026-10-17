@@ -243,8 +243,9 @@ func TestHoldWhoSetsAndReleases(t *testing.T) {
 	other := HoldSetRequest{Scope: HoldScope{Kind: "tenant", Tenant: "demo2"}, Effects: []string{"no_enqueue"}, Reason: "manual"}
 	_, err = b.c.HoldSet(ctx, op, other)
 	wantReason(t, err, "tenant_mismatch")
-	later := HoldSetRequest{Scope: HoldScope{Kind: "sink", Tenant: "demo", Name: "exports"}, Effects: []string{"no_enqueue"}, Reason: "manual"}
-	_, err = b.c.HoldSet(ctx, op, later)
+	// A scope outside the closed list of holds.yaml is refused; the v0.2 scopes are of the claim.
+	unknown := HoldSetRequest{Scope: HoldScope{Kind: "planet", Tenant: "demo", Name: "exports"}, Effects: []string{"no_enqueue"}, Reason: "manual"}
+	_, err = b.c.HoldSet(ctx, op, unknown)
 	wantReason(t, err, "input_schema_invalid")
 	_, err = b.c.HoldSet(ctx, HoldActor{Principal: "bot:ops-reader", Rank: "bot", Tenant: "demo"}, farm)
 	wantReason(t, err, "forbidden")

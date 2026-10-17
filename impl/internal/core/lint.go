@@ -2192,7 +2192,7 @@ func (c *Core) lintLensNames(S *lintSet, f *lintFindings) error {
 	}
 	skeleton := map[string]map[string]any{}
 	for _, e := range reg.Entries {
-		if !spec.VersionLater(asString(e["since"]), spec.Effective()) {
+		if !spec.VersionLater(asString(e["since"]), spec.Version) {
 			skeleton[asString(e["id"])] = e
 		}
 	}
@@ -2257,10 +2257,16 @@ var charterFloors = []struct {
 	{"confirmation", "ttl", 7 * 24 * time.Hour}, {"identity", "unbound_ttl", defaultUnboundTTL}, {"memory", "seal_ttl", defaultSealTTL},
 }
 
+// isFarmCharter says whether a Governance manifest is the farm charter: the one of tenant farm,
+// or one named farm without a tenant.
+func isFarmCharter(tenant, name string) bool {
+	return tenant == farmTenant || tenant == "" && name == farmTenant
+}
+
 // lintCharterBounds checks what the schema of a charter cannot (GOV-33): a seat id declared
-// twice, the farm_manager block outside the farm charter (of tenant farm, or named farm
-// without a tenant), a duration below its default, the
-// excluded change kinds without none, and in the farm charter a decide_within above 7 days.
+// twice, the farm_manager block outside the farm charter (isFarmCharter), a duration below its
+// default and the excluded change kinds without none. incident_stop.decide_within is not
+// checked: a v0.3 core does not use incident_stop (MGR-55; apply warns, ignoredV03).
 func lintCharterBounds(o lintObj, f *lintFindings) {
 	seen := map[string]bool{}
 	for i, sv := range mlist(mmap(o.spec, "commission"), "seats") {
@@ -2275,8 +2281,7 @@ func lintCharterBounds(o lintObj, f *lintFindings) {
 		}
 		seen[id] = true
 	}
-	// The farm charter is the one of tenant farm, or one named farm without a tenant.
-	if farmCharter := o.tenant == farmTenant || o.tenant == "" && o.name == farmTenant; !farmCharter && o.spec["farm_manager"] != nil {
+	if !isFarmCharter(o.tenant, o.name) && o.spec["farm_manager"] != nil {
 		f.add(o, "charter_farm_manager", "/farm_manager")
 	}
 	for _, fl := range charterFloors {
@@ -2287,10 +2292,6 @@ func lintCharterBounds(o lintObj, f *lintFindings) {
 	}
 	if p := mmap(o.spec, "promotion"); p["exclude_change_kinds"] != nil && !slices.Contains(strList(p["exclude_change_kinds"]), "none") {
 		f.add(o, "charter_direction", "/promotion/exclude_change_kinds")
-	}
-	v := mstr(mmap(mmap(o.spec, "farm_manager"), "incident_stop"), "decide_within")
-	if d, ok := parseDuration(v); v != "" && (!ok || d > 7*24*time.Hour) {
-		f.add(o, "charter_direction", "/farm_manager/incident_stop/decide_within")
 	}
 }
 
@@ -2311,8 +2312,7 @@ func (c *Core) lintGovernance(S *lintSet, f *lintFindings, personas personaLooku
 		}
 		lintCharterBounds(o, f)
 		// From v0.3 the size of a persona counts with its addenda (GOV-45).
-		v03 := claimsV03()
-		refs := charterPersonas(o.spec, v03)
+		refs := charterPersonas(o.spec)
 		sizes := map[string]int{}
 		for _, path := range slices.Sorted(mapKeys(refs)) {
 			r := refs[path]
@@ -2337,12 +2337,6 @@ func (c *Core) lintGovernance(S *lintSet, f *lintFindings, personas personaLooku
 				position = "farm_manager"
 			} else if strings.HasPrefix(path, "/positions/") {
 				position = strings.Split(path, "/")[2]
-			}
-			if !v03 {
-				for _, code := range personaFindings(text, position, u) {
-					f.add(o, code, path)
-				}
-				continue
 			}
 			kind := position
 			if strings.Contains(path, "/addenda/") {
@@ -2473,21 +2467,17 @@ func managerLineShort(ts, farmManager, seatProfile map[string]any) []string {
 		outPrice, _ := mnum(mmap(seatProfile, "price"), "output")
 		maxOut, _ := mnum(seatProfile, "max_output_tokens")
 		need := seatWorstReadMicros(in, outPrice, int(maxOut))
-		if claimsV03() {
-			need += float64(money.FromEUR(charterReviewMaxEUR(farmManager)) + money.FromEUR(postmortemDayEUR(farmManager)))
-		}
+		need += float64(money.FromEUR(charterReviewMaxEUR(farmManager)) + money.FromEUR(postmortemDayEUR(farmManager)))
 		if d*1e6 < need {
 			out = append(out, "/budgets/lines/manager/day_eur")
 		}
 	}
-	if claimsV03() {
-		tm := defaultTakeoverMonthEUR
-		if v, ok := mnum(mmap(ts, "takeover"), "manager_month_eur"); ok {
-			tm = v
-		}
-		if mm, ok := mnum(line, "month_eur"); ok && mm < tm {
-			out = append(out, "/budgets/lines/manager/month_eur")
-		}
+	tm := defaultTakeoverMonthEUR
+	if v, ok := mnum(mmap(ts, "takeover"), "manager_month_eur"); ok {
+		tm = v
+	}
+	if mm, ok := mnum(line, "month_eur"); ok && mm < tm {
+		out = append(out, "/budgets/lines/manager/month_eur")
 	}
 	return out
 }

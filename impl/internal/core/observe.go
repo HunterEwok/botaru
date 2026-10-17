@@ -78,7 +78,7 @@ func (c *Core) tenantSeries(cat *Catalog, tenant string) map[string]seriesDef {
 				// The decision statistics of v0.2 are core series of this build (DIG-4).
 				if d, ok := c.decisionSeries(asString(e["id"])); ok {
 					out[d.Name] = d
-				} else if e["id"] == seriesTakeoverCount && claimsV03() {
+				} else if e["id"] == seriesTakeoverCount {
 					out[seriesTakeoverCount] = takeoverSeries()
 				}
 				continue

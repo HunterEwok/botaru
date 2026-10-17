@@ -42,7 +42,7 @@ func (s *Server) p1(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	// The session and memory operations take the handle of the lease as the bearer (MEM-1).
 	if strings.HasPrefix(op, "session.") || strings.HasPrefix(op, "memory.") {
-		m, ok := s.body(w, r, info.Request)
+		m, ok := s.opBody(w, r, "P1."+op, info)
 		if !ok {
 			return
 		}
@@ -67,7 +67,7 @@ func (s *Server) p1(w http.ResponseWriter, r *http.Request) {
 		s.filePut(ctx, w, r, wk, info.Request)
 		return
 	}
-	m, ok := s.body(w, r, info.Request)
+	m, ok := s.opBody(w, r, "P1."+op, info)
 	if !ok {
 		return
 	}

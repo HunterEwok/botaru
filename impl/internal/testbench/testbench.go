@@ -27,8 +27,9 @@ var HelloBotFiles = []string{
 	"examples/model-profiles/base-std.yaml",
 }
 
-// HelloBotManifests reads the hello-bot manifests, rewrites every Tenant to kind: test and
-// drops the fields that a core of this version refuses (DropUnsupported).
+// HelloBotManifests reads the hello-bot manifests, the file set of DEPLOY.md section 7, rewrites
+// every Tenant to kind: test and drops the fields that a core of this version refuses
+// (DropUnsupported), as farmctl apply -as-test -drop-unsupported does.
 func HelloBotManifests(root string) ([]map[string]any, error) {
 	paths := make([]string, len(HelloBotFiles))
 	for i, f := range HelloBotFiles {

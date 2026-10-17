@@ -209,7 +209,7 @@ func (c *Core) checkBudget(ctx context.Context, tx pgx.Tx, now time.Time, tv *Te
 	}
 	// From v0.3 the month of the manager line stops work outside sev1 at 70% as the day does;
 	// sev1 runs from the day's reserve, and the fallback profile from the day alone (MGR-49).
-	if line == "manager" && claimsV03() {
+	if line == "manager" {
 		if ask.sev1 || ask.fallback {
 			windows[2].limit = nil
 			// Once the month is spent, sev1 runs only from the day's reserve: today's sev1 spend,
@@ -411,7 +411,7 @@ func taskSev1(ctx context.Context, tx pgx.Tx, line, task string) (bool, error) {
 // taskFallback says whether a task of the manager line runs on the fallback profile the core
 // chose at claim (MGR-49).
 func taskFallback(ctx context.Context, tx pgx.Tx, line, task string) (bool, error) {
-	if line != "manager" || task == "" || !claimsV03() {
+	if line != "manager" || task == "" {
 		return false, nil
 	}
 	var fb bool
