@@ -172,6 +172,7 @@ Core, ports and people:
   other than the own `monitor` plugin: such a plugin runs in its own container, which this build does not start (DEP-7).
 - The chat command `/invite`; merging a daily digest of preferences into one message.
 - The purge of `runtime_internal` sessions by period (RET-11).
+- The line "improvement cycle disabled" in the `apply` lint (INS-6): `doctor` and the digest show it.
 
 Monitoring:
 

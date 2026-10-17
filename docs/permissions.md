@@ -526,7 +526,7 @@ hosts:
          user: botaru-act-demo, networks: [core], secrets: [worker-token-th-demo-act]}
 ```
 
-The lint rejects this description if the monitoring address is `core1` or gets `store-core`, if `core1` leaves `farm_hosts` or gets a `demo` toolhost, if a secret has no rotation method, if `logs` gets a secret or network, if `th-demo-read` gets a write tool, if a `job` worker gets the store, if `web1` appears for a second tenant, or if root appears in `os_users`. Only the monitoring system checks the core's liveness, with its own `health` key (MON-2, D-60).
+The lint rejects this description if `core1` leaves `farm_hosts` or gets a `demo` toolhost, if a secret has no rotation method, if `logs` gets a secret or network, if `web1` appears for a second tenant, if root appears in `os_users`, or if a process other than the monitoring adapter or the watchdog holds the `health` key. The machine the monitoring system runs on is not in the description, so keeping it off `core1` is the installation's to do (DEP-10). The monitoring system, or without it the watchdog, checks the core's liveness with its own `health` key (MON-2, D-60, D-88).
 
 ### Debug tools
 
