@@ -318,6 +318,9 @@ func TestStopRepeats(t *testing.T) {
 	if err := b.c.st.Pool.QueryRow(ctx, `SELECT state, coalesce(reason, '') FROM deliveries WHERE id = 'dl_stopped'`).Scan(&state, &reason); err != nil || state != "withheld" || reason != "superseded" {
 		t.Fatalf("planned manager_stopped %s %s %v", state, reason, err)
 	}
+	if n := b.count(t, `SELECT count(*) FROM events WHERE type = 'delivery.withheld' AND subject = 'dl_stopped' AND data->>'reason' = 'superseded'`); n != 1 {
+		t.Fatalf("delivery.withheld events %d", n)
+	}
 	if m := b.managerSeat(t); m.State != "held" || m.Holder != holder || len(m.Reasons) != 0 || m.DecideUntil != nil {
 		t.Fatalf("seat %+v", m)
 	}

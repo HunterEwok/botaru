@@ -67,8 +67,8 @@ func TestRuleInScope(t *testing.T) {
 	}
 }
 
-// A case that names a rule ended before the claim checks behaviour its successors replaced
-// (D-113): it is not selected, even when another of its rules is in scope.
+// A case that names a rule ended before the claim stays selected, and EndedRule names that rule
+// (D-113), so the runner can report its failure as unchecked.
 func TestSelectEndedRule(t *testing.T) {
 	claim := Claim{Version: "v0.3", Profiles: []string{"core"}}
 	rules := map[string]*Rule{
@@ -78,7 +78,10 @@ func TestSelectEndedRule(t *testing.T) {
 	both := &Case{ID: "both", Rules: []string{"A-1", "B-1"}}
 	one := &Case{ID: "one", Rules: []string{"A-1"}}
 	in, _ := Select(rules, []*Case{both, one}, claim)
-	if len(in) != 1 || in[0].ID != "one" {
+	if len(in) != 2 {
 		t.Fatalf("selected %v", in)
+	}
+	if EndedRule(rules, both, claim) != "B-1" || EndedRule(rules, one, claim) != "" {
+		t.Fatal("EndedRule")
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -93,10 +94,28 @@ func (c *Core) dropIncidentStop(ctx context.Context, tx pgx.Tx, now time.Time, c
 		return err
 	}
 	// The manager_stopped cards that the earlier core planned (a quiet hour, the card limit) are
-	// about a stop that no longer holds: they are withheld, never sent.
-	if _, err := tx.Exec(ctx, `UPDATE deliveries SET state = 'withheld', reason = 'superseded', updated_at = $1
-		WHERE kind = 'manager_stopped' AND state = 'planned'`, now); err != nil {
+	// about a stop that no longer holds: they are withheld with the event delivery.withheld, as
+	// every withheld delivery. A card already sending stays: the channel may have sent it, and its
+	// outcome comes back on its lease, so withholding it would contradict what was sent.
+	rows, err := tx.Query(ctx, `UPDATE deliveries SET state = 'withheld', reason = 'superseded', updated_at = $1
+		WHERE kind = 'manager_stopped' AND state = 'planned' RETURNING id, tenant`, now)
+	if err != nil {
 		return err
+	}
+	type withheld struct{ id, tenant string }
+	ws, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (withheld, error) {
+		var w withheld
+		return w, r.Scan(&w.id, &w.tenant)
+	})
+	if err != nil {
+		return err
+	}
+	slices.SortFunc(ws, func(a, b withheld) int { return strings.Compare(a.id, b.id) })
+	for _, w := range ws {
+		if err := c.appendEvent(ctx, tx, now, w.tenant, Event{Type: "delivery.withheld", Subject: w.id,
+			Data: map[string]any{"delivery": w.id, "kind": "manager_stopped", "reason": "superseded"}}); err != nil {
+			return err
+		}
 	}
 	// A holder's seat back in held is told to the admins as seat.resume tells them (MGR-31).
 	if m.State != "held" {

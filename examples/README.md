@@ -62,7 +62,7 @@ spec:
   budgets: {month_eur: 300, day_eur: 15, hour_eur: 3}   # tenant ceilings (BUD-1); role lines sit inside them
   attention: {cards_per_tenant_hour: 20}                # above this, cards get service_rate_limited (APR-2)
   delegated_groups: [researcher]                        # groups the team lead grants from the channel (PRM-16): only without actions and decisions
-  farm_manager: {enabled: true}   # D-77, MGR-42
+  farm_manager: {enabled: false}  # D-77, MGR-42; off: the first-bot set has no farm charter with a seat profile (MGR-20, impl/DEPLOY.md section 7)
   link_allowlist: [www.example.org, docs.example.org]
   models_allowed: [base-std, analysis-std, review-a, review-b, seat-std, seat-alt, manager-std, translate-std]
                                 # seat-std, seat-alt, manager-std, translate-std are needed by the commission, the manager and the translator

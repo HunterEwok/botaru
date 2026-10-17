@@ -216,12 +216,11 @@ func mergePeople(parent, own []any) []any {
 
 // Select returns the cases of the claim: a case is in when one of its rules is an active rule of
 // a claimed profile whose version is not newer than the claim and whose until, if set, is not
-// older (MAN-8), and none of its rules ended before the claim: such a case checks behaviour that
-// the rules of its superseded_by replaced (D-113). A case whose own version is newer than the
-// claim is returned in skipped.
+// older (MAN-8). A case whose own version is newer than the claim is returned in skipped. A case
+// that also names a rule ended before the claim is selected too (see EndedRule).
 func Select(rules map[string]*Rule, cases []*Case, claim Claim) (in, skipped []*Case) {
 	for _, c := range cases {
-		if len(InScopeRules(rules, c, claim)) == 0 || endedRule(rules, c, claim) {
+		if len(InScopeRules(rules, c, claim)) == 0 {
 			continue
 		}
 		v := c.Version
@@ -237,14 +236,17 @@ func Select(rules map[string]*Rule, cases []*Case, claim Claim) (in, skipped []*
 	return in, skipped
 }
 
-// endedRule says whether a case names a rule whose until is older than the claim.
-func endedRule(rules map[string]*Rule, c *Case, claim Claim) bool {
+// EndedRule returns the first rule of a case whose until is older than the claim, or "". Such a
+// rule's behaviour was replaced by the rules of its superseded_by (D-113), so a case that names
+// it may expect what the claim no longer does: the runner runs it, and reports a failure of it
+// as unchecked ("names ended rule <ID>"), since the expectation may be the ended rule's.
+func EndedRule(rules map[string]*Rule, c *Case, claim Claim) string {
 	for _, id := range c.Rules {
 		if r, ok := rules[id]; ok && r.Until != "" && cmpVersion(r.Until, claim.Version) < 0 {
-			return true
+			return id
 		}
 	}
-	return false
+	return ""
 }
 
 // InScopeRules returns the rules of a case that the claim checks.

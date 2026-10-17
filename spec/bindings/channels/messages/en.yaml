@@ -29,9 +29,9 @@ texts:
   # The farm manager seat (MGR-31, GOV-22, MGR-35): codes, ids and times only
   notice.manager_holder_changed: "The farm manager seat was {what}: holder {holder}, epoch {epoch}, at {at}."
   # manager_stopped is the card of the incident stop of v0.1 and v0.2 (GOV-22, until v0.2): a v0.3 core
-  # stops the seat by no incident and sends neither text (MGR-55, GOV-47); farmctl resumes by tenant only.
-  notice.manager_stopped: "The farm manager seat stopped at {at} after incident {incident} ({class}, tenant {tenant}). Incidents opened during the stop: {joined}. Without a decision by {until} the holder leaves and the seat is vacant. Decide with farmctl:\nfarmctl seat resume farm-manager --tenant {tenant}\nfarmctl seat assign farm-manager\nfarmctl seat vacate farm-manager"
-  notice.manager_stopped_repeat: "Reminder: the farm manager seat is stopped since {at} after incident {incident} ({class}, tenant {tenant}). Incidents opened during the stop: {joined}. Without a decision by {until} the holder leaves and the seat is vacant. Decide with farmctl:\nfarmctl seat resume farm-manager --tenant {tenant}\nfarmctl seat assign farm-manager\nfarmctl seat vacate farm-manager"
+  # stops the seat by no incident and sends neither text (MGR-55, GOV-47), so they name no resume command.
+  notice.manager_stopped: "The farm manager seat stopped at {at} after incident {incident} ({class}, tenant {tenant}). Incidents opened during the stop: {joined}. Without a decision by {until} the holder leaves and the seat is vacant. Decide with farmctl:\nfarmctl seat assign farm-manager\nfarmctl seat vacate farm-manager"
+  notice.manager_stopped_repeat: "Reminder: the farm manager seat is stopped since {at} after incident {incident} ({class}, tenant {tenant}). Incidents opened during the stop: {joined}. Without a decision by {until} the holder leaves and the seat is vacant. Decide with farmctl:\nfarmctl seat assign farm-manager\nfarmctl seat vacate farm-manager"
   notice.manager_stopped.none: none
   # Accountability of the commission from v0.3 (GOV-36, GOV-42): codes, ids and times only
   notice.accountability_ready: "Every commission seat of tenant {tenant} has a holder with enough scored forecasts: {seats}. Accountability can be switched on with the charter field {field}: on."
