@@ -120,6 +120,8 @@ Entries are grouped by area; within a group the newest entry comes first.
 
 ### Reference Implementation (impl/)
 
+- impl: the files of `impl/internal/core` named by version or stage get domain names, and the largest files
+  are split by responsibility; declarations and tests move verbatim, nothing is renamed.
 - impl: `impl/README.md` is a short overview (programs, packages, key decisions, what is not built, checks),
   and the subsystem notes move to `impl/ARCHITECTURE.md`, grouped by domain and written as current behaviour;
   statements left from the v0.1 core are corrected.
