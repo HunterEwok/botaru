@@ -117,6 +117,10 @@ Without that run, the words of a PR are checked only after the merge, that is, a
 
 The workflow `.github/workflows/gemini-review.yml` is a second automatic reviewer, for when Codex has no quota left. A comment `/gemini review` on a pull request by the owner, a member or a collaborator runs the Gemini CLI (`@google/gemini-cli`, version pinned in the workflow) over the PR's diff and posts its findings as a PR comment. The PR's changes are read as a diff from the API and never fetched or checked out; the model gets the diff only, with every tool denied by an admin-tier policy (plan mode alone is not enough: without a person it may switch itself to yolo), and its step has no GitHub token. The comment always runs the workflow as it is on the default branch, so a change of the workflow takes effect only after its merge. The key is the repository secret `GEMINI_API_KEY` (Settings > Secrets and variables > Actions); a PR from a fork never gets it. The workflow is not a required check.
 
+## Claude review
+
+The workflow `.github/workflows/claude-review.yml` runs a Claude review only on request, never on a push. A comment that mentions `@claude` on a pull request (in the conversation, in a review or on a line) by the owner, a member or a collaborator runs Claude Code (`anthropics/claude-code-action`, pinned to a commit SHA) over the PR; it answers in the PR, with inline comments where they fit. The text after `@claude` is the request, for example `@claude review this PR` or a question about one line. The job token can read the contents and write only comments, so Claude never pushes. The comment always runs the workflow as it is on the default branch. The key is the repository secret `ANTHROPIC_API_KEY` (Settings > Secrets and variables > Actions), and every run is paid by the API. On a PR from someone outside the repository, its text reaches the model: ask for a review there only after reading the PR. The workflow is not a required check.
+
 ## Protecting the main branch
 
 The repository belongs to a personal account, so GitHub offers no merge queue. The owner sets a ruleset for the `main` branch in Settings > Rules > Rulesets:
