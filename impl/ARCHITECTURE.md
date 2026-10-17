@@ -294,9 +294,9 @@ The P3 catalog of an attempt is computed by its tools handle on every request:
   `read_by` holds the tool, in name order; a value two such resources share has no single target and is refused;
 - the built-in tools of `spec/model/builtin-tools.yaml` that the role, the task's purpose and the claimed profiles give
   it (`request_action`, `enqueue_child`, `send_message`, `inbox_read`, `observations_query`, the `status.*` views,
-  `service/control`, `monitor/script_run`, the campaign and script tools, `kb_search` and `kb_read`, and the farm
-  manager's tools), each described with its subsystem. The tools not served are listed in README.md, "Not in this
-  version".
+  `service/control`, `monitor/script_run`, the campaign and script tools, `kb_search` and `kb_read`, `escalate` and
+  `request_model_grant`, and the farm manager's tools), each described with its subsystem. The tools not served are
+  listed in README.md, "Not in this version".
 
 The model sees `<plugin>_<tool>`; rights and audit use `<plugin>/<tool>`. P4 requires the request tools to be exactly
 that catalog, in its order, compared by the hash of `{name, description, input_schema}` (GW-1), and the run fingerprint
@@ -455,6 +455,8 @@ control list are offered.
   time (`resource_busy`).
 - After a service action on a catalog host with an open monitoring problem the core plans the note
   `service_control_done` (see Monitor).
+- Not built: services with `via: monitor`, and the check of the state 2 minutes after a stop or restart with its result
+  in the task journal (MON-8).
 - Grant initiator (FEN-7): every `service_grant` block carries `initiator` (an additive optional field of the audit
   record schema): for a bot's `service/control` or `monitor/script_run` the initiator of its task, for a person's own
   call or a routine script step the person, and the author itself when the task has none. The author kind follows the
@@ -567,10 +569,10 @@ A model usage line records its provider, so (tenant, provider) is a workspace (B
   converts the provider's cost report to euros) and sends one P2 `spend.reconcile` per past UTC day, also for a day
   without rows between the first and last day (or `-from` and `-to`). Only an operator of `farm` or a report key
   (`report_keys_sha256`, which opens only `spend.reconcile` and `backup.report`) reconciles.
-- A day with model usage lines without a provider (their profile no longer applied) is refused with `conflict`. Rows of
-  one tenant in a day add up, since the farm has one workspace per tenant and provider (the `workspace` column is for
-  reference), and the provider name is compared in lowercase. A day that still has an open call reserve is refused until
-  the call settles.
+- A day with model usage lines without a provider (lines of a profile that is not applied) is refused with `conflict`.
+  Rows of one tenant in a day add up, since the farm has one workspace per tenant and provider (the `workspace` column
+  is for reference), and the provider name is compared in lowercase. A day that still has an open call reserve is
+  refused until the call settles.
 - The core compares the provider's day with the sum of the day's final lines of that workspace and writes the difference
   as one signed correction line (unit `correction`, `eur_micros` 0, the amount in `correction_eur_micros`); a second
   request for the day replaces it.
@@ -902,10 +904,13 @@ the first read; a row the audience may not read is left out uncounted, a row abo
 - `status.workers` (PRF-1, REP-8, STA-3), computed only for a task whose role has that view: the tenant's workers that
   are not revoked, up to the row limit, each with what the core observes (presence `connected`, `stale` past 120 s
   without a call or `gone` when never seen, lifecycle, active leases, last-seen age, the ids of active holds on the
-  worker or its role). STA-3 is deferred, so `reported` and `mismatch` are null: the self-report column and the mismatch
-  code of `state-mismatch.yaml` are computed only while the rule is offered. Workers carry no mark and no content of
-  people, so the view shows them to any audience of the report, a group chat's too; only ids, closed codes and numbers.
-  The worker's own state reaches the reporter only through this view, never through its inbox.
+  worker or its role). STA-3 is deferred, so `reported` and `mismatch` are null today. The self-report column is
+  computed only while STA-3 is offered: the phase of the worker's last `state.worker.v1` message with
+  `source: state_message`, beside it one mismatch code, the first of `state-mismatch.yaml` in its order whose condition
+  holds; `reported_idle_not_claiming` means a task of a type the role claims has waited in `submitted` for over 120 s
+  while the worker took no lease for as long. Workers carry no mark and no content of people, so the view shows them to
+  any audience of the report, a group chat's too; only ids, closed codes and numbers. The worker's own state reaches the
+  reporter only through this view, never through its inbox.
 - `status.campaigns`, computed only for a role with that view: the campaigns changed in the window or still live (for a
   campaign report only that campaign, for a root report only the campaigns of that tree): kind, item type, title, state,
   item counts, pause and stop reasons; a campaign is read as its item type (`task.read:<type>`, for an action campaign
@@ -1025,6 +1030,7 @@ A task type with `memory: {facts: propose}` on a role with `memory: bot` may han
   carry `inherited`, the most recently used first while the successor's space has room, and a role without bot memory
   gets none. A retired identity's facts are sealed and wiped with it at the end of the seal; a waiting offer expires
   then.
+- Not built: counts of facts in P2.
 
 ### Retired runtime sessions
 
@@ -1126,7 +1132,7 @@ inner word search of `kb_search` and `kb_read`, is deferred: this core chooses i
   `forbidden`; a git corpus or another tenant is `forbidden`, an unknown corpus `not_found`, and the tenant's file limit
   and storage ceiling hold (`file_too_large`, `over_capacity`). Every refusal writes an audit record. The upload takes
   the apply lock shared and reads the catalog from the store in its transaction, so it never writes into a corpus an
-  apply is removing. `kb.write` is not privileged (PRM-13). Upload through a channel is not built.
+  apply is removing. `kb.write` is not privileged (PRM-13).
 - Ingest: each document gets a `kb.ingest.v1` task enqueued as `system` (the tenant's `system-ops` group needs
   `task:kb.ingest.v1` and the document mark) with the idempotency key `system:kb.ingest:<document>` (`:<n>` from the
   second job on). A refused enqueue, and an ingest task that fails, is canceled or completes without `kb.index_put`,
@@ -1144,11 +1150,13 @@ inner word search of `kb_search` and `kb_read`, is deferred: this core chooses i
   operator's manual deletion of a file before its period, which RET-7 allows only through an erasure request, and
   `manual` is the reason of its closed list that says so. A store trigger deletes a document's fragments whenever its
   file leaves `stored` (the retention loop's expiry, an erasure), in the same transaction.
+- Not built: upload into a corpus through a channel.
 
 ### Skills
 
-SKL-4 (`skill_read`, `runtime.skills: farm`) is deferred: `skill_read` is never offered and a call to it is refused like
-any unknown tool, and a `hello` with `skills: farm` answers `version_unsupported`.
+Skills belong to the profile `knowledge`: while the build does not claim it (a test override), `hello` does not look at
+`skills`. SKL-4 (`skill_read`, `runtime.skills: farm`) is deferred: `skill_read` is never offered and a call to it is
+refused like any unknown tool, and a `hello` with `skills: farm` answers `version_unsupported`.
 
 - Skill files (SKL-1): P2 `apply` carries the extension field `skills`: the files of every folder of the farm git's
   `skills/` with their bytes and mode (`file`, `executable`, `link`); `farmctl apply` sends them when a role of the set
@@ -1396,7 +1404,7 @@ stop it; the `erasure` loop runs it before the erasure work of the pass (LCY-2, 
 ### Export to the monitoring system
 
 With `monitor: {enabled: true}` in the settings the installation claims profile `monitor` (`status` shows it, D-88) and
-the core no longer sends `alarm_notice` (MON-3, MON-11, MON-12, OBS-11).
+the core sends no `alarm_notice` (MON-3, MON-11, MON-12, OBS-11).
 
 - Each episode change is one `monitor_alarm` delivery for the adapter of its tenant (`kind: monitor`, target
   `monitor.target`, `zabbix` by default) with the tags `tenant`, `alarm`, `subject`, `severity`, `scope`, `origin` and
@@ -1442,6 +1450,8 @@ of kind `signal` from `hook:monitor` with closed fields only (MON-5, MON-10, MON
   on the task that reads it.
 - After a script or a service action on a catalog host with an open problem the core plans the code note
   `service_control_done`, which the adapter adds with `event.acknowledge` action 4 only.
+- Not built: a route task with a model for a problem, the history number of the catalog item, a card for a monitoring
+  script after untrusted text (such a call is refused), services with `via: monitor`.
 
 Bots read Zabbix through the plugin `monitor` (MON-6), with trusted output for:
 
@@ -1518,6 +1528,7 @@ first measure to a hold with one tenant scope and an expiry, and a farm class wi
   core raises from its own measurement of the store volume below the soft threshold. The lint (`incident_store_low`)
   refuses an incident catalog without `store_low`, or one where it is not a farm class on `alarm.store.free.low`.
 - `stops_manager` of an IncidentClass is accepted and not used (see Accountability of the farm manager).
+- Not built: a person's change of severity, monitoring problem numbers in the record.
 - Incident cause (MGR-8, GOV-38, GOV-41): P2 `incident.cause` writes `cause`, `cause_by` and `cause_at` into the record
   with an `incident.cause` audit (before and after). An external cause (`external_load`, `attack`) takes the tenant's
   governance lock (the loop reads the cause under it), cancels the open candidates to rejected proposals of the incident
@@ -1563,12 +1574,12 @@ directive attempt `control_ops` acts only with that operation on that target, an
 
 Daily review (MGR-41): once per local day of each tenant the manager loop enqueues `manager.review.v1` (priority 5) with
 a tree budget of `farm_manager.daily_review_max_eur` (0.40 EUR by default). The daily summary is always sent: the day's
-numbers (incidents, operations, reverts, readings, manager spend, takeovers and notices) go to admins as
-`notice.manager_daily`, and the farm total to farm admins; the farm's copy lists the incident classes that recur in
-several tenants (MGR-50). The review input carries `farm_guards`: the previous day's `farm.task.outcome` and
-`farm.queue.wait` per tenant (series, subject, compare, value, samples) (PRP-26). P2 `manager.cost` and
-`farmctl manager cost [TENANT]` give the manager line spend of a period (the tenant's month by default) split into
-review and other.
+numbers (incidents, operations, reverts, readings, manager spend, takeovers and notices) go to the tenant admins with
+`admin:people` as `notice.manager_daily_v03`, and the farm total to the farm admins with `admin:governance` as
+`notice.manager_daily_farm_v03`; the farm's copy lists the incident classes that recur in several tenants (MGR-50). The
+review input carries `farm_guards`: the previous day's `farm.task.outcome` and `farm.queue.wait` per tenant (series,
+subject, compare, value, samples) (PRP-26). P2 `manager.cost` and `farmctl manager cost [TENANT]` give the manager line
+spend of a period (the tenant's month by default) split into review and other.
 
 Budget line (MGR-20): the lint refuses a manager line whose `day_eur` does not hold three worst-case readings at the
 seat profile's prices (`manager_line_too_small`); a non-sev1 seat task may spend at most 70% of the manager line window,
@@ -1607,7 +1618,7 @@ current seat fingerprint.
 ### Accountability of the farm manager
 
 The seat follows the v0.3 forms only (GOV-47, GOV-48, MGR-45, MGR-47 to MGR-55): no incident stops the seat, and the
-takeover line and ceilings of MGR-21 and the stop signs of MGR-33, MGR-34, MGR-35 and MGR-36 are gone.
+takeover line and ceilings of MGR-21 and the stop signs of MGR-33, MGR-34, MGR-35 and MGR-36 do not apply.
 
 - `seat.resume` without a `tenant` answers `input_schema_invalid`; P2 `seat.resume` takes `tenant`, which the skeleton
   request schema has since D-118 (one of `incident` or `tenant`).
@@ -2652,8 +2663,9 @@ for one tenant. P2 serves operator credentials only; a P2 operation the core doe
 - `status` shows the applied commit and set hash, the holds of the tenant in force and the claim `conforms_to`:
   `skeleton` "0.3.0" (from `spec.Version`, the number of `spec/VERSION`, although that release is untagged) and the
   profiles the installation claims, so `monitor` only with the monitoring system configured (MAN-8, D-88). It lists the
-  tenants (every tenant for the operator of `farm`, else the credential's own) under `farm_manager_disabled` whatever
-  their manager setting, and has no monitoring line (OBS-11).
+  tenants (every tenant other than `farm` for the operator of `farm`, else the credential's own) under
+  `farm_manager_disabled` whatever their manager setting, although the manager is on by default; this is a known wrong
+  output (README.md, "Not in this version"), and has no monitoring line (OBS-11).
 - `doctor` gives the tick of each loop, the store volume and the indicators as farm numbers, and for the tenant the
   holds, the dead work, the stale workers, the open alarms and the open erasure requests, besides the checks named in
   the other sections.

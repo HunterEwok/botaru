@@ -25,8 +25,8 @@ How each subsystem behaves: [ARCHITECTURE.md](ARCHITECTURE.md).
 
 | Command | What it is |
 |---|---|
-| `botaru-core` | the core: the P1 listener with the P4 path, the separate P2 listener, the background loops (reaper, deadlines) over a PostgreSQL store |
-| `farmctl` | the operator's tool for P2: `apply`, people (including `principal offboard`), memberships, `worker enroll`, `health`, `audit verify` |
+| `botaru-core` | the core: the P1 listener with the P4 path, the separate P2 listener, the test-control listener of a test bench, and the background loops over a PostgreSQL store (among them reaper, deadline, hold, schedule, campaign, script, grant, inbox, erasure, budget, retention, observe, proposal, governance, identity, incident, alarm, monitor, audit-head and health) |
+| `farmctl` | the operator's tool for P2: `apply`, people (including `principal offboard`), memberships, `worker enroll`, `secret revoke`, the tenant lifecycle and exports, holds, `incident`, `control`, `manager`, `seat`, `bot`, `campaign`, `script`, `escalation` and `proposal` views, `spend reconcile`, `backup report`, `restore`, `drain`, `status`, `doctor`, `health`, `audit verify` |
 | `botaru-agent` | the agent worker of one role (E4 adapter and its own runtime loop, D-93); calls the model only through P4 |
 | `botaru-telegram` | the E1 Telegram channel of one farm channel: `getUpdates` polling and `sendMessage` deliveries |
 | `botaru-toolhost` | the E3 tool execution adapter of one machine and tenant: claims tool calls over P1 and runs each in a fresh child process of its plugin |
@@ -55,6 +55,13 @@ How each subsystem behaves: [ARCHITECTURE.md](ARCHITECTURE.md).
 | `internal/agent`, `internal/channel/telegram`, `internal/kbjob`, `internal/p1client` | the workers and their P1 client |
 | `internal/e2e` | the hello-bot sequence and a plugin tool call over the wire with the mock provider, a fake Bot API server and a real toolhost |
 | `internal/conform` | the conformance runner (`conformance/runner.md`): it runs the behaviour fixtures on fresh test benches over HTTP and reports per case and per rule |
+| `internal/monitor/zabbix` | the E5 monitoring adapter for Zabbix 7.0 and later: alarm and audit-head export, ticks, problems after a re-check, script lists and runs |
+| `internal/testbench`, `internal/mockprovider`, `internal/pgtest` | the initial state of the hello-bot example for tests, the mock model provider, and a fresh PostgreSQL database for tests |
+| `internal/config` | the deployment settings of the core process; secrets are referenced by file path |
+| `internal/money` | euros in manifests to the integer units of records: `eur_micros` for usage and reserves, euro cents for limits and reports |
+| `internal/texts` | the code text catalog read from `spec/bindings/channels/messages/` and the installation's own catalogs |
+| `internal/manifest`, `internal/yamlx` | typed views of farm manifests after the schema check; YAML read as the skeleton means it (dates stay strings) |
+| `internal/ids`, `internal/version` | object ids (a kind prefix and a ULID) and random secrets; the build version of the binaries |
 
 ## Key implementation decisions
 
@@ -142,12 +149,15 @@ retention fields stay served for RET-10). `spec.Offered(rule)` is false for ever
 
 Every amount is an integer of micro-euros (`eur_micros`, D-87); a card shows euro cents. Every usage line and reserve
 carries the budget line of the type's purpose, and a reserve is taken before a model or tool call and settled after it
-(BUD-1, BUD-2). The model gateway reconciles its estimates with the provider's daily cost report (BUD-10).
+(BUD-1, BUD-2). The core reconciles the estimated lines with the provider's daily cost report, which the operator sends
+with `farmctl spend reconcile` (P2 `spend.reconcile`, BUD-10).
 
 ## Not in this version
 
 The following parts of the claimed rules are not built yet. The deferred rules of `spec.Deferred` are refused as
-described above and are not repeated here, except where a built mechanism stops short because of them.
+described above and are not repeated here, except where a built mechanism stops short because of them. This list is the
+overview: every section of [ARCHITECTURE.md](ARCHITECTURE.md) ends its topics with their own "Not built" items, which
+also count here.
 
 Core, ports and people:
 
@@ -162,14 +172,16 @@ Core, ports and people:
 - The `sandbox` placement and tier 2 (the profile `sandbox` is not claimed), and plugins with secrets or network egress
   other than the own `monitor` plugin: such a plugin runs in its own container, which this build does not start (DEP-7).
 - A pause of a schedule (TIM-5): `Schedule` has no pause field.
-- The chat command `/invite`, and the notice `approve_unread_digest` of the excess cards (APR-13); merging a daily
-  digest of preferences into one message.
+- The chat command `/invite`; merging a daily digest of preferences into one message.
 - A `proposal.rejected` event with `manager_restricted` for the dropped proposals of a restricted seat (MGR-47, D-118).
-- Attempt journals (AUD-4, profile `debug`) and the purge of `runtime_internal` sessions by period (RET-11).
+- The purge of `runtime_internal` sessions by period (RET-11).
+- A known wrong output: P2 `status` lists every tenant other than `farm` under `farm_manager_disabled` whatever its
+  manager setting, although the farm manager is on by default.
 
 Monitoring:
 
-- Services with `via: monitor`, and the reconciliation of a service state after a service action (MON-8).
+- Services with `via: monitor`, and the check of a service state 2 minutes after a stop or restart, with its result in
+  the task journal (MON-8).
 - A route task with a model for a monitoring problem, the history number of the catalog item, and a card for a
   monitoring script after untrusted text.
 - The free space series of a volume written by a `job` role from the monitoring system history (CAP-6):
@@ -200,7 +212,8 @@ Governance and the farm manager:
   forecasts in the store, not by a pure function, so `function.eval` answers that this build has none).
 - The GOV-46 eval (an eval rule, not run), and the deferred PRP-25, COM-18, COM-10 and the GOV-39 hints, which leave
   their parts of the accountability rules without input.
-- The parts of the farm manager, promotion and attribution that ARCHITECTURE.md lists as not built in their sections.
+- The "Not built" items of the farm manager, the commission, promotion, attribution and accountability in
+  ARCHITECTURE.md.
 
 Checks and tools:
 

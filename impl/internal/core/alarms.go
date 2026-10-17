@@ -16,8 +16,8 @@ import (
 // Alarms (spec/lifecycles/alarm.md). Only code raises and resolves an alarm (INJ-7): the loops
 // of this core call fireAlarm and resolveAlarm in the transaction of the fact they observe. An
 // alarm lives in episodes by alarmkey: firing opens one, a repeat only counts, resolved closes
-// it (OBS-6). This core does not claim the monitor profile, so it has no export for E5 and
-// delivers every episode change to people itself as the code text alarm_notice (MON-1, MON-13).
+// it (OBS-6). Without the monitoring system configured the core delivers every episode change
+// to people itself as the code text alarm_notice; with it, E5 is the one path (MON-1, MON-13).
 
 // AlarmSubject is the subject of an alarm: a kind and an id from the catalog or a farm object.
 type AlarmSubject struct {
