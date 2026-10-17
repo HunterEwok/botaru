@@ -33,11 +33,8 @@ const (
 	runsFile = "batch/runs.json"
 )
 
-// Stations and runs, as the demo catalog lists them.
-var (
-	simStations = []string{"st-01", "st-02", "st-05", "st-07", "st-09"}
-	simRuns     = []string{"run-2026-08", "run-2026-09"}
-)
+// simStations are the stations of the demo catalog.
+var simStations = []string{"st-01", "st-02", "st-05", "st-07", "st-09"}
 
 // run is one pipeline run of ctd1.
 type run struct {
