@@ -340,6 +340,15 @@ func TestCommissionVetoReviewMissing(t *testing.T) {
 // A review handed in on time counts even when the loop reads it after the deadline (COM-4).
 func TestCommissionLateRead(t *testing.T) {
 	b := newCommissionBench(t, true)
+	// Start on a Tuesday noon, so the 49 hours below never reach the weekly digest (Monday 09:00,
+	// late by up to a day), which would reread the evidence and park the proposal.
+	now := b.now(t)
+	days := (int(time.Tuesday) - int(now.Weekday()) + 7) % 7
+	start := time.Date(now.Year(), now.Month(), now.Day()+days, 12, 0, 0, 0, time.UTC)
+	if !start.After(now) {
+		start = start.AddDate(0, 0, 7)
+	}
+	b.advance(t, int(start.Sub(now)/time.Second))
 	proposeNone(t, b)
 	ra := b.enroll(t, EnrollRequest{Tenant: "demo", Role: "reviewer-a", Kind: "agent"})
 	rb := b.enroll(t, EnrollRequest{Tenant: "demo", Role: "reviewer-b", Kind: "agent"})
