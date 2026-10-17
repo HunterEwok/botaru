@@ -208,7 +208,7 @@ The folders follow the layers: `docs/` is the model in words, `spec/` the public
 
 ADRs live in `docs/adr/` in MADR 4.0.0 format; their "Confirmation" section refers to rule numbers. An ADR is needed for a decision that changes a contract: an operation or guarantee of a boundary sheet, a wire schema, a lifecycle state, a closed list that permissions depend on (D-86 (13)). Also for a new auto-stop rule, message genus, dispatcher condition, fact kind or predicate, role profile, or a manifest kind that affects permissions (MAN-4). An ordinary new rule is a registry row that refers to a decision D-NN. If an extension needs the core changed, the skeleton lacks a port: that is a reason for an ADR, not a workaround.
 
-The table lists the fundamental ADRs; each is a file in [adr/](adr/README.md) with the status `accepted`, and the decision it records is a row in [decisions.md](decisions.md) or part of the skeleton text. A new ADR takes the next free number, 0011.
+The table lists the ADRs that D-86 (13) said would appear with the implementation; they are now files in [adr/](adr/README.md) with the status `accepted`, and the decision each records is a row in [decisions.md](decisions.md) or part of the skeleton text. A new ADR takes the next free number, 0011.
 
 | No. | ADR | What is decided | Decision |
 |---|---|---|---|

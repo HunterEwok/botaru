@@ -29,4 +29,4 @@ This folder holds the architecture decision records of the skeleton in MADR 4.0.
 | [0009-proposals-commission-identity-manager.md](0009-proposals-commission-identity-manager.md) | proposals, the commission, identity, the farm manager |
 | [0010-agent-runtime-and-language.md](0010-agent-runtime-and-language.md) | agent runtime; implementation language |
 
-ADRs 0001 to 0010 record the fundamental decisions of the skeleton, all with the status `accepted`; each rests on rows of `docs/decisions.md` (the "Decision" column of the table in `docs/architecture.md`) or, for 0003, on the skeleton text. New ADRs are written as files in this folder from number 0011 and get a row in that table.
+ADRs 0001 to 0010 are the ADRs that D-86 (13) said would appear with the implementation; they are now files, all with the status `accepted`; each rests on rows of `docs/decisions.md` (the "Decision" column of the table in `docs/architecture.md`) or, for 0003, on the skeleton text. New ADRs are written as files in this folder from number 0011 and get a row in that table.

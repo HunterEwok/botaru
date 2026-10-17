@@ -19,9 +19,12 @@ Bots must tell each other about their work, a bot sometimes needs the same step 
 
 ## Considered Options
 
-- typed messages through the core, addressed to a role or a bot group, published at `complete` (D-14, D-32), or free messages between bots, including to a single bot;
-- a campaign as one frozen plan with one approval (the work order D-20 puts mass tasks after bot communication), or a parent task with N children and a card for each;
-- a strict script that the translator drafts, the core checks and a person confirms (D-15), or a model that runs a free multi-step plan by itself.
+- typed messages through the core, addressed to a role or a bot group, published at `complete` (D-14, D-32);
+- a personal address to a single bot, which [messaging.md](../messaging.md) ("Why it works this way") rejects because it "would bypass the dispatcher" (D-32);
+- a campaign as one frozen plan with one approval (D-14; the work order D-20 puts mass tasks after bot communication);
+- a parent task with N children, which [coordination.md](../coordination.md) ("Why it works this way") compares with a campaign: "A campaign, not a parent with N children";
+- a strict script that the translator drafts, the core checks and a person confirms (D-15);
+- a script as code or a general process engine, which [coordination.md](../coordination.md) rejects: "A script is data, not code" and "No general process engine".
 
 ## Decision Outcome
 
@@ -50,21 +53,30 @@ Chosen option: "typed messages at `complete`; one approval of a frozen plan; a c
 
 ### Typed messages through the core
 
-- Good, because inboxes live in the core: one transaction, one journal, reading on the model's request.
-- Bad, because a new message type is a manifest in git and passes review.
+- Good, because inboxes in the core give publication with `complete`, reading on request, one transaction and one journal, with no second stateful system to run (D-03, [messaging.md](../messaging.md)).
+- Bad, because a message type must be declared in git (MSG-2).
 
-### Free messages between bots
+### A personal address to a single bot
 
-- Bad, because a personal address would bypass the dispatcher, and text would act as a command.
+- Bad, because workers are interchangeable and a personal address would bypass the dispatcher (D-32, [messaging.md](../messaging.md)).
 
 ### A frozen campaign plan
 
-- Good, because the canary and the threshold run inside the trust boundary.
-- Bad, because items cannot be added after approval, only excluded.
+- Good, because there is one card instead of twenty, the canary and threshold run inside the trust boundary, and there is a full reserve before the first spend ([coordination.md](../coordination.md)).
+- Bad, because a change of plan means cancel and propose anew with a `refs` link ([coordination.md](../coordination.md), "Campaigns").
 
-### A free multi-step model plan
+### A parent task with N children
 
-- Bad, because code cannot be honestly retold on a card, and an injection would reach production steps.
+- Bad, because it gives N cards and N deliveries instead of one card and one summary ([coordination.md](../coordination.md)).
+
+### A strict script
+
+- Good, because the whole plan is checked before the run and retold in code words on a card ([coordination.md](../coordination.md)).
+- Bad, because the closed interpreter has no expressions, loops or commands (SCR-1).
+
+### A script as code or a process engine
+
+- Bad, because code cannot be honestly retold, the model does not write code for production machines (INJ-1), and an expression language could not be checked with a fixture ([coordination.md](../coordination.md)).
 
 ## More Information
 

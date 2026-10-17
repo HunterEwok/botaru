@@ -15,12 +15,11 @@ The agent runtime needs tools and a model, and both carry risk: a tool can write
 - the runtime must hold neither the worker token nor the provider key;
 - money and the tool catalog are decided by code in the trusted boundary;
 - a port without a second implementation should not carry a contract nobody tests;
-- fewer stateful systems for the people who run the farm.
 
 ## Considered Options
 
 - P3 and P4 as part of the core, with no intermediary between the runtime and the core (D-45);
-- a separate proxy between the farm and the providers;
+- a separate proxy between the farm and the providers, which D-45 records as not needed;
 - every port as a mandatory checked contract, or a port without a second implementation as a description (D-46, applied by D-114 (4)).
 
 ## Decision Outcome
@@ -31,8 +30,8 @@ Chosen option: "P3 and P4 inside the core; a port that is not a boundary with fo
 
 - Good, because a runtime that "forgot" to turn off a built-in tool fails at the gateway instead of gaining a capability.
 - Good, because spending is reserved and charged whatever the runtime does.
-- Good, because no extra proxy process holds secrets.
-- Bad, because the core carries the provider binding code, and a new provider is a new binding in the core.
+- Good, because only P4 holds the provider key (GW-3), and the runtime has neither it nor the worker token (DEP-5).
+- Bad, because a provider beyond the reference needs its own binding (`spec/bindings/model-providers/README.md`, D-85).
 - Bad, because a description is not checked by a suite; a second implementation of such a part is checked only through the boundaries.
 
 ### Confirmation
@@ -50,18 +49,15 @@ Chosen option: "P3 and P4 inside the core; a port that is not a boundary with fo
 
 ### Gateways inside the core
 
-- Good, because the check, the reserve and the charge are one place with one audit.
-- Bad, because the core process is larger.
+- Good, because P4 reserves and charges every call whatever the runtime does, and rejects a request with a tool outside the P3 catalog ([architecture.md](../architecture.md), "The agent runtime").
 
 ### A separate proxy
 
-- Good, because the proxy could be replaced without touching the core.
-- Bad, because it would hold the provider keys outside the store transaction, and money would be decided in two places.
+- Bad, because D-45 records it as not needed: the gateways are part of the core, and only P4 holds the provider key (GW-3).
 
 ### Every port a checked contract
 
-- Good, because each internal part would be replaceable by contract.
-- Bad, because schemas and fixtures of single-implementation ports cost work and checked nothing; D-46 set the turn, D-80 placed it in the next release after v0.2, and D-114 applied it in v0.4.
+- Bad, because a port without a second implementation carries a contract nobody else implements (D-46); a schema of an internal page that nothing checked was removed ([spec/ports/README.md](../../spec/ports/README.md)). D-80 placed the turn in the next release after v0.2, and D-114 applied it in v0.4.
 
 ## More Information
 

@@ -35,7 +35,7 @@ Chosen option: "a thin core with the queue in the store", because the queue then
 - Good, because workers need no inbound port, and the core needs no knowledge of their capacity.
 - Good, because the store clock is the only clock for deadlines.
 - Bad, because the store is a single point the whole farm depends on; its loss means `not_ready`, and backups and restore need their own rules.
-- Bad, because throughput is bounded by one store; a broker may appear later as an addition, together with an EventStream port.
+- Bad, because there is no broker: events are the CloudEvents catalog plus P1 `emit` and C1 `event.*`, and a separate EventStream port appears only together with a broker ([spec/ports/README.md](../../spec/ports/README.md)).
 
 ### Confirmation
 
@@ -52,18 +52,14 @@ Chosen option: "a thin core with the queue in the store", because the queue then
 ### Queue in the store
 
 - Good, because one transaction covers the queue and every decision.
-- Good, because PostgreSQL is a common, well-known engine; others can sit behind C1.
-- Bad, because long polling of `claim` puts load on the store.
 
 ### NATS bus
 
-- Good, because a bus scales delivery and decouples producers from consumers.
-- Bad, because the lease, the permission check and the usage line would span two systems, and exactly-once on the farm side would need extra machinery.
+- Bad, because the lease, the permission check and the usage line would span two systems; [coordination.md](../coordination.md) ("Why it works this way") keeps the dispatcher inside `claim`: "no broker, no second stateful system".
 
 ### Separate agent gateways
 
-- Good, because each gateway could be scaled and replaced on its own.
-- Bad, because "who holds the work" and the money would be decided in many places, which breaks one audit and one check point.
+- Bad, because "who holds the work" and the money would be decided outside the core, while [architecture.md](../architecture.md) makes the core "the only place where decisions are made".
 
 ## More Information
 

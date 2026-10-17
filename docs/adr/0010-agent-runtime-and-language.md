@@ -13,27 +13,27 @@ The skeleton needed a reference implementation to prove that its contracts can b
 ## Decision Drivers
 
 - the runtime holds neither the worker token nor the provider key, and has only P3 tools (DEP-5, INJ-9);
-- sessions, memory and transcript compression should stay in core stores, under erasure and the tenant wall;
-- other runtimes must stay possible behind E4;
-- the implementation must not change skeleton files, and contract changes go through the skeleton rules.
+- sessions, memory and transcript compression stay in core stores (D-93);
+- other runtimes stay possible behind E4 (D-93);
+- the implementation does not change skeleton files, and contract changes go through the skeleton rules (D-92).
 
 ## Considered Options
 
-- an own model loop over the provider API through P4, without a ready-made agent (D-93);
-- a ready-made agent framework as the runtime, declaring its deviations from the farm model in `hello`;
-- the core in Go (D-91), or in another language;
-- the implementation in this repository under `impl/` (D-92), or in a separate repository.
+- an own model loop in Go over the model provider's API through P4 (D-93);
+- a ready-made agent as the runtime: D-93 records the choice "without a ready-made agent", and E4 stays open to other runtimes, which declare their deviations in P1 `hello` (`spec/ports/e4-agent-runtime.md`);
+- the core in Go (D-91); no other language is recorded as compared;
+- the implementation in this repository under `impl/` (D-92); no other place is recorded as compared.
 
 ## Decision Outcome
 
-Chosen option: "an own loop in Go over P4; the core in Go in `impl/`", because an own loop needs no runtime deviations: sessions and memory are kept by the core in C3 and C4, there are no built-in tools to turn off, and P4 sees every call. The E4 port stays open: another runtime declares its deviations with values from `spec/model/runtime-deviations.yaml`, and each deviation turns on its non-waivable replacement rule. Ports, plugins, channel drivers and data programs may use any language, because they talk to the core only through P1, P2 and MCP (D-91). The reference implementation lives in `impl/` under the AGPL, does not edit skeleton files, and passes the `conformance/` suite (D-92).
+Chosen option: "an own loop in Go over P4; the core in Go in `impl/`", because these are the owner's decisions D-93, D-91 and D-92. Conversation memory, sessions and transcript compression are kept by the core in its stores C3 and C4 (D-93). The E4 port stays open: another runtime declares its deviations with values from `spec/model/runtime-deviations.yaml`, and any value except the first turns on its non-waivable replacement rule ([architecture.md](../architecture.md), "The agent runtime"). Ports, plugins, channel drivers and data programs may use any language, because they talk to the core only through P1, P2 and MCP (D-91). The reference implementation lives in `impl/` under the AGPL and does not change skeleton files; a change of a contract goes through the skeleton rules (D-92). It passes the `conformance/` suite ([architecture.md](../architecture.md), "What the skeleton is").
 
 ### Consequences
 
-- Good, because the reference agent keeps the farm model for `session`, `memory`, `catalog` and `built_in_tools` without exceptions.
-- Good, because a change of the skeleton and of the implementation can be reviewed together, while the skeleton rules still govern contracts.
-- Bad, because an own loop has to implement tool use, transcript compression and stopping by limits itself.
-- Bad, because a second runtime is checked only through its `hello` declaration and the black-box suite, not by the reference.
+- Good, because sessions and memory stay in core stores, under the erasure and tenant rules of C3 and C4 (D-93).
+- Good, because a contract change made for the implementation goes through the skeleton rules, additive only inside a version (D-92, MAN-3).
+- Bad, because the farm maintains its own model loop, transcript compression included (D-93).
+- Bad, because a runtime with its own sessions or memory must declare them and support erasure search, or the core blocks it at `hello` (RT-1, RT-2, RT-5).
 
 ### Confirmation
 
@@ -51,22 +51,21 @@ The impl checks are Go tests in `impl/`; the black-box checks run against the im
 
 ### An own loop over P4
 
-- Good, because nothing in the runtime can bypass P3 or P4.
-- Bad, because the loop is code the project maintains.
+- Good, because the runtime takes tools only from P3 and reaches the model only through P4 (`spec/ports/e4-agent-runtime.md`), and the core keeps sessions and memory (D-93).
+- Bad, because the loop is code the project maintains (D-93).
 
-### A ready-made agent framework
+### A ready-made agent
 
-- Good, because tool use and compression come ready.
-- Bad, because its own sessions, memory and built-in tools would be deviations, each with an erasure duty and a rule, and built-in tools must be off.
+- Bad, because its built-in tools must be off (`built_in_tools` only `[]`, INJ-9), and its own sessions or memory would be deviations with their own non-waivable rules (RT-1, RT-2, RT-5).
 
-### Go or another language
+### Go for the core
 
-- Good, because the core, `farmctl`, the black-box runner, the channel adapters and the runtime share one language and one test suite.
-- Bad, because a contributor to the core must work in Go; ports, plugins and drivers may still use any language (D-91).
+- Good, because ports, plugins, drivers and data programs may still use any language (D-91).
 
-### A separate repository
+### `impl/` in this repository
 
-- Bad, because skeleton and implementation would drift, and a contract change would be reviewed in two places.
+- Good, because it is released under the AGPL like the skeleton, and the CLA keeps another license possible for the owner (D-92, D-89).
+- Bad, because installation files (tenants, keys, machines, people) must stay outside the public repository (D-92).
 
 ## More Information
 

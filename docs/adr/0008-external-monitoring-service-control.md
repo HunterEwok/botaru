@@ -20,9 +20,10 @@ The organization already has a monitoring system that watches machines, wakes pe
 
 ## Considered Options
 
-- alarms and liveness through the organization's monitoring system and E5 (D-59, D-60, D-62), or a farm watchdog and alarm delivery of its own (the canceled D-06);
-- service control without a card for an allowed list set by people (D-67, D-68), or an approval card for every service action;
-- without a card only `restart` from the list, when the task saw no untrusted text, and start and stop with a card (D-73, D-74, D-82).
+- alarms and liveness through the organization's monitoring system and E5 (D-59, D-60, D-62);
+- a farm watchdog of its own: D-60 cancels the earlier D-06 and records "The farm has no watchdog of its own";
+- start, stop and restart of a service from the allowed list without a card (D-67, D-68 as first written);
+- only `restart` from the list without a card, start and stop with a card (D-74 refines D-68), and a card when the task saw untrusted text (D-70, D-82).
 
 ## Decision Outcome
 
@@ -40,32 +41,32 @@ Chosen option: "external monitoring through E5; only `restart` from the allowed 
 
 - MON-1, alarms to people along one installation path: fixture, lint and black-box `blackbox:core/alarm-path-monitor`, `blackbox:core/alarm-notice-no-monitor`.
 - MON-2, an external poll checks core liveness: lint and black-box `blackbox:core/health-watch`, fixture `manifests/deploy`.
-- MON-4, permissions of the farm account in the monitoring system: adapter `adapter:monitor/account-scope`.
+- MON-4, permissions of the farm account in the monitoring system: adapter and black-box, fixture `adapter:monitor/account-scope`.
 - MON-12, alarm export to the monitoring system: fixture, lint and black-box `blackbox:monitor/export-stalled`.
 - MON-8, service control: lint `lint:manifests/service-no-card`, black-box `blackbox:core/service-stop-card`, fixture `fixture:authorize/service-initiator`.
-- APR-18, services and monitoring scripts without a card: lint, black-box `blackbox:model/service-allowed`, `blackbox:model/service-untrusted`.
+- APR-18, services and monitoring scripts without a card: lint, black-box and fixture, `blackbox:model/service-allowed`, `blackbox:model/service-untrusted`, `fixture:authorize/service-initiator`.
 - INJ-15, after untrusted text a service action goes as a card: fixture, black-box and eval, `blackbox:model/service-monitor-trusted`, `blackbox:model/service-monitor-item-text`, `inj-12`.
 
 ## Pros and Cons of the Options
 
 ### Monitoring through E5
 
-- Good, because the organization's alerting, on-call and escalation are reused.
-- Bad, because the farm has to keep a binding for each monitoring system it supports.
+- Good, because the farm does not repeat what the monitoring system can do, and adds what it does not see: tasks, bots, money, campaigns, secrets, the farm manager and the commission (D-59).
+- Good, because there is one place to acknowledge, not two ([operations.md](../operations.md), "Why it works this way").
+- Bad, because an installation without a monitoring system needs the reduced path of D-88 (MON-13).
 
 ### A farm watchdog of its own
 
-- Bad, because it duplicates alerting and creates a second place to acknowledge.
+- Bad, because the core cannot report its own death, so an external poll checks liveness ([operations.md](../operations.md), "Why it works this way").
 
-### A card for every service action
+### Start, stop and restart without a card
 
-- Good, because a person sees every change.
-- Bad, because a frequent reversible restart would wait for a person at night, and cards would pile up (G6).
+- Bad, because start and stop change availability ([operations.md](../operations.md)); D-74 keeps them with a card, like an ordinary action.
 
 ### Only `restart` without a card
 
-- Good, because the risk is held by closed lists: service and verb from the catalog, the machine chosen by code.
-- Bad, because the list and the trigger catalog must be kept current by people in git.
+- Good, because a restart is frequent and reversible, so it needs no card within lists people set ([operations.md](../operations.md)).
+- Good, because closed lists hold the risk: the service and verb come from the catalog, code picks the machine, and untrusted reading turns the call into a card ([farm-manager.md](../farm-manager.md), "Why it works this way").
 
 ## More Information
 

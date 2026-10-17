@@ -19,8 +19,9 @@ The farm serves several tenants on the provider API key of the organization (D-0
 
 ## Considered Options
 
-- a provider workspace, key and ceilings per tenant (D-42), or one shared workspace and key with farm-side accounting only;
-- an external program as a `service` principal with its own key and groups (D-47), or a program that acts under a person's account.
+- a provider workspace, key and ceilings per tenant (D-42);
+- one workspace and key shared by the tenants: not recorded as compared; D-42 excludes it, "so that cache and invoices do not mix", because "the organization's limits at the provider are shared";
+- an external program as a `service` principal with its own key and groups, like a person (D-47); no alternative is recorded.
 
 ## Decision Outcome
 
@@ -48,22 +49,17 @@ Chosen option: "a workspace per tenant; a program as a principal", because the p
 
 ### A workspace per tenant
 
-- Good, because the provider's own limits and invoices follow the tenant wall.
-- Bad, because the operator manages more keys and ceilings.
+- Good, because cache and invoices do not mix, and each workspace has its own spend and request rate ceilings (D-42).
+- Good, because a provider rate limit is a wait for that tenant, not a refusal (GW-10).
 
 ### One shared workspace
 
-- Good, because there is one key to manage.
-- Bad, because cache and invoices mix, and one tenant can exhaust the shared rate limit.
+- Bad, because cache and invoices would mix, which D-42 rules out.
 
 ### A program as a principal
 
-- Good, because the same check at every point applies to people, bots and programs.
-- Bad, because a program's key is one more secret with a rotation recipe.
-
-### A program under a person's account
-
-- Bad, because the audit would show the person, and the person's rights would leak to the program.
+- Good, because one permission model with one check at every point applies to people, bots and programs (D-40).
+- Bad, because a program working in two tenants is two principals (IDN-4).
 
 ## More Information
 
