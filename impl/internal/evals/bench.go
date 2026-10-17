@@ -69,6 +69,48 @@ type BenchConfig struct {
 	// Cases are the cases of the run plan (active and in version for the claim). A person who
 	// sends one of them that checks the first contact (DLV-12) is not confirmed through /me.
 	Cases []*Case
+
+	// The fields below let another program build its stand on this bench (the simulator,
+	// impl/SIM.md); the eval runner leaves them empty.
+
+	// Roles are further role folders of examples/roles the bench applies beside hello and
+	// ops-reader; an agent worker starts for each one of worker_kind agent.
+	Roles []string
+	// Edit changes the bench set before apply.
+	Edit func(ms []map[string]any) []map[string]any
+	// Skills are the skill folders apply carries (the skills extension field, SKL-1): the
+	// files of each folder by name, as farmctl sends them.
+	Skills map[string][]map[string]any
+	// EditSeed changes the seed before its people are added.
+	EditSeed func(*Seed)
+	// Hosts gives the toolhosts of the demo machines with the flags of their own plugins, in
+	// place of the bench's own (which read the bench data and run a dummy unit manager).
+	Hosts func(HostEnv) []HostPlugins
+	// Monitor serves the monitoring API in place of the fake one that knows no problems.
+	Monitor http.Handler
+	// CoreConfig changes the core settings before the core starts.
+	CoreConfig func(*core.Config)
+	// OnBotAPI sees every Bot API call of the channel but getUpdates, with its request and result.
+	OnBotAPI func(method string, req map[string]any, result any)
+	// OnModelCall sees every model call P4 makes, with the request and answer bodies.
+	OnModelCall func(req, resp []byte, status int)
+	// ModelGate, when it returns false, answers a model call of P4 with HTTP 402 (the provider's
+	// spend cap) without calling the provider: the simulator's money fuse stops the calls of the
+	// attempts that run on until their next heartbeat.
+	ModelGate func() bool
+}
+
+// HostEnv is what the bench made for the toolhosts of a stand: the monitoring API address and
+// the file with its read token.
+type HostEnv struct {
+	MonitorAPI, MonitorTokenFile string
+}
+
+// HostPlugins is one toolhost of a demo machine: its plugins with the flags of each. A plugin with
+// a secret or egress gets a toolhost of its own (DEP-7).
+type HostPlugins struct {
+	Host    string
+	Plugins map[string][]string
 }
 
 // benchRoles are the roles the bench sets up, with their example manifests: the first bot and
@@ -112,6 +154,11 @@ type Bench struct {
 	dataDir       string
 	// resultSchemas are the result schemas of the applied task types (OUT-2).
 	resultSchemas map[string]map[string]any
+	// roles are the role folders the bench applies, with their example manifests.
+	roles map[string][]string
+	// agentRoles are the applied roles of worker_kind agent, in name order.
+	agentRoles []string
+	runCtx     context.Context
 }
 
 func hashHex(s string) string {
@@ -134,7 +181,14 @@ func StartBench(ctx context.Context, cfg BenchConfig) (_ *Bench, err error) {
 	if cfg.Logger == nil {
 		cfg.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
-	b := &Bench{cfg: cfg, ops: map[string]string{}, bot: &fakeBotAPI{}, people: map[string]string{}, ungranted: map[string][]string{}, ungrantedWhy: map[string]string{}, pendingGroups: map[string][]string{}, Profiles: map[string]string{}}
+	b := &Bench{cfg: cfg, ops: map[string]string{}, bot: &fakeBotAPI{observe: cfg.OnBotAPI}, people: map[string]string{}, ungranted: map[string][]string{}, ungrantedWhy: map[string]string{}, pendingGroups: map[string][]string{}, Profiles: map[string]string{},
+		roles: map[string][]string{}}
+	for r, files := range benchRoles {
+		b.roles[r] = files
+	}
+	for _, r := range cfg.Roles {
+		b.roles[r] = []string{"examples/roles/" + r + "/role.yaml"}
+	}
 	defer func() {
 		if err != nil {
 			b.Close()
@@ -150,6 +204,9 @@ func StartBench(ctx context.Context, cfg BenchConfig) (_ *Bench, err error) {
 	if b.seed, err = LoadSeed(cfg.Root); err != nil {
 		return nil, err
 	}
+	if cfg.EditSeed != nil {
+		cfg.EditSeed(b.seed)
+	}
 	if b.st, err = store.Open(ctx, cfg.DSN); err != nil {
 		return nil, err
 	}
@@ -157,20 +214,24 @@ func StartBench(ctx context.Context, cfg BenchConfig) (_ *Bench, err error) {
 	if err := b.st.Migrate(ctx); err != nil {
 		return nil, err
 	}
-	b.c, err = core.New(ctx, core.Config{TokenKey: []byte("eval-" + ids.Secret(24)), TestBench: true, Operator: "the test bench operator",
-		FarmHosts: []string{"core1", "backup1"}, Logger: cfg.Logger}, b.st, b.sp, tx)
+	ccfg := core.Config{TokenKey: []byte("eval-" + ids.Secret(24)), TestBench: true, Operator: "the test bench operator",
+		FarmHosts: []string{"core1", "backup1"}, Logger: cfg.Logger}
+	if cfg.CoreConfig != nil {
+		cfg.CoreConfig(&ccfg)
+	}
+	b.c, err = core.New(ctx, ccfg, b.st, b.sp, tx)
 	if err != nil {
 		return nil, err
 	}
 	runCtx, cancel := context.WithCancel(context.Background())
-	b.cancel = cancel
+	b.cancel, b.runCtx = cancel, runCtx
 	b.done.Add(1)
 	go func() { defer b.done.Done(); b.c.Run(runCtx) }()
 
 	// P4: the provider of the profiles, the mock or the real one, behind the recorder that
 	// keeps the model request bodies for the checks (docs/quality.md: in test bench mode P4
 	// writes the model request bodies into the run results).
-	b.rec = &recorder{next: http.DefaultTransport}
+	b.rec = &recorder{next: http.DefaultTransport, observe: cfg.OnModelCall, gate: cfg.ModelGate}
 	baseURL := cfg.Model.BaseURL
 	key := cfg.Model.Key
 	if !cfg.Model.Real {
@@ -218,7 +279,11 @@ func StartBench(ctx context.Context, cfg BenchConfig) (_ *Bench, err error) {
 		return nil, err
 	}
 	b.closers = append(b.closers, stop)
-	zbx, stop, err := listen(fakeMonitor{})
+	var monitor http.Handler = fakeMonitor{}
+	if cfg.Monitor != nil {
+		monitor = cfg.Monitor
+	}
+	zbx, stop, err := listen(monitor)
 	if err != nil {
 		return nil, err
 	}
@@ -258,9 +323,9 @@ func (b *Bench) manifests() ([]map[string]any, error) {
 	root := b.cfg.Root
 	files := []string{"examples/tenants/demo/tenant.yaml", "examples/tenants/demo2/tenant.yaml", "examples/tenants/farm/tenant.yaml",
 		"examples/tenants/demo/channels.yaml", "examples/tenants/demo/catalog.yaml", "examples/hello-bot/group.yaml"}
-	roleNames := slices.Sorted(mapKeys(benchRoles))
+	roleNames := slices.Sorted(mapKeys(b.roles))
 	for _, r := range roleNames {
-		files = append(files, benchRoles[r]...)
+		files = append(files, b.roles[r]...)
 	}
 	paths := make([]string, len(files))
 	for i, f := range files {
@@ -282,6 +347,9 @@ func (b *Bench) manifests() ([]map[string]any, error) {
 		}
 		if d.Kind == "Role" {
 			sp := asMap(d.Value["spec"])
+			if str(sp["worker_kind"]) == "agent" {
+				b.agentRoles = append(b.agentRoles, d.Name)
+			}
 			for _, t := range strs(sp["claims"]) {
 				claims[t] = true
 			}
@@ -371,6 +439,9 @@ func (b *Bench) manifests() ([]map[string]any, error) {
 	if err := b.dropLaterResources(out); err != nil {
 		return nil, err
 	}
+	if b.cfg.Edit != nil {
+		out = b.cfg.Edit(out)
+	}
 	if _, err := testbench.DropUnsupported(b.sp, out); err != nil {
 		return nil, err
 	}
@@ -412,7 +483,11 @@ func (b *Bench) apply(ctx context.Context) error {
 		Applied bool             `json:"applied"`
 		Errors  []map[string]any `json:"errors"`
 	}
-	if err := b.P2(ctx, "demo", "apply", map[string]any{"commit": strings.Repeat("e", 40), "manifests": ms}, &resp); err != nil {
+	req := map[string]any{"commit": strings.Repeat("e", 40), "manifests": ms}
+	if len(b.cfg.Skills) > 0 {
+		req["skills"] = b.cfg.Skills
+	}
+	if err := b.P2(ctx, "demo", "apply", req, &resp); err != nil {
 		return err
 	}
 	if !resp.Applied {
@@ -564,7 +639,8 @@ func (b *Bench) startWorkers(ctx, runCtx context.Context, tx *texts.Catalog, bot
 		return err
 	}
 	workers = append(workers, ch.Run)
-	for _, role := range slices.Sorted(mapKeys(benchRoles)) {
+	slices.Sort(b.agentRoles)
+	for _, role := range b.agentRoles {
 		tok, err := b.enroll(ctx, map[string]any{"tenant": "demo", "role": role, "kind": "agent"})
 		if err != nil {
 			return err
@@ -577,10 +653,7 @@ func (b *Bench) startWorkers(ctx, runCtx context.Context, tx *texts.Catalog, bot
 	}
 	m := func(p string) string { return filepath.Join(b.cfg.Root, "examples/tools", p, "tool.yaml") }
 	catalog := filepath.Join(b.cfg.Root, "examples/tenants/demo/catalog.yaml")
-	hosts := []struct {
-		host    string
-		plugins map[string][]string
-	}{
+	hosts := []HostPlugins{
 		{"web1", map[string][]string{
 			"logs": {"-manifest", m("logs"), "-source", "nginx-access=" + b.dataPath("web1", "access.log"),
 				"-source", "nginx-error=" + b.dataPath("web1", "error.log"), "-source", "app-api=" + b.dataPath("web1", "app-api.log")},
@@ -597,14 +670,17 @@ func (b *Bench) startWorkers(ctx, runCtx context.Context, tx *texts.Catalog, bot
 			"cmd":  {"-manifest", m("cmd"), "-host", "db1", "-spec-root", b.cfg.Root},
 		}},
 	}
+	if b.cfg.Hosts != nil {
+		hosts = b.cfg.Hosts(HostEnv{MonitorAPI: zbx + "/api_jsonrpc.php", MonitorTokenFile: token})
+	}
 	for _, h := range hosts {
 		var ps []toolhost.Plugin
-		names := slices.Sorted(mapKeys(h.plugins))
+		names := slices.Sorted(mapKeys(h.Plugins))
 		for _, n := range names {
-			cmd, env := b.cfg.Plugin(n, h.plugins[n])
+			cmd, env := b.cfg.Plugin(n, h.Plugins[n])
 			ps = append(ps, toolhost.Plugin{Name: n, Command: cmd, Env: env})
 		}
-		tok, err := b.enroll(ctx, map[string]any{"tenant": "demo", "role": "toolhost", "kind": "toolhost", "plugins": names, "placement": "host", "host": h.host})
+		tok, err := b.enroll(ctx, map[string]any{"tenant": "demo", "role": "toolhost", "kind": "toolhost", "plugins": names, "placement": "host", "host": h.Host})
 		if err != nil {
 			return err
 		}
@@ -614,7 +690,7 @@ func (b *Bench) startWorkers(ctx, runCtx context.Context, tx *texts.Catalog, bot
 			return err
 		}
 		if err := th.Hello(ctx); err != nil {
-			return fmt.Errorf("toolhost %s: %w", h.host, err)
+			return fmt.Errorf("toolhost %s: %w", h.Host, err)
 		}
 		workers = append(workers, th.Run)
 	}
@@ -687,6 +763,10 @@ type recorder struct {
 	next  http.RoundTripper
 	mu    sync.Mutex
 	calls []modelCall
+	// observe, when set, sees each call's request and answer bodies.
+	observe func(req, resp []byte, status int)
+	// gate, when set and false, refuses the call with 402 before the provider.
+	gate func() bool
 }
 
 type modelCall struct {
@@ -705,7 +785,15 @@ func (r *recorder) RoundTrip(req *http.Request) (*http.Response, error) {
 		body = b
 		req.Body = io.NopCloser(bytes.NewReader(b))
 	}
-	resp, err := r.next.RoundTrip(req)
+	var resp *http.Response
+	var err error
+	if r.gate != nil && !r.gate() {
+		resp = &http.Response{StatusCode: http.StatusPaymentRequired, Status: "402 Payment Required", Proto: "HTTP/1.1", ProtoMajor: 1, ProtoMinor: 1,
+			Header: http.Header{"Content-Type": {"application/json"}}, Request: req,
+			Body: io.NopCloser(strings.NewReader(`{"type":"error","error":{"type":"billing_error","message":"the money fuse of the stand refuses the call"}}`))}
+	} else {
+		resp, err = r.next.RoundTrip(req)
+	}
 	call := modelCall{Body: string(body)}
 	if err == nil {
 		raw, rerr := io.ReadAll(resp.Body)
@@ -719,6 +807,9 @@ func (r *recorder) RoundTrip(req *http.Request) (*http.Response, error) {
 		}
 		_ = json.Unmarshal(raw, &m)
 		call.Model, call.Status = m.Model, resp.StatusCode
+		if r.observe != nil {
+			r.observe(body, raw, resp.StatusCode)
+		}
 	}
 	r.mu.Lock()
 	r.calls = append(r.calls, call)
@@ -792,6 +883,8 @@ type fakeBotAPI struct {
 	nextID    int64
 	maxOffset float64
 	nextUpd   float64
+	// observe, when set, sees every call but getUpdates with its request and result.
+	observe func(method string, req map[string]any, result any)
 }
 
 func (f *fakeBotAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -833,6 +926,9 @@ func (f *fakeBotAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		result = map[string]any{"message_id": 9000 + f.nextID, "chat": map[string]any{"id": req["chat_id"]}}
 	}
 	f.mu.Unlock()
+	if f.observe != nil && method != "getUpdates" {
+		f.observe(method, req, result)
+	}
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "result": result})
 }
 
@@ -848,6 +944,21 @@ func (f *fakeBotAPI) message(userID, chatID int64, private bool, text string) fl
 	f.updates = append(f.updates, map[string]any{"update_id": f.nextUpd, "message": map[string]any{
 		"message_id": int64(f.nextUpd) + 100, "date": time.Now().Unix(), "from": map[string]any{"id": userID, "is_bot": false},
 		"chat": map[string]any{"id": chatID, "type": typ}, "text": text}})
+	return f.nextUpd
+}
+
+// press queues a press of an inline button of a message the bot sent, and returns its update id.
+func (f *fakeBotAPI) press(userID, chatID, messageID int64, private bool, data string) float64 {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.nextUpd++
+	typ := "private"
+	if !private {
+		typ = "group"
+	}
+	f.updates = append(f.updates, map[string]any{"update_id": f.nextUpd, "callback_query": map[string]any{
+		"id": fmt.Sprintf("cq%d", int64(f.nextUpd)), "from": map[string]any{"id": userID, "is_bot": false}, "data": data,
+		"message": map[string]any{"message_id": messageID, "chat": map[string]any{"id": chatID, "type": typ}}}})
 	return f.nextUpd
 }
 
@@ -919,10 +1030,10 @@ func (b *Bench) spendTotal(ctx context.Context) (int64, error) {
 // spending (HLD-3), so tasks of the run stop calling the model. The holds stay: releasing them
 // would let the held tasks be claimed again.
 func (b *Bench) stopSpend(ctx context.Context) error {
-	if len(b.capHolds) > 0 {
-		return nil
-	}
 	for _, tenant := range slices.Sorted(mapKeys(b.ops)) {
+		if b.capHolds[tenant] != "" {
+			continue // held by an earlier call that failed on another tenant
+		}
 		var out map[string]any
 		scope := map[string]any{"kind": "tenant"}
 		scope["tenant"] = tenant

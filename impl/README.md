@@ -35,6 +35,7 @@ How each subsystem behaves: [ARCHITECTURE.md](ARCHITECTURE.md).
 | `botaru-ingress` | the webhook driver of one source channel (profile `ingress`, ING-1 to ING-4): a TLS listener under its own OS user and secrets that checks the signature or token, the limits and the delivery id, then puts the body as a file and submits the mapped event over P1 |
 | `botaru-plugin` | the own plugins `cmd`, `logs`, `checks`, `service`, `queue` and `monitor` as MCP servers on the standard streams; the toolhost starts them |
 | `botaru-eval` | the eval runner: stands up a test bench in its own process, runs the cases of `evals/cases/` with the mock model or a real provider, writes JUnit and EvalReports entries (see [EVALS.md](EVALS.md)) |
+| `botaru-sim` | the farm simulator: the stand of `botaru-eval` with a virtual world on disk under the bots' tools, a fake Zabbix, a director of faults, people and cards, the mock model or a real provider, and a money fuse (see [SIM.md](SIM.md)) |
 | `botaru-mockmodel` | the mock model provider of the test bench (`spec/bindings/model-providers/mock.md`) |
 
 ## Packages
@@ -50,8 +51,9 @@ How each subsystem behaves: [ARCHITECTURE.md](ARCHITECTURE.md).
 | `internal/mcp`, `internal/toolspec`, `internal/redact` | MCP messages and the newline-delimited stream; ToolPlugin manifests (tool names, input schemas, the `tools/list` fingerprint, the checks of program commands); masking and cutting of tool output |
 | `internal/toolhost`, `internal/plugins` | the toolhost and the own plugins |
 | `internal/ingress` | the webhook driver: Standard Webhooks signatures, the TLS token check, rate and body limits, the mapping of closed fields |
-| `internal/pluginmain` | the flags and start of the own plugins, shared by `botaru-plugin` and `botaru-eval plugin` |
+| `internal/pluginmain` | the flags and start of the own plugins, shared by `botaru-plugin`, `botaru-eval plugin` and `botaru-sim plugin` |
 | `internal/evals` | the eval runner: cases, plan and estimate, generators, seed, bench, checks and reports |
+| `internal/sim` | the farm simulator: the world and its physics, the stubs of `systemctl`, `df` and `journalctl`, the fake Zabbix API, the mock model, the stand, the director and its scenarios |
 | `internal/agent`, `internal/channel/telegram`, `internal/kbjob`, `internal/p1client` | the workers and their P1 client |
 | `internal/e2e` | the hello-bot sequence and a plugin tool call over the wire with the mock provider, a fake Bot API server and a real toolhost |
 | `internal/conform` | the conformance runner (`conformance/runner.md`): it runs the behaviour fixtures on fresh test benches over HTTP and reports per case and per rule |

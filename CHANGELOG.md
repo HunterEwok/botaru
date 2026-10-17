@@ -8,6 +8,25 @@ Entries are grouped by area; within a group the newest entry comes first.
 
 ## Unreleased
 
+### Reference Implementation (impl/)
+
+- `botaru-sim`, the farm simulator ([impl/SIM.md](impl/SIM.md)): the eval test bench with the monitor profile on,
+  the reference bot `ops-reader`, toolhosts of `web1`, `db1` and `ctd1`, the oneshot executor `pipeline` and the
+  monitoring adapter `botaru-zabbix`, whose tools work on a virtual world under the run's directory (machines,
+  disks, services, monitoring problems and series, live logs, check results). Stubs of `systemctl`, `df` and
+  `journalctl` answer from the world, so no tool call touches the host. A fake Zabbix 7.0 API serves the world
+  and sends the problem webhook. A director runs the scenarios `nginx-down`, `slow-site`, `disk-filling` and
+  `prompt-injection` with their checks, or a continuous mode with a console; virtual approvers press the cards by
+  `-auto-approve none|safe|all|random`. The built-in mock model plays a plain operator without a key; `-real`
+  calls a provider with `-model`. The money fuse `-max-eur` refuses a model call whose reserved worst case would
+  reach the cap, holds every tenant with `no_enqueue`, `no_claim` and `cancel_running`, refuses further model calls
+  and stops the run. Every event goes to the console and to `sim-events.jsonl`.
+- The own plugin `cmd` takes `-program-root` (a test stand only): the manifest's absolute programs run from under
+  that directory.
+- The eval bench can carry another program's stand: further roles, an edit of the set and the seed, the skill
+  folders of apply, its own toolhosts and monitoring API, core settings, observers of the Bot API and of the model
+  calls, and a gate in front of the provider; a monitoring export no longer counts as pending work of a case.
+
 ## 0.3.0 - 2026-10-17
 
 ### Skeleton & Contracts

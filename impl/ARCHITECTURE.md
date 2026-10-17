@@ -407,6 +407,8 @@ the principal goes into `personal_subjects`; the sender and an unknown author do
   newline is refused, and the manifest is checked against `spec/model/forbidden-programs.yaml` at start. It resolves the
   symlinks of a program path at start and again at each call, refuses a program whose real name is forbidden, and runs
   the resolved path. A `{param.field}` in a command is the catalog field the core resolved for the argument.
+  `-program-root` (a test stand only, the simulator of [SIM.md](SIM.md)) puts the absolute programs of the manifest under
+  a directory: `/usr/bin/df` runs as `<root>/usr/bin/df`.
 - `logs` reads the tail of a catalog log source; which file a source is on the machine is local deployment data
   (`-source id=path`), and a symbolic link or a non-regular file is not read.
 - `checks` reads the latest results of a check from a results file that an external checker writes.

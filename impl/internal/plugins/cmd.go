@@ -31,25 +31,36 @@ type Cmd struct {
 	Host string
 	// MaxOutput bounds what a command may print; the toolhost cuts further by the tool limit.
 	MaxOutput int
+	// ProgramRoot, when set, is the root the programs are found under: a command's program
+	// /usr/bin/df runs as <ProgramRoot>/usr/bin/df. A test stand sets it so that no command
+	// reaches a program of the machine (impl/SIM.md); a deployment leaves it empty.
+	ProgramRoot string
 	// forbidden is the forbidden program list, checked again on the resolved program path.
 	forbidden map[string]bool
 }
 
 // NewCmd checks the manifest of the plugin with the forbidden programs.
 func NewCmd(p toolspec.Plugin, host string, forbidden map[string]bool) (*Cmd, error) {
+	return NewCmdUnder(p, host, "", forbidden)
+}
+
+// NewCmdUnder is NewCmd with the programs found under root (Cmd.ProgramRoot); "" is the
+// machine's own programs.
+func NewCmdUnder(p toolspec.Plugin, host, root string, forbidden map[string]bool) (*Cmd, error) {
+	c := &Cmd{Plugin: p, Host: host, MaxOutput: 1 << 20, ProgramRoot: root, forbidden: forbidden}
 	if issues := toolspec.Check(p, forbidden); len(issues) > 0 {
 		return nil, fmt.Errorf("the cmd manifest does not pass the checks: %v", issues)
 	}
 	for _, t := range p.Tools {
-		for _, c := range t.Commands {
+		for _, cmd := range t.Commands {
 			// A program that is a symlink to a forbidden one is refused too; a program missing on
 			// this machine fails at its call.
-			if _, err := program(c.Argv[0], forbidden); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			if _, err := program(c.path(cmd.Argv[0]), forbidden); err != nil && !errors.Is(err, fs.ErrNotExist) {
 				return nil, err
 			}
 		}
 	}
-	return &Cmd{Plugin: p, Host: host, MaxOutput: 1 << 20, forbidden: forbidden}, nil
+	return c, nil
 }
 
 // program resolves the symlinks of a program path and refuses a program whose real name is
@@ -91,7 +102,7 @@ func (c *Cmd) Call(ctx context.Context, tool string, args map[string]any, meta *
 	defer cancel()
 	// The program runs by its resolved path, checked just before, so a symlink changed after
 	// the start check cannot lead to a forbidden program.
-	real, err := program(argv[0], c.forbidden)
+	real, err := program(c.path(argv[0]), c.forbidden)
 	if err != nil {
 		return nil, errors.New("the command could not start")
 	}
@@ -119,6 +130,14 @@ func (c *Cmd) Call(ctx context.Context, tool string, args map[string]any, meta *
 		text += "\n[output cut]"
 	}
 	return Text(text), nil
+}
+
+// path is where a program of the manifest is found: under ProgramRoot when it is set.
+func (c *Cmd) path(name string) string {
+	if c.ProgramRoot == "" {
+		return name
+	}
+	return filepath.Join(c.ProgramRoot, name)
 }
 
 // expand builds the argv of a command: a placeholder element {param} takes the argument value,

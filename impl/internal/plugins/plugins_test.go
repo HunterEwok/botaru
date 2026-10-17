@@ -93,6 +93,42 @@ func TestCmd(t *testing.T) {
 	}
 }
 
+// TestCmdProgramRoot: under a program root a command runs the program of that tree, never the
+// machine's, and a forbidden program in the tree is refused at start.
+func TestCmdProgramRoot(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "bin", "echo"), []byte("#!/bin/sh\nprintf 'stub %s\\n' \"$1\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	c, err := NewCmdUnder(cmdPlugin("/bin/echo", "hi"), "", root, map[string]bool{"sh": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r, err := c.Call(context.Background(), "run", map[string]any{"command": "say"}, nil); err != nil || r.Content[0].Text != "stub hi\n" {
+		t.Fatalf("the stub: %+v %v", r, err)
+	}
+	m, err := NewCmdUnder(cmdPlugin("/bin/false"), "", root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Call(context.Background(), "run", map[string]any{"command": "say"}, nil); err == nil {
+		t.Fatal("a program missing in the tree ran from the machine")
+	}
+	if err := os.Symlink("/bin/sh", filepath.Join(root, "bin", "status")); err != nil {
+		t.Fatal(err)
+	}
+	shReal, err := filepath.EvalSymlinks("/bin/sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewCmdUnder(cmdPlugin("/bin/status", "-c", "id"), "", root, map[string]bool{"sh": true, filepath.Base(shReal): true}); err == nil {
+		t.Fatal("a forbidden program in the tree passed")
+	}
+}
+
 func TestLogs(t *testing.T) {
 	dir := t.TempDir()
 	log := filepath.Join(dir, "a.log")

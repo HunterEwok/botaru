@@ -104,6 +104,13 @@ func Generate(dir, gen string, seed int64, now time.Time, opt genOptions) (*Gene
 	return nil, fmt.Errorf("generator %s is not built", gen)
 }
 
+// GenerateLogs writes the logs of the nginx or app generator into dir without defects or noise,
+// with the injected lines of inject (where, line, text as in a case's setup), and computes the
+// answers. The simulator writes its first logs with it.
+func GenerateLogs(dir, gen string, seed int64, now time.Time, inject []map[string]any) (*Generated, error) {
+	return Generate(dir, gen, seed, now, genOptions{inject: inject})
+}
+
 func rid(r *rand.Rand) string { return fmt.Sprintf("r%08x", r.Uint32()) }
 
 func genNginx(dir string, seed int64, now time.Time, opt genOptions) (*Generated, error) {
