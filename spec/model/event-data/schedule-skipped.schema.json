@@ -7,7 +7,8 @@
   "x-botaru-rules": [
     "TIM-3",
     "CAP-1",
-    "INS-4"
+    "INS-4",
+    "TIM-5"
   ],
   "type": "object",
   "required": [
@@ -25,7 +26,7 @@
       "description": "Slot: a UTC instant to the minute."
     },
     "reason": {
-      "description": "Skip reason: dst_gap (the local time does not exist at the switch to daylight saving time), waiting (skip_if_waiting and the task of the previous slot is in submitted, or the provider circuit is open), held (a stop on the resources of the scope), over_capacity (CAP-1). From v0.2 also budget_exhausted: the estimate of a scheduled script run does not fit the reserve, and run_live: the previous run of a scheduled script is still live (SCR-12). insight_limit: an analysis slot over the run limit or inside the merge window of its role (INS-4).",
+      "description": "Skip reason: dst_gap (the local time does not exist at the switch to daylight saving time), waiting (skip_if_waiting and the task of the previous slot is in submitted, or the provider circuit is open), held (a stop on the resources of the scope), over_capacity (CAP-1). From v0.2 also budget_exhausted: the estimate of a scheduled script run does not fit the reserve, and run_live: the previous run of a scheduled script is still live (SCR-12). insight_limit: an analysis slot over the run limit or inside the merge window of its role (INS-4). paused: the schedule has spec.paused: true (TIM-5).",
       "enum": [
         "dst_gap",
         "waiting",
@@ -33,7 +34,8 @@
         "over_capacity",
         "budget_exhausted",
         "run_live",
-        "insight_limit"
+        "insight_limit",
+        "paused"
       ]
     }
   }

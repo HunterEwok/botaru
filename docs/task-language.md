@@ -344,10 +344,11 @@ spec:
   task: {type: data.sensor_check.v1, params: {window_h: 24}}
   deliver_to: ["chat:lab"]
   skip_if_waiting: true
+  paused: false                            # from v0.2 (TIM-5)
   proposable: true
 ```
 
-`task` takes a type from the `system-ops` group (PRM-10) and closed `params`. `deliver_to` is checked at `apply` and every run (DLV-6). `skip_if_waiting` (the default) skips a slot with `schedule.skipped` while the previous task still waits or the provider circuit is open, so a broken provider does not fill the queue and room stays for people's questions. From v0.2 `locale` sets the language of its addresses. The slot key is `system:schedule:<schedule>:<slot>`, and the type must have `timeouts.deadline`.
+`task` takes a type from the `system-ops` group (PRM-10) and closed `params`. `deliver_to` is checked at `apply` and every run (DLV-6). `skip_if_waiting` (the default) skips a slot with `schedule.skipped` while the previous task still waits or the provider circuit is open, so a broken provider does not fill the queue and room stays for people's questions. From v0.2 `locale` sets the language of its addresses, and `paused: true` skips every slot with `schedule.skipped(paused)`, without catch-up, until the field goes back to `false` (TIM-5); a proposal sets it only with kind `none` (PRP-10). The slot key is `system:schedule:<schedule>:<slot>`, and the type must have `timeouts.deadline`.
 
 **Route.** Routes live only in the tenant's git, read only their own tenant, and are never created by a model, worker or program (IDM-4, MSG-16).
 

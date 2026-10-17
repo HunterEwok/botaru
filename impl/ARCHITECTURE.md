@@ -260,7 +260,7 @@ PRM-10, DLV-6).
 - Failing schedules (CAP-4): the root task of a schedule slot that fails with `attempts_exhausted` or `runs_exhausted`
   counts in `schedule_state.failed_slots`, and any other end resets it. At 3 in a row the schedule gets the hold
   described in `holds.yaml` and the alarm `hold.auto`; the count starts again from zero.
-- `Schedule` has no pause field, so a schedule cannot be paused (TIM-5).
+- A schedule with `paused: true` skips every slot with `schedule.skipped(paused)`, without catch-up (TIM-5).
 
 ### Dead work
 
@@ -1421,8 +1421,8 @@ the core sends no `alarm_notice` (MON-3, MON-11, MON-12, OBS-11).
   success and sends the tenant admins and the operator the code message `notice.monitor_export_stalled` at most once in
   6 hours.
 - P2 `health` carries `monitor_export_age_s` per tenant; `doctor` fails on an export older than 15 minutes with work
-  waiting, on E5 deliveries planned for longer than 15 minutes and on an audit head not exported for a day. The status
-  schema has no monitoring line, so the account line is in `doctor` (OBS-11).
+  waiting, on E5 deliveries planned for longer than 15 minutes and on an audit head not exported for a day; the account
+  line is in `doctor` too (OBS-11).
 
 ### Monitoring problems and scripts
 
@@ -1664,9 +1664,8 @@ A preventable incident:
 
 Restricted mode (MGR-47): every write of a seat attempt in the tenant is refused with `manager_restricted`, which does
 not count for the safeguard: control operations, service actions, scripts, `grant_decide` and takeovers. The proposals
-of a restricted seat task are dropped with an audit record `proposal.create` (not ok, `manager_restricted`); the
-skeleton has the proposal.rejected reason `manager_restricted`, but this build writes no proposal.rejected event for a
-dropped proposal. Reads and notices still go. A seat task whose basis is a sev1 incident opened after the restriction
+of a restricted seat task are dropped with an audit record `proposal.create` (not ok, `manager_restricted`) and, for
+each dropped proposal, a `proposal.rejected.v1` event with the reason `manager_restricted` (D-118). Reads and notices still go. A seat task whose basis is a sev1 incident opened after the restriction
 acts as before. `farmctl seat resume farm-manager --tenant <tenant>` (P2 `seat.resume` with `tenant`, operators of farm
 only) lifts it with `seat.resumed.v1` and an audit record by `farmctl`; a new holder or a vacated seat lifts all. The
 seat record (`seat.schema.json`, validated when built) carries `restricted_in` with the tenant, incident and time of
@@ -2663,9 +2662,9 @@ for one tenant. P2 serves operator credentials only; a P2 operation the core doe
 - `status` shows the applied commit and set hash, the holds of the tenant in force and the claim `conforms_to`:
   `skeleton` "0.3.0" (from `spec.Version`, the number of `spec/VERSION`, although that release is untagged) and the
   profiles the installation claims, so `monitor` only with the monitoring system configured (MAN-8, D-88). It lists the
-  tenants (every tenant other than `farm` for the operator of `farm`, else the credential's own) under
-  `farm_manager_disabled` whatever their manager setting, although the manager is on by default; this is a known wrong
-  output (README.md, "Not in this version"), and has no monitoring line (OBS-11).
+  tenants with `farm_manager.enabled: false` (every such tenant for the operator of `farm`, else the credential's own)
+  under `farm_manager_disabled` (D-77); the manager is on by default. The status schema has no monitoring line: the
+  alarm path lines are `doctor` checks (OBS-11).
 - `doctor` gives the tick of each loop, the store volume and the indicators as farm numbers, and for the tenant the
   holds, the dead work, the stale workers, the open alarms and the open erasure requests, besides the checks named in
   the other sections.

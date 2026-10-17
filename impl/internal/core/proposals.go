@@ -112,12 +112,18 @@ func (c *Core) createProposals(ctx context.Context, tx pgx.Tx, now time.Time, ca
 	a.Seat = seatOfRecord(rec) == managerSeatID
 	a.Level = authorLevel(a.Seat, cat.TaskTypes[typ].Purpose)
 	// In restricted mode the seat proposes nothing in the tenant, unless its basis is a sev1
-	// incident opened during it (MGR-47); the proposals are dropped.
+	// incident opened during it (MGR-47); the proposals are dropped, each with a
+	// proposal.rejected event of reason manager_restricted (D-118).
 	if a.Seat && len(bodies) > 0 {
 		if restricted, err := seatTaskRestricted(ctx, tx, w.Tenant, rec); err != nil {
 			return err
 		} else if restricted {
 			c.log.Info("proposals of the restricted farm manager seat dropped", "tenant", w.Tenant, "task", task, "count", len(bodies))
+			for _, body := range bodies {
+				if err := c.proposalRejected(ctx, tx, now, a, body, "", restrictedReason); err != nil {
+					return err
+				}
+			}
 			_, err := c.appendAudit(ctx, tx, now, Audit{
 				Tenant: w.Tenant, Kind: "command", Actor: Actor{Principal: principalOr(acting.Bot), Via: "seat", Role: w.Role, Task: task},
 				Command: "proposal.create", Target: &Target{Kind: "task", ID: task}, OK: false, Reason: restrictedReason,

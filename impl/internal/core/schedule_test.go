@@ -21,6 +21,12 @@ func newScheduleBench(t *testing.T, cron string, skipIfWaiting *bool) *actionBen
 // newScheduleBenchZone is newScheduleBench with the schedule's own zone; "" takes the tenant's.
 func newScheduleBenchZone(t *testing.T, cron string, skipIfWaiting *bool, zone string) *actionBench {
 	t.Helper()
+	return newScheduleBenchSpec(t, cron, skipIfWaiting, zone, nil)
+}
+
+// newScheduleBenchSpec is newScheduleBenchZone with more fields of the schedule's spec.
+func newScheduleBenchSpec(t *testing.T, cron string, skipIfWaiting *bool, zone string, more map[string]any) *actionBench {
+	t.Helper()
 	b := newBenchWith(t, func(root string, ms []map[string]any) []map[string]any {
 		for _, m := range ms {
 			if m["kind"] == "TaskType" {
@@ -37,6 +43,9 @@ func newScheduleBenchZone(t *testing.T, cron string, skipIfWaiting *bool, zone s
 		}
 		if zone != "" {
 			sc["timezone"] = zone
+		}
+		for k, v := range more {
+			sc[k] = v
 		}
 		return append(ms, map[string]any{
 			"apiVersion": "botaru/v1alpha1", "kind": "Group",
@@ -147,6 +156,32 @@ func TestSchedule(t *testing.T) {
 	var sink int
 	if err := b.c.st.Pool.QueryRow(context.Background(), `SELECT count(*) FROM deliveries WHERE exec_kind = 'sink' AND exec_name = 'archive' AND addr = 'sink:archive'`).Scan(&sink); err != nil || sink != 1 {
 		t.Fatalf("sink deliveries %d %v", sink, err)
+	}
+}
+
+// A paused schedule skips each slot with schedule.skipped(paused) and enqueues nothing; the
+// slot is not caught up (TIM-5).
+func TestSchedulePaused(t *testing.T) {
+	b := newScheduleBenchSpec(t, "0 * * * *", nil, "Europe/Berlin", map[string]any{"paused": true})
+	b.at(t, "2027-04-01T10:30:00Z")
+	b.tick(t, "schedule")
+	b.at(t, "2027-04-01T11:00:00Z")
+	b.tick(t, "schedule")
+	b.at(t, "2027-04-01T12:00:00Z")
+	b.tick(t, "schedule")
+	b.tick(t, "schedule")
+	if s := b.skips(t); !slices.Equal(s, []string{"2027-04-01T11:00Z paused", "2027-04-01T12:00Z paused"}) {
+		t.Fatalf("skips %v", s)
+	}
+	if k := b.scheduled(t); len(k) != 0 {
+		t.Fatalf("tasks of a paused schedule %v", k)
+	}
+	var data map[string]any
+	if err := b.c.st.Pool.QueryRow(context.Background(), `SELECT data FROM events WHERE type = 'schedule.skipped' LIMIT 1`).Scan(&data); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.c.spec.Validate("urn:botaru:schema:schedule-skipped:1", data); err != nil {
+		t.Fatalf("schedule.skipped off schema: %v", err)
 	}
 }
 

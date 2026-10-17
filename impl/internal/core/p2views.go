@@ -386,10 +386,14 @@ type ConformsTo struct {
 
 // Status shows the applied commit and set hash, the holds of the tenant in force and the claim
 // of this build. An apply that failed changes nothing in the store, so errors stay empty.
-// farm_manager_disabled lists every tenant other than farm whatever its manager setting, a
-// known gap of this view.
+// farm_manager_disabled lists the tenants with farm_manager.enabled: false (the manager is on by
+// default, D-77): every such tenant for the operator of farm, else the credential's own.
 func (c *Core) Status(ctx context.Context, op Operator, req TenantRequest) (*StatusResult, error) {
 	tenant, err := viewTenant(op, req.Tenant)
+	if err != nil {
+		return nil, err
+	}
+	cat, err := c.Catalog(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -414,7 +418,7 @@ func (c *Core) Status(ctx context.Context, op Operator, req TenantRequest) (*Sta
 				rows.Close()
 				return err
 			}
-			if op.Tenant == "farm" || t == tenant {
+			if (op.Tenant == "farm" || t == tenant) && !managerEnabled(cat, t) {
 				out.FarmManagerDisabled = append(out.FarmManagerDisabled, t)
 			}
 		}

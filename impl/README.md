@@ -170,12 +170,8 @@ Core, ports and people:
   `escalations_take` are not served.
 - The `sandbox` placement and tier 2 (the profile `sandbox` is not claimed), and plugins with secrets or network egress
   other than the own `monitor` plugin: such a plugin runs in its own container, which this build does not start (DEP-7).
-- A pause of a schedule (TIM-5): `Schedule` has no pause field.
 - The chat command `/invite`; merging a daily digest of preferences into one message.
-- A `proposal.rejected` event with `manager_restricted` for the dropped proposals of a restricted seat (MGR-47, D-118).
 - The purge of `runtime_internal` sessions by period (RET-11).
-- A known wrong output: P2 `status` for the operator of `farm` lists every tenant other than `farm` under `farm_manager_disabled` whatever its
-  manager setting, although the farm manager is on by default.
 
 Monitoring:
 
@@ -183,10 +179,6 @@ Monitoring:
   the task journal (MON-8).
 - A route task with a model for a monitoring problem, the history number of the catalog item, and a card for a
   monitoring script after untrusted text.
-- The free space series of a volume written by a `job` role from the monitoring system history (CAP-6):
-  `spec/model/core-series.yaml` names no such series, so it is a tenant's `ObservationSeries` with a job source, and
-  this build has no job program that reads the monitoring history.
-- A monitoring line in `status` (OBS-11: the status schema has none, the account line is in `doctor`).
 
 Privacy, export and connections:
 
@@ -195,13 +187,9 @@ Privacy, export and connections:
   act on (the bulk form answers `not_found`).
 - The period of class `content` for a `self` sink, and the content of files in an export (only their records).
 
-Deployment (DEP-10):
+Deployment:
 
-- The agent process kind (the schema has none, so DEP-5, the agent's network, is not linted; the compose agent is on the
-  core network only).
-- The comparison of the OS mechanism of the machine with the catalog (DEP-4 at doctor), plugin image digests and the
-  docker group or socket (no schema fields), and the monitoring system's host against the core machine (no host address
-  in the schema).
+- The comparison of the OS mechanism of the machine with the catalog (DEP-4 at doctor).
 - The reading of the workspace ceilings at the provider by doctor (GW-9: the provider binding has no such call; apply
   checks the ceilings the settings describe).
 
