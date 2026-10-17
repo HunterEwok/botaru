@@ -208,22 +208,22 @@ The folders follow the layers: `docs/` is the model in words, `spec/` the public
 
 ADRs live in `docs/adr/` in MADR 4.0.0 format; their "Confirmation" section refers to rule numbers. An ADR is needed for a decision that changes a contract: an operation or guarantee of a boundary sheet, a wire schema, a lifecycle state, a closed list that permissions depend on (D-86 (13)). Also for a new auto-stop rule, message genus, dispatcher condition, fact kind or predicate, role profile, or a manifest kind that affects permissions (MAN-4). An ordinary new rule is a registry row that refers to a decision D-NN. If an extension needs the core changed, the skeleton lacks a port: that is a reason for an ADR, not a workaround.
 
-The table lists the future ADRs; none is a file yet, and each appears with the implementation. The decisions are already rows in [decisions.md](decisions.md) or part of the skeleton text.
+The table lists the ADRs that D-86 (13) said would appear with the implementation; they are now files in [adr/](adr/README.md) with the status `accepted`, and the decision each records is a row in [decisions.md](decisions.md) or part of the skeleton text. A new ADR takes the next free number, 0011.
 
-| ADR | What is decided | Decision |
-|---|---|---|
-| A skeleton from the model; contracts only at the boundaries | concepts, lifecycles and rules first; contracts only where foreign code meets the farm | D-38, D-66, D-114 |
-| A thin core, the queue in the store | the queue in C1, reference PostgreSQL | D-03 |
-| One lease for all work; task states; events; schemas | a lease with a fencing token; A2A terminal states; CloudEvents 1.0; JSON Schema 2020-12 and OpenAPI 3.1 for P1 | skeleton text |
-| Deployment; `apiVersion`; idempotency scope; no `input_required` | containers and compose; `botaru/v1alpha1`; `(tenant, idempotency_key)`; a clarification is a new task | D-08, D-44, D-43, D-41 |
-| P3 and P4 inside the core; internal ports as descriptions | no intermediary between runtime and core; a port without a second implementation is a description | D-45, D-46, D-80, D-114 |
-| A workspace per tenant; a program as a principal | own provider workspace, key and ceilings; a `service` principal | D-42, D-47 |
-| Bot communication; campaign; script and translator | typed messages published at `complete`; one approval of a plan snapshot; a closed plan run by the initiator's button | D-14, D-32, D-20, D-15 |
-| External monitoring; service control | alarms and liveness through E5; catalog services by role permission, only `restart` from `no_card` without a card | D-59..D-64, D-66..D-70, D-73, D-74, D-82 |
-| Proposals, the commission, identity, the farm manager | a bot proposes, code counts, a person decides; an identity grants nothing; `farm` holds only the seat registry | D-16, D-115, D-19, D-21, D-30, D-33 |
-| Agent runtime; implementation language | own loop over P4; Go in `impl/` | D-93, D-91, D-92 |
+| No. | ADR | What is decided | Decision |
+|---|---|---|---|
+| [0001](adr/0001-skeleton-from-the-model.md) | A skeleton from the model; contracts only at the boundaries | concepts, lifecycles and rules first; contracts only where foreign code meets the farm | D-38, D-66, D-114 |
+| [0002](adr/0002-thin-core-queue-in-store.md) | A thin core, the queue in the store | the queue in C1, reference PostgreSQL | D-03 |
+| [0003](adr/0003-one-lease-task-states-events-schemas.md) | One lease for all work; task states; events; schemas | a lease with a fencing token; A2A terminal states; CloudEvents 1.0; JSON Schema 2020-12 and OpenAPI 3.1 for P1 | skeleton text |
+| [0004](adr/0004-deployment-api-version-idempotency.md) | Deployment; `apiVersion`; idempotency scope; no `input_required` | containers and compose; `botaru/v1alpha1`; `(tenant, idempotency_key)`; a clarification is a new task | D-08, D-44, D-43, D-41 |
+| [0005](adr/0005-gateways-in-core-internal-ports.md) | P3 and P4 inside the core; internal ports as descriptions | no intermediary between runtime and core; a port without a second implementation is a description | D-45, D-46, D-80, D-114 |
+| [0006](adr/0006-tenant-workspace-service-principal.md) | A workspace per tenant; a program as a principal | own provider workspace, key and ceilings; a `service` principal | D-42, D-47 |
+| [0007](adr/0007-bot-messages-campaigns-scripts.md) | Bot communication; campaign; script and translator | typed messages published at `complete`; one approval of a plan snapshot; a closed plan run by the initiator's button | D-14, D-32, D-20, D-15 |
+| [0008](adr/0008-external-monitoring-service-control.md) | External monitoring; service control | alarms and liveness through E5; catalog services by role permission, only `restart` from `no_card` without a card | D-59..D-64, D-66..D-70, D-73, D-74, D-82 |
+| [0009](adr/0009-proposals-commission-identity-manager.md) | Proposals, the commission, identity, the farm manager | a bot proposes, code counts, a person decides; an identity grants nothing; `farm` holds only the seat registry | D-16, D-115, D-19, D-21, D-30, D-33 |
+| [0010](adr/0010-agent-runtime-and-language.md) | Agent runtime; implementation language | own loop over P4; Go in `impl/` | D-93, D-91, D-92 |
 
-All of them are accepted.
+All of them have the status `accepted`.
 
 ### What the skeleton does not decide
 
