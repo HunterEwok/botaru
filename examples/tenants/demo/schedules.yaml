@@ -33,8 +33,8 @@ spec:
   task: {type: check.http.v1}
   deliver_to: ["sink:checks"]
 # The schedule month-report-archive from flow 7 is not declared here: the params_schema of task type
-# report.monthly.numbers.v1 requires month, and a schedule has no way yet to say "last month"
-# (open question in docs/open-questions.md).
+# report.monthly.numbers.v1 requires month, and a schedule sets no parameter relative to its slot,
+# such as "last month" (D-119): a person enqueues the monthly report.
 ---
 # Weekly analysis of ops-reader (INS-1, INS-4): system starts it; the role's run limit and merge window apply.
 apiVersion: botaru/v1alpha1

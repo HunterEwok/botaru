@@ -1,5 +1,5 @@
 # Morning sensor summary by the reporter: child task of data.sensor_check.v1 (flow 5).
-# The date field from flow 5 is absent here: formats.yaml has no date format yet (open question in docs/open-questions.md).
+# date is the day of the summary in the format date (D-119); the parent sets it, and without it the summary is of today.
 apiVersion: botaru/v1alpha1
 kind: TaskType
 metadata: {name: report.sensor.v1}
@@ -29,6 +29,7 @@ spec:
             gaps: {type: integer, minimum: 0, maximum: 1000}
             out_of_range: {type: integer, minimum: 0, maximum: 100000}
             stuck_channel: {enum: [none, temp, humidity, pressure]}
+      date: {type: string, maxLength: 10, x-botaru-format: date}
   result_schema:
     type: object
     additionalProperties: false

@@ -1,8 +1,8 @@
 # impl: the reference implementation in Go
 
 This folder holds the reference implementation of the botaru core (D-91, D-92 in
-[docs/decisions.md](../docs/decisions.md)). The implementation claims skeleton 0.3 (unreleased: `spec/VERSION` is 0.3.0
-and there is no tag yet) with the profiles `core`, `monitor`, `insights`, `governance`, `manager`, `messaging`,
+[docs/decisions.md](../docs/decisions.md)). The implementation claims skeleton 0.3 (release 0.3.0: `spec/VERSION` is 0.3.0,
+the tag `v0.3.0`) with the profiles `core`, `monitor`, `insights`, `governance`, `manager`, `messaging`,
 `campaign`, `knowledge` and `ingress`; the eval rules of the claim are not run (see Checks, "Eval rules not run"). It
 runs the first bot: the hello-bot sequence of [examples/hello-bot/](../examples/hello-bot/) works end to end over the
 wire, from a Telegram message to the model answer in the same chat. How to run it on a server: [DEPLOY.md](DEPLOY.md).
@@ -108,8 +108,7 @@ rotate with an overlap (SEC-5), and `secret.revoke` holds every scope a secret r
 ### Versions, profiles and deferred rules
 
 The core claims skeleton `v0.3` (`spec.Version`) with the profiles of `spec.Profiles` (MAN-8). P2 `status` shows the
-claim as `conforms_to`: `skeleton` is "0.3.0", the number of `spec/VERSION`, although that release is untagged
-(unreleased), and the profiles are those the installation claims, so `monitor` only with the monitoring system
+claim as `conforms_to`: `skeleton` is "0.3.0", the number of `spec/VERSION` and of the release, and the profiles are those the installation claims, so `monitor` only with the monitoring system
 configured (D-88).
 
 - `apply` refuses with `version_unsupported` and the path a kind whose `since` is later, a field marked with a later
@@ -281,7 +280,7 @@ the skeleton lint, which still lints the block.
 
 ### Eval rules not run
 
-The claim is 0.3 (unreleased), and no paid eval run was made for it: every rule of the claim with `check: eval` in
+The claim is 0.3 (release 0.3.0), and no paid eval run was made for it: every rule of the claim with `check: eval` in
 `conformance/requirements.yaml` is "eval not run", whatever its other checks show. There are 22: GOV-13, GOV-29, GOV-45,
 GOV-46, INJ-12, INJ-15, KNW-2, MGR-4, MGR-6, MGR-14, MGR-17, MGR-22, MGR-23, MGR-26, MGR-52, MSG-7, ORC-9, REP-2, REP-4,
 REP-8, TRN-5 and TRN-6. The mock and scripted-provider bench runs of `internal/evals` check the runner, not the models.

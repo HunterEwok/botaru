@@ -174,6 +174,7 @@ The model sees a tool like this in a `raw_logs` task of `demo`; the description 
 | Format | Example | Version |
 |---|---|---|
 | `datetime` (UTC instant) | `2026-10-04T16:00:00Z` | v0.1 |
+| `date` (calendar date, RFC 3339 full-date) | `2026-10-17` | v0.3 |
 | `duration` | `15m` | v0.1 |
 | `id` (lowercase letters, digits, hyphen) | `st-05` | v0.1 |
 | `year_month` | `2026-09` | v0.1 |

@@ -5,7 +5,7 @@ the packages, the key decisions, what is not built yet and the checks are in [RE
 the rules and decisions of the skeleton that a behaviour supports; these are choices of this implementation where the
 skeleton leaves one, and none changes a contract.
 
-The core claims skeleton 0.3 (unreleased) with the profiles `core`, `monitor`, `insights`, `governance`, `manager`,
+The core claims skeleton 0.3 (release 0.3.0) with the profiles `core`, `monitor`, `insights`, `governance`, `manager`,
 `messaging`, `campaign`, `knowledge` and `ingress` (README.md, "Versions, profiles and deferred rules"). Everything
 below is the behaviour of that build.
 
@@ -2661,7 +2661,7 @@ for one tenant. P2 serves operator credentials only; a P2 operation the core doe
 - `audit.query` is the emergency access of AUD-7: it reads the audit of the credential's tenant and writes an audit
   record of kind `read`.
 - `status` shows the applied commit and set hash, the holds of the tenant in force and the claim `conforms_to`:
-  `skeleton` "0.3.0" (from `spec.Version`, the number of `spec/VERSION`, although that release is untagged) and the
+  `skeleton` "0.3.0" (from `spec.Version`, the number of `spec/VERSION` and of the release) and the
   profiles the installation claims, so `monitor` only with the monitoring system configured (MAN-8, D-88). It lists the
   tenants with `farm_manager.enabled: false` (every such tenant for the operator of `farm`, else the credential's own)
   under `farm_manager_disabled` (D-77); the manager is on by default. The status schema has no monitoring line: the
