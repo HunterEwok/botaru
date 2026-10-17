@@ -17,6 +17,7 @@ Paths below are examples; the installation files (settings, secrets, your own ma
 
 ```sh
 git clone <the address of this repository> /opt/botaru/src
+git -C /opt/botaru/src checkout --detach v0.3.0
 cd /opt/botaru/src/impl
 CGO_ENABLED=0 go build -o /opt/botaru/bin/ ./cmd/...
 /opt/botaru/bin/botaru-core -version

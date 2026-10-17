@@ -32,7 +32,8 @@ Entries are grouped by area; within a group the newest entry comes first.
   form with the rules that confirm them; the next ADR number is 0011.
 - Skeleton release 0.3.0: `spec/VERSION` and the contract sheets of `spec/ports/` carry 0.3.0; until the tag,
   forms changed in place with an entry in `spec/removed.yaml` (`spec/versions.md`). `examples/roles/assistant`
-  has `memory: none` while the personal assistant is deferred (DSP-10, `person_memory_deferred`, MEM-2), and flow 8 drops its `memory.search` step. The manifest fixtures
+  has `memory: none` while the personal assistant is deferred (DSP-10, `person_memory_deferred`, MEM-2), and
+  flow 8 drops its `memory.search` step. The manifest fixtures
   allow `person_memory_deferred` beside the memory lints, `approvals: 2` for a risk other than routine passes
   from v0.2, and the INJ-12 output coverage of `ci/check_evals.py` skips `monitor_note` of the deferred MON-7.
 - Decision D-118, skeleton gaps before a v0.3 claim: P2 `seat.resume` names exactly one of `incident` and

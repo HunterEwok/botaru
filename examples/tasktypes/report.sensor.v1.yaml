@@ -1,5 +1,5 @@
 # Morning sensor summary by the reporter: child task of data.sensor_check.v1 (flow 5).
-# date is the day of the summary in the format date (D-119); the parent sets it, and without it the summary is of today in the tenant time zone.
+# date is the day of the summary in the format date (D-119); the parent task sets it.
 apiVersion: botaru/v1alpha1
 kind: TaskType
 metadata: {name: report.sensor.v1}
