@@ -172,10 +172,10 @@ every model call and every second. At the cap the simulator:
    model again;
 3. stops the director and ends the run with exit code 3.
 
-Calls already sent to the provider when another call reaches the cap still finish, so the real spend can pass the
-cap by what those calls cost, never by more than their reservations. The spend reported at the stop counts a call
-that was canceled while its answer was coming back at its reserved worst case, so it can be above what the provider
-charged.
+Since every call let through had its worst case counted first, the counted spend stays below the cap. What the
+provider charges can still differ from the count: a real run counts the list price of the model, and `-price-in`
+and `-price-out` set too low make the count too low. The spend reported at the stop counts a call that was canceled
+while its answer was coming back at its reserved worst case, so it can be above what the provider charged.
 
 A real run counts the list price of `-model` in USD as EUR (a little more than it costs); `-price-in` and
 `-price-out` set the EUR per million tokens.

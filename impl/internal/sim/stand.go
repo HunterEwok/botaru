@@ -880,11 +880,8 @@ func (s *Stand) gate() bool {
 		s.log.Addf(KindFuse, "the spend could not be read, the model call is refused: %v", err)
 		return false
 	}
-	if n >= s.cfg.MaxMicros {
-		go s.checkFuseNow()
-		return false
-	}
-	return true
+	// onModelCall sees the refused call too and trips the fuse.
+	return n < s.cfg.MaxMicros
 }
 
 // errStopped is the error of a director step after the fuse tripped.
