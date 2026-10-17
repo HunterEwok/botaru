@@ -156,8 +156,7 @@ with `farmctl spend reconcile` (P2 `spend.reconcile`, BUD-10).
 
 The following parts of the claimed rules are not built yet. The deferred rules of `spec.Deferred` are refused as
 described above and are not repeated here, except where a built mechanism stops short because of them. This list is the
-overview: every section of [ARCHITECTURE.md](ARCHITECTURE.md) ends its topics with their own "Not built" items, which
-also count here.
+overview: where a section of [ARCHITECTURE.md](ARCHITECTURE.md) has "Not built" items, they also count here.
 
 Core, ports and people:
 
@@ -175,7 +174,7 @@ Core, ports and people:
 - The chat command `/invite`; merging a daily digest of preferences into one message.
 - A `proposal.rejected` event with `manager_restricted` for the dropped proposals of a restricted seat (MGR-47, D-118).
 - The purge of `runtime_internal` sessions by period (RET-11).
-- A known wrong output: P2 `status` lists every tenant other than `farm` under `farm_manager_disabled` whatever its
+- A known wrong output: P2 `status` for the operator of `farm` lists every tenant other than `farm` under `farm_manager_disabled` whatever its
   manager setting, although the farm manager is on by default.
 
 Monitoring:

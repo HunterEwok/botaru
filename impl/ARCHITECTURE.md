@@ -569,7 +569,7 @@ A model usage line records its provider, so (tenant, provider) is a workspace (B
   converts the provider's cost report to euros) and sends one P2 `spend.reconcile` per past UTC day, also for a day
   without rows between the first and last day (or `-from` and `-to`). Only an operator of `farm` or a report key
   (`report_keys_sha256`, which opens only `spend.reconcile` and `backup.report`) reconciles.
-- A day with model usage lines without a provider (lines of a profile that is not applied) is refused with `conflict`.
+- A day with model usage lines without a provider (lines written before the provider was recorded, whose profile was not applied at the time) is refused with `conflict`.
   Rows of one tenant in a day add up, since the farm has one workspace per tenant and provider (the `workspace` column
   is for reference), and the provider name is compared in lowercase. A day that still has an open call reserve is
   refused until the call settles.
@@ -1354,7 +1354,7 @@ window's row (`maintenance_windows`, MON-9: a node, a hold id and times, no pers
 event. Corpus fragments (KNW-5) go with their file: a store trigger deletes them when the file leaves `stored`, by
 expiry or erasure.
 
-Not built: attempt journals (AUD-4, profile `debug`) and the E4 purge of `runtime_internal` sessions by period (RET-11:
+Not built: the E4 purge of `runtime_internal` sessions by period (RET-11:
 the attempt work item gives such a runtime no session id of the core, and the closed list of erasure reasons has none
 for a retention purge, so a purge by period could not name what to delete; such a runtime is purged by erasure requests
 only).
