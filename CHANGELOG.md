@@ -27,7 +27,8 @@ Entries are grouped by area; within a group the newest entry comes first.
   calls a provider with `-model`. The money fuse `-max-eur` refuses a model call whose reserved worst case would
   reach the cap, holds every tenant with `no_enqueue`, `no_claim` and `cancel_running`, refuses further model calls
   and stops the run. Every event goes to the console and to `sim-events.jsonl`.
-- `botaru-sim` runs every role of `examples/roles`: the data bots with plugins served from the world's data files,
+- `botaru-sim` runs every role of `examples/roles` except the deferred `analyst` (sandbox, tier 2) and
+  `assistant` (DSP-10): the data bots with plugins served from the world's data files,
   the job worker of `data-job` for its schedule tasks, the commission reviewers and the farm manager with its seat
   assigned. The scenario `incident-and-commission` plays an incident answered by the farm manager and a proposal
   of `ops-reader`'s analysis through the commission to a person's card; `lab-requests` asks the data bots.

@@ -11,7 +11,8 @@ import (
 )
 
 // farmRoles are the role folders of examples/roles the stand runs beside hello and ops-reader:
-// every bot of the farm (the job role data-job runs on the simulator's own job worker).
+// every bot of the farm except the deferred analyst (sandbox, tier 2) and assistant (DSP-10).
+// The job role data-job runs on the simulator's own job worker.
 var farmRoles = []string{"data-reader", "data-job", "geo-reader", "pipeline-reader", "reporter",
 	"reviewer-a", "reviewer-b", "farm-manager", "farm-manager-reader"}
 

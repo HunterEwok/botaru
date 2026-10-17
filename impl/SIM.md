@@ -35,7 +35,8 @@ keeps it). The repository root is found from the working directory (or `-root`, 
 One process holds the whole stand, built on the eval test bench (`internal/evals`, [EVALS.md](EVALS.md)):
 
 - the core with the store, P1 with P4, P2, and the monitor profile on (`monitor: {enabled: true}`);
-- the Telegram channel against a fake Bot API, and an agent worker for every agent role of `examples/roles`:
+- the Telegram channel against a fake Bot API, and an agent worker for every agent role of `examples/roles`
+  except the deferred `analyst` (the sandbox of tier 2) and `assistant` (DSP-10):
   `hello`, `ops-reader`, `data-reader`, `geo-reader`, `pipeline-reader`, `reporter`, the commission reviewers
   `reviewer-a` and `reviewer-b`, the farm manager `farm-manager` and its reader `farm-manager-reader`;
 - the job worker of `data-job`, the simulator's own code: it runs the schedule tasks `check.http.v1` (the check
