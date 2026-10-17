@@ -8,6 +8,11 @@ Entries are grouped by area; within a group the newest entry comes first.
 
 ## Unreleased
 
+### CI & Checks
+
+- The workflow `claude-review.yml`: a comment with `@claude` in the conversation of a pull request by a person
+  with write access runs a Claude review there; it never runs on a push and cannot push (`ci/README.md`, "Claude review").
+
 ## 0.3.0 - 2026-10-17
 
 ### Skeleton & Contracts
