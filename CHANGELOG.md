@@ -71,8 +71,8 @@ Entries are grouped by area; within a group the newest entry comes first.
 
 ### CI & Checks
 
-- The workflow `claude-review.yml`: a comment with `@claude` on a pull request by the owner, a member or a
-  collaborator runs a Claude review there; it never runs on a push and never pushes (`ci/README.md`, "Claude review").
+- The workflow `claude-review.yml`: a comment with `@claude` in the conversation of a pull request by a person
+  with write access runs a Claude review there; it never runs on a push and cannot push (`ci/README.md`, "Claude review").
 
 ## 0.3.0 - 2026-10-17
 
