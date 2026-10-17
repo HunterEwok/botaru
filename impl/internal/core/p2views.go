@@ -385,8 +385,9 @@ type ConformsTo struct {
 }
 
 // Status shows the applied commit and set hash, the holds of the tenant in force and the claim
-// of this build. An apply that failed changes nothing in the store, so errors stay empty; this
-// build has no farm manager, so every tenant has it disabled.
+// of this build. An apply that failed changes nothing in the store, so errors stay empty.
+// farm_manager_disabled lists every tenant other than farm whatever its manager setting, a
+// known gap of this view.
 func (c *Core) Status(ctx context.Context, op Operator, req TenantRequest) (*StatusResult, error) {
 	tenant, err := viewTenant(op, req.Tenant)
 	if err != nil {

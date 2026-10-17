@@ -289,8 +289,8 @@ func (c *Core) scriptRun(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 	if err := json.Unmarshal(rec, &tr); err != nil {
 		return nil, "", "", err
 	}
-	// After untrusted text a script would need a person's decision; v0.1 has no card for a
-	// script, so the call is refused (INJ-15).
+	// After untrusted text a script would need a person's decision; this build has no card for a
+	// monitoring script, so the call is refused (INJ-15).
 	if tr.UntrustedSeen {
 		return deny("forbidden", "untrusted_seen")
 	}

@@ -76,7 +76,7 @@ var Deferred = []DeferredEntry{
 	{Rule: "INS-5", Surface: SurfaceNone,
 		Note: "the turn order of analysis tasks (dispatcher condition D16) has no field or operation; analysis tasks go by the ordinary dispatch order"},
 	{Rule: "KNW-6", Surface: SurfaceNone,
-		Note: "kb_search and kb_read are tools of the active rules KNW-1 to KNW-5; KNW-6 only fixed their inner word search, which this core chooses itself (impl/README.md)"},
+		Note: "kb_search and kb_read are tools of the active rules KNW-1 to KNW-5; KNW-6 only fixed their inner word search, which this core chooses itself (impl/ARCHITECTURE.md)"},
 	{Rule: "LCY-5", Surface: SurfaceManifest, Kind: "ToolPlugin", Where: "/spec/source/accepted"},
 	{Rule: "MAN-7", Surface: SurfaceManifest, Kind: "*", Where: "/metadata/deprecated"},
 	{Rule: "MAN-7", Surface: SurfaceManifest, Kind: "*", Where: "/metadata/sunset"},

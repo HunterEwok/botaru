@@ -80,8 +80,8 @@ func strList(v any) []string {
 }
 
 // controllable are the services this build can control: via host with a unit and a control
-// list. A via: monitor service runs a monitoring script through E5, which needs the monitor
-// profile this build does not claim.
+// list. A via: monitor service would run a monitoring script through E5, which this build does
+// not build for service control.
 func controllable(cat *Catalog, tenant string) []catalogService {
 	var out []catalogService
 	for _, s := range catalogServices(cat, tenant) {
