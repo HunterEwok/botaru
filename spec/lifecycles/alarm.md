@@ -31,7 +31,7 @@ An alarm is not an object from git but a core record of one trouble episode with
 - Every change of an episode gives exactly one delivery for E5 with its `seq` and no delivery to an E1 channel (MON-1); a re-export after a connection failure repeats the opening delivery with the same `seq`, and the adapter does not open it a second time.
 - An export delivery does not end as `dead` after a number of attempts: the core retries it with a growing pause of up to 10 minutes while the episode is open or its closing has not been exported; a newer delivery of the same `alarmkey` replaces the older one (MON-11). A failed export does not change the state of the alarm.
 - The adapter passes the changes of one `alarmkey` in `seq` order: `resolved` does not go out before the `firing` of the same episode (MON-11).
-- The age of the last successful export per tenant, `monitor_export_age_s`, is visible in `health`, `status` and `doctor`; an age over 15 minutes raises the alarm `alarm.monitor.export_stalled` and the code message `monitor_export_stalled` to the tenant admins and the operator, at most once every 6 hours (MON-1, MON-11, OBS-11).
+- The age of the last successful export per tenant, `monitor_export_age_s`, is visible in `health` and `doctor`; an age over 15 minutes raises the alarm `alarm.monitor.export_stalled` and the code message `monitor_export_stalled` to the tenant admins and the operator, at most once every 6 hours (MON-1, MON-11, OBS-11).
 - Notifying people, repeated notifications, "Acknowledged", escalation, on-call rotations and silencing are done in the monitoring system by the export tags; farm accounts have no rights to acknowledge, close or silence problems (MON-1, MON-4).
 - A hold neither closes an alarm episode nor delays its export.
 

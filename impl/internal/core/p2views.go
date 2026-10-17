@@ -418,7 +418,8 @@ func (c *Core) Status(ctx context.Context, op Operator, req TenantRequest) (*Sta
 				rows.Close()
 				return err
 			}
-			if (op.Tenant == "farm" || t == tenant) && !managerEnabled(cat, t) {
+			// A tenant applied after the catalog was read is not in it yet and is not listed.
+			if _, known := cat.Tenants[t]; known && (op.Tenant == "farm" || t == tenant) && !managerEnabled(cat, t) {
 				out.FarmManagerDisabled = append(out.FarmManagerDisabled, t)
 			}
 		}

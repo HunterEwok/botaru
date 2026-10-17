@@ -14,7 +14,7 @@ This section describes how the farm lives on ordinary days and on bad days: what
 
 **Metrics.** The metrics catalog `spec/bindings/telemetry/metrics.yaml` (v0.2, OBS-13) is a contract for dashboards that survives a change of implementation. Its 14 metrics cover queue, outcomes and duration, model and tools, budget and approvals, deliveries, liveness and holds; only what the farm alone knows from its records. Machine, disk, network and service metrics stay with the monitoring system (D-59). No core decision reads a metric, and a core observation series that matches a catalog metric has the same name (OBV-5).
 
-**P2 `status` and `doctor`.** `status` gives a summary, `doctor` checks consistency and names the mismatches; both show metadata only:
+**P2 `status` and `doctor`.** `status` gives a summary, `doctor` checks consistency and names the mismatches; together they show, as metadata only:
 
 - holds; loop tick ages, `last_seen` of workers and a core drain deadline (OBS-4, LCY-6); the health indicators and store free space (OBS-9, CAP-5);
 - per tenant, the alarm path ([OBS-11](../conformance/rules.md#OBS-11)): `monitor_export_age_s`, E5 deliveries in `planned` older than 15 minutes, the adapter account's scope, the audit head's freshness, `seq` and history retention (MON-3, MON-4, MON-11);
@@ -22,7 +22,7 @@ This section describes how the farm lives on ordinary days and on bad days: what
 - usage reconciliation and an open spend gap (BUD-10, RET-6); the applied commit against the one the operator named (MAN-5); provider caps (GW-9), the `review` line (BUD-13), model `retires_at`, 30-day usage per line (BUD-15);
 - per tenant: "improvement cycle disabled" (INS-6), commission lens coverage (COM-7), "manager disabled" (D-77), "shadow disabled" (COM-10), from v0.2 "commission locked" (GOV-35).
 
-The alarm path lines are `doctor` checks; the `status` schema has no monitoring lines. Of the per tenant limits, `status` carries "manager disabled" as the list `farm_manager_disabled`, and `commission.status` carries the commission ones (`shadow: off`, `commission_locked`).
+Each line lives where its response schema has the field. The alarm path lines are `doctor` checks; the `status` schema has no monitoring lines. Of the per tenant limits, `status` carries "manager disabled" as the list `farm_manager_disabled`, and `commission.status` carries the commission ones (lens coverage, `shadow: off`, `commission_locked`).
 
 **Tenant debug journal.** An operator with `admin:debug` can read a tenant's attempt journals and transcripts. That is a read of the tenant's content, so the tenant decides with `Tenant.spec.operator_access.debug_journal`: `deny`, `notify` (the default: an audit record and a code message to the tenant admins) or `allow` (audit record only). An external client learns about every look into its data, and the operator can still analyze an incident. The journal is described under [People's data](#peoples-data).
 

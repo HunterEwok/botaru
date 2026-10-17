@@ -1484,8 +1484,8 @@
     its file system, a sink or a pipeline set by the deployment, and the alarm on a filling disk
     comes from the monitoring system's template (MON-5); the core neither enforces quotas nor raises
     a disk alarm of its own for a volume. The core only reads the free space of each volume: a
-    tenant observation series (`ObservationSeries` with `dataorigin: code` and a `job` source;
-    `spec/model/core-series.yaml` has no core series for it) that a `job` role of the installation
+    tenant observation series (an `ObservationSeries` with `source.kind: job`, a code series with
+    `dataorigin: code`; `spec/model/core-series.yaml` has no core series for it) that a `job` role of the installation
     without a model slot writes on a code schedule from the monitoring system's history (the
     monitoring agent measured the number, no model takes part in the series), with a freshness
     check of the series (GOV-28). The job program that reads the history belongs to the
@@ -2210,7 +2210,7 @@
     runtime socket and no host volumes; its network reaches only P3, P4 and its own adapter; it has
     no network path to another runtime; there are no fallback providers.
   goal: G2
-  check: [lint, blackbox]
+  check: [blackbox]
   waivable: false
   version: v0.1
   profile: core
@@ -2310,13 +2310,14 @@
     rotation method of each named secret (SEC-5). The description follows
     `spec/model/deploy-topology.schema.json`, and the lint checks the facts that the schema has
     fields for; a fact the schema has no field for (for example a process kind of the agent, a
-    plugin image digest, the docker group or socket, the host address of the monitoring system) is
-    not part of the description and is not linted from it. The deployment lint checks the description before
-    rollout and in `farmctl doctor` against the rules DEP-1, DEP-3, DEP-4, DEP-5, DEP-6, DEP-7,
+    plugin image digest, the docker group or socket, an address of a machine) is not part of the
+    description and is not linted from it. So the network of the agent (DEP-5) and the monitoring
+    system's place apart from the core machine (MON-2) are checked by the black-box suites, not by
+    the lint. The deployment lint checks the description before
+    rollout and in `farmctl doctor` against the rules DEP-1, DEP-3, DEP-4, DEP-6, DEP-7,
     DEP-8, DEP-9, DEP-11 (including that a machine does not appear in the catalogs and processes of
-    two tenants, D-75), SEC-2 and SEC-5, and also that the monitoring system does not run on the
-    core machine and gets no credentials of the core, the store, the channels or the model provider
-    except a key for P2 `health` (MON-2), that there is a watchdog when there is no monitoring
+    two tenants, D-75), SEC-2 and SEC-5, and also that the monitoring system gets no credentials of
+    the core, the store, the channels or the model provider except a key for P2 `health` (MON-2), that there is a watchdog when there is no monitoring
     system (`watch_missing`), and that backups are not on the core machine or leave encrypted to
     external storage (RET-5, `backup_external_required`). A farm on one server (`farm_hosts:
     [core1]`) is allowed (D-88). The lint counts `farmctl` on the core machine as a core process
@@ -8555,7 +8556,7 @@
     tenant: a gap during the failure leaves in the monitoring system neither an open problem without
     an episode nor an episode without a problem. The core keeps per tenant the age of the last
     successful export `monitor_export_age_s`; it is part of the P2 `health` answer (MON-2) and of
-    `status` and `doctor` (OBS-11). If the age is more than 15 minutes, the core raises the alarm
+    `doctor` (OBS-11). If the age is more than 15 minutes, the core raises the alarm
     `alarm.monitor.export_stalled` (`warn`, it reaches the monitoring system when the connection
     returns) and sends the code message `monitor_export_stalled` to the tenant admins and the
     operator no more often than once in 6 hours (MON-12). Fixtures: the mock monitoring system is
@@ -9258,9 +9259,9 @@
     in `planned` for longer than 15 minutes, or if the account sees other tenants' nodes. The
     `status` schema has no monitoring lines. What limits the manager and the improvement cycle is
     shown per tenant where its schema has the field: P2 `status` lists the tenants with
-    `Tenant.spec.farm_manager.enabled: false` under `farm_manager_disabled` (D-77), and P2
-    `commission.status` shows the commission shadow off (`shadow: off`, COM-10) and, from v0.2,
-    "commission locked" (`commission_locked`, GOV-35). Fixtures: `demo2` with
+    `Tenant.spec.farm_manager.enabled: false` under `farm_manager_disabled` (D-77), and, with the
+    profile `insights`, P2 `commission.status` shows the commission shadow off (`shadow: off`,
+    COM-10) and, from v0.2, "commission locked" (`commission_locked`, GOV-35). Fixtures: `demo2` with
     `farm_manager.enabled: false` is listed under `farm_manager_disabled` in `status`; tenant
     `demo2` without an adapter process fails the check in `doctor`; a `monitor_alarm` delivery in
     `planned` for 20 minutes fails `doctor`.

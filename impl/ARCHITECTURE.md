@@ -1665,7 +1665,8 @@ A preventable incident:
 Restricted mode (MGR-47): every write of a seat attempt in the tenant is refused with `manager_restricted`, which does
 not count for the safeguard: control operations, service actions, scripts, `grant_decide` and takeovers. The proposals
 of a restricted seat task are dropped with an audit record `proposal.create` (not ok, `manager_restricted`) and, for
-each dropped proposal, a `proposal.rejected.v1` event with the reason `manager_restricted` (D-118). Reads and notices still go. A seat task whose basis is a sev1 incident opened after the restriction
+each dropped proposal, a `proposal.rejected.v1` event with the reason `manager_restricted` (D-118). Reads and notices
+still go. A seat task whose basis is a sev1 incident opened after the restriction
 acts as before. `farmctl seat resume farm-manager --tenant <tenant>` (P2 `seat.resume` with `tenant`, operators of farm
 only) lifts it with `seat.resumed.v1` and an audit record by `farmctl`; a new holder or a vacated seat lifts all. The
 seat record (`seat.schema.json`, validated when built) carries `restricted_in` with the tenant, incident and time of
