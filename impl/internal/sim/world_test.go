@@ -27,6 +27,9 @@ func TestMain(m *testing.M) {
 	if len(os.Args) > 2 && os.Args[1] == "plugin" {
 		pluginmain.Exit("plugin", pluginmain.Main(os.Args[2], os.Args[3:]))
 	}
+	if len(os.Args) > 2 && os.Args[1] == "simplugin" {
+		pluginmain.Exit("simplugin", ServePlugin(os.Args[2], os.Args[3:]))
+	}
 	pgtest.Main(m)
 }
 
