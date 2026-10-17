@@ -233,7 +233,7 @@ entries:
     since: v0.1
     data_schema: spec/model/event-data/schedule-skipped.schema.json
     producer: [core]
-    rules: [TIM-3]
+    rules: [TIM-3, TIM-5]
   - id: model.fallback.v1
     since: v0.1
     data_schema: spec/model/event-data/model-fallback.schema.json
@@ -414,7 +414,7 @@ entries:
     since: v0.1
     data_schema: spec/model/proposal-rejected.schema.json
     producer: [core]
-    rules: [PRP-1, PRP-2, PRP-3, PRP-5, PRP-11, PRP-21]
+    rules: [PRP-1, PRP-2, PRP-3, PRP-5, PRP-11, PRP-21, MGR-47]
   - id: await.expired.v1
     since: v0.2
     data_schema: spec/model/event-data/await-expired.schema.json

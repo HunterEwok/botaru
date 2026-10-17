@@ -190,6 +190,9 @@ Privacy, export and connections:
 Deployment:
 
 - The comparison of the OS mechanism of the machine with the catalog (DEP-4 at doctor).
+- The lint of the agent's network (DEP-5) and of the machine of the monitoring system (MON-2): the description schema
+  has no process kind of the agent and no machine addresses, so DEP-10 leaves them out of the lint in 0.3; the compose
+  agent is on the core network only.
 - The reading of the workspace ceilings at the provider by doctor (GW-9: the provider binding has no such call; apply
   checks the ceilings the settings describe).
 

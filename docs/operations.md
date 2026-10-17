@@ -22,7 +22,7 @@ This section describes how the farm lives on ordinary days and on bad days: what
 - usage reconciliation and an open spend gap (BUD-10, RET-6); the applied commit against the one the operator named (MAN-5); provider caps (GW-9), the `review` line (BUD-13), model `retires_at`, 30-day usage per line (BUD-15);
 - per tenant: "improvement cycle disabled" (INS-6), commission lens coverage (COM-7), "manager disabled" (D-77), "shadow disabled" (COM-10), from v0.2 "commission locked" (GOV-35).
 
-Each line lives where its response schema has the field. The alarm path lines are `doctor` checks; the `status` schema has no monitoring lines. Of the per tenant limits, `status` carries "manager disabled" as the list `farm_manager_disabled`, and `commission.status` carries the commission ones (lens coverage, `shadow: off`, `commission_locked`).
+Each line lives where its response schema has the field. The alarm path lines are `doctor` checks; the `status` schema has no monitoring lines. Of the per tenant limits, `doctor` and the apply lint carry "improvement cycle disabled" (INS-6), `status` carries "manager disabled" as the list `farm_manager_disabled`, and `commission.status` carries the commission ones (lens coverage, `shadow: off`, `commission_locked`).
 
 **Tenant debug journal.** An operator with `admin:debug` can read a tenant's attempt journals and transcripts. That is a read of the tenant's content, so the tenant decides with `Tenant.spec.operator_access.debug_journal`: `deny`, `notify` (the default: an audit record and a code message to the tenant admins) or `allow` (audit record only). An external client learns about every look into its data, and the operator can still analyze an incident. The journal is described under [People's data](#peoples-data).
 
@@ -70,7 +70,7 @@ loop_tick_age_s: {reaper: 8, delivery: 3, alarm: 11, hold: 9}
 monitor_export_age_s: {demo: 40, farm: 12}   # MON-11
 ```
 
-During a planned drain the answer is `alive: false`, `reason: draining` with `drain_until_s`, and the farm template stays quiet within that time (LCY-6). Otherwise no answer or "not alive" beyond the threshold makes the monitoring system wake people by its own path. This catches a stopped core, a hung or full store, a hung loop, a switched-off machine. The monitoring system does not run on the core machine and holds no farm credential but the `health` key; the deployment lint checks both. Each adapter process also writes a tick item once a minute, and the template raises a problem when it goes silent: then the alarm export has stopped.
+During a planned drain the answer is `alive: false`, `reason: draining` with `drain_until_s`, and the farm template stays quiet within that time (LCY-6). Otherwise no answer or "not alive" beyond the threshold makes the monitoring system wake people by its own path. This catches a stopped core, a hung or full store, a hung loop, a switched-off machine. The monitoring system does not run on the core machine and holds no farm credential but the `health` key; the deployment lint checks that no farm process but the adapter and the watchdog holds that key, while the machine the monitoring system runs on is not in the description and stays the installation's to keep (DEP-10). Each adapter process also writes a tick item once a minute, and the template raises a problem when it goes silent: then the alarm export has stopped.
 
 ### When the store is unavailable
 

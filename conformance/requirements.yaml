@@ -1484,8 +1484,8 @@
     its file system, a sink or a pipeline set by the deployment, and the alarm on a filling disk
     comes from the monitoring system's template (MON-5); the core neither enforces quotas nor raises
     a disk alarm of its own for a volume. The core only reads the free space of each volume: a
-    tenant observation series (an `ObservationSeries` with `source.kind: job`, a code series with
-    `dataorigin: code`; `spec/model/core-series.yaml` has no core series for it) that a `job` role of the installation
+    tenant observation series (an `ObservationSeries` with `source.kind: job`, a code series in the
+    sense of GOV-28; `spec/model/core-series.yaml` has no core series for it) that a `job` role of the installation
     without a model slot writes on a code schedule from the monitoring system's history (the
     monitoring agent measured the number, no model takes part in the series), with a freshness
     check of the series (GOV-28). The job program that reads the history belongs to the
@@ -2210,7 +2210,7 @@
     runtime socket and no host volumes; its network reaches only P3, P4 and its own adapter; it has
     no network path to another runtime; there are no fallback providers.
   goal: G2
-  check: [blackbox]
+  check: [lint, blackbox]
   waivable: false
   version: v0.1
   profile: core
@@ -2311,13 +2311,15 @@
     `spec/model/deploy-topology.schema.json`, and the lint checks the facts that the schema has
     fields for; a fact the schema has no field for (for example a process kind of the agent, a
     plugin image digest, the docker group or socket, an address of a machine) is not part of the
-    description and is not linted from it. So the network of the agent (DEP-5) and the monitoring
-    system's place apart from the core machine (MON-2) are checked by the black-box suites, not by
-    the lint. The deployment lint checks the description before
+    description and is not linted from it. In 0.3 the schema has neither, so the network of the
+    agent (DEP-5) and the machine the monitoring system runs on (MON-2) are not linted from the
+    description; an installation whose description carries such fields lints them as these rules
+    say. The deployment lint checks the description before
     rollout and in `farmctl doctor` against the rules DEP-1, DEP-3, DEP-4, DEP-6, DEP-7,
     DEP-8, DEP-9, DEP-11 (including that a machine does not appear in the catalogs and processes of
-    two tenants, D-75), SEC-2 and SEC-5, and also that the monitoring system gets no credentials of
-    the core, the store, the channels or the model provider except a key for P2 `health` (MON-2), that there is a watchdog when there is no monitoring
+    two tenants, D-75), SEC-2 and SEC-5, and also that no farm process but the monitoring adapter
+    and the watchdog holds the key for P2 `health`, and that the watchdog holds no other farm
+    credential but its own alert secret (MON-2, `poller_credentials`), that there is a watchdog when there is no monitoring
     system (`watch_missing`), and that backups are not on the core machine or leave encrypted to
     external storage (RET-5, `backup_external_required`). A farm on one server (`farm_hosts:
     [core1]`) is allowed (D-88). The lint counts `farmctl` on the core machine as a core process
@@ -12846,7 +12848,8 @@
     from v0.2 a maintenance window hold with reason `maintenance` on a host of the task scope,
     whatever its effects, MON-9) and `over_capacity` (CAP-1), and from v0.2 for a schedule that
     starts a script (SCR-12) also `budget_exhausted` (the run estimate does not fit the reserve) and
-    `run_live` (the previous run of the schedule is still live); a skipped slot is not caught up. A
+    `run_live` (the previous run of the schedule is still live), and from v0.2 `paused` (the
+    schedule has `paused: true`, TIM-5); a skipped slot is not caught up. A
     local time that occurs twice at the transition to standard time runs once, at the first
     occurrence. Fixtures: both 2026 transitions in the training time zone `Europe/Berlin`; a
     schedule with the previous slot's task in `submitted` skips the slot with
@@ -12883,6 +12886,8 @@
     transition), the proposal gets the refusal `rejected(schedule_time_invalid)` and gets no
     "Accept" button. Maintenance windows of the monitoring system are not computed ahead: a slot
     inside a window is skipped when it comes (MON-9, D-100). The model takes no part in this check.
+    A schedule with `Schedule.spec.paused: true` runs no slot: each one is skipped with
+    `schedule.skipped(paused)` and is not caught up after the pause.
   goal: G6
   check: [fixture]
   waivable: true
