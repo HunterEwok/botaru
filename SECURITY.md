@@ -2,13 +2,12 @@
 
 ## Supported Versions
 
-botaru has no released version yet. Until the first release, only the latest commit on the `main` branch receives security fixes.
+The latest release and the `main` branch receive security fixes; a fix for a release comes as its next patch release.
 
 | Version | Supported |
 | ------- | --------- |
-| `main` (unreleased) | :white_check_mark: |
-
-When releases start, this table will list which ones still get fixes.
+| 0.3.x | :white_check_mark: |
+| `main` | :white_check_mark: |
 
 ## Reporting a Vulnerability
 

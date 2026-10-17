@@ -20,13 +20,16 @@ There are also examples on the training tenants `demo` and `demo2` (`examples/`)
 
 Installation files (tenants, keys, machines, people) never go into this repository: an installation keeps its manifests in its own repository (D-92) and checks them from there with `ci/` (D-87). The current release is 0.3.0, the first published one; from its tag `v0.3.0` the compatibility promise of [spec/versions.md](spec/versions.md) holds, so a form changes only additively.
 
-**An installation's own repository.** An organization that deploys the farm keeps a closed repository of its own beside this one, never a copy of tenant data in it:
+**An installation's own repository.** An organization that deploys the farm keeps a closed repository of its own beside this one and never puts tenant data into this one:
 
-1. Create a private repository (or a private fork) for the installation, and pin this repository in it at the tag `v0.3.0`, as a git submodule or a vendored copy of `spec/`, `ci/` and `impl/`.
+1. Create a new private repository for the installation (not a fork: a fork of a public repository is public too), and pin this repository in it at the tag `v0.3.0` as a git submodule or a full copy of its tree; the checks need `spec/`, `ci/`, `conformance/`, `examples/` and `evals/`, and the core is built from `impl/`.
 2. Put the installation's manifests there: one folder per tenant like `examples/tenants/demo/` (tenant, groups, catalog, routes, schedules, sinks, channels), the farm charter like `examples/tenants/farm/`, its own roles, task types, tool plugins, actions and model profiles, and a deployment description by `spec/model/deploy-topology.schema.json` like `examples/deploy/farm.yaml`.
 3. Answer the checklist "What every installation decides" in [docs/open-questions.md](docs/open-questions.md) in that repository.
-4. Run the skeleton checks on the manifests from the pinned copy (`python3 -I ci/check_manifests.py --manifests <installation folder>` and the other commands of [ci/README.md](ci/README.md#your-own-files-outside-the-skeleton)), check them on the farm with `farmctl apply -dry-run`, and build and run the core from `impl/` as [impl/DEPLOY.md](impl/DEPLOY.md) describes, with the settings, keys and secrets of the installation kept outside both repositories.
-5. To move to a later release, move the pin to its tag and follow `CHANGELOG.md` and `spec/removed.yaml`. No paid eval run with a real model has been made for the claim of the reference core; its eval rules are listed as not run in [impl/README.md](impl/README.md#eval-rules-not-run). What the reference core does not build yet is listed in [impl/README.md](impl/README.md#not-in-this-version).
+4. Run the skeleton checks on the manifests from the pinned copy (`python3 -I ci/check_manifests.py --manifests <installation folder>` and the other commands of [ci/README.md](ci/README.md#your-own-files-outside-the-skeleton)). The deployment description is not linted by these checks; the core lints it at start through the setting `deploy_description` ([impl/DEPLOY.md](impl/DEPLOY.md)).
+5. Build and run the core from `impl/` as [impl/DEPLOY.md](impl/DEPLOY.md) describes, with the settings, keys and secrets of the installation kept outside both repositories, and check each change of the manifests on the farm with `farmctl apply -dry-run` before applying it.
+6. To move to a later release, move the pin to its tag and follow `CHANGELOG.md` and `spec/removed.yaml`.
+
+No paid eval run with a real model has been made for the claim of the reference core; its eval rules are listed as not run in [impl/README.md](impl/README.md#eval-rules-not-run). What the reference core does not build yet is listed in [impl/README.md](impl/README.md#not-in-this-version).
 
 The executable code is the reference implementation in `impl/` with its own checks (`.github/workflows/go.yml`) and the `ci/` checks of the skeleton that run on every pull request (`.github/workflows/skeleton.yml`). The `ci/` checks see the shape of files; the behaviour of a bot, MCP calls and delivery are checked by the conformance runner and the evals of an implementation.
 

@@ -85,7 +85,7 @@ func TestFindRootNextToBin(t *testing.T) {
 	}
 }
 
-// The date format of the registry takes exactly the calendar dates that exist (RFC 3339
+// INJ-1: the date format of the registry takes exactly the calendar dates that exist (RFC 3339
 // full-date), in the ECMAScript engine the schemas use and in Go's own regexp (the ingress
 // driver).
 func TestDateFormat(t *testing.T) {
@@ -115,8 +115,8 @@ func TestDateFormat(t *testing.T) {
 			}
 		}
 	}
-	for _, v := range []string{"2026-1-01", "2026-01-01T00:00:00Z", "20260101", ""} {
-		if re2.MatchString(v) {
+	for _, v := range []string{"2026-1-01", "2026-01-01T00:00:00Z", "20260101", "", "2026-01-01\n"} {
+		if m, _ := ecma.MatchString(v); m || re2.MatchString(v) {
 			t.Fatalf("%q taken", v)
 		}
 	}

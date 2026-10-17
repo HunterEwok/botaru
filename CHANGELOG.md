@@ -4,11 +4,11 @@ Skeleton versions: v0.1, v0.2, v0.3, v0.4. A skeleton version states which rules
 from that version on; what goes into each version is stated in the section "What is in which version" of every
 document.
 
+Entries are grouped by area; within a group the newest entry comes first.
+
 ## Unreleased
 
 ## 0.3.0 - 2026-10-17
-
-Entries are grouped by area; within a group the newest entry comes first.
 
 ### Skeleton & Contracts
 
@@ -24,13 +24,15 @@ Entries are grouped by area; within a group the newest entry comes first.
 - OBS-11, CAP-6 and DEP-10 describe only what the schemas hold: the alarm path lines are `doctor` checks and
   `status` lists the tenants with the farm manager off under `farm_manager_disabled`; the volume free space
   series is a tenant `ObservationSeries` written by the installation's `job` role; the deployment lint checks
-  the facts that `deploy-topology.schema.json` has fields for.
+  the facts that `deploy-topology.schema.json` has fields for, so the agent's network (DEP-5) and the machine of
+  the monitoring system (MON-2) are not linted in 0.3; MON-11 names `health` and `doctor`; TIM-3 and TIM-5 define
+  the skip of a paused schedule.
 - The ten accepted architecture decisions of the table "Decisions (ADR)" in `docs/architecture.md`, which D-86
   (13) said would appear with the implementation, are files 0001 to 0010 in `docs/adr/` in MADR 4.0.0
   form with the rules that confirm them; the next ADR number is 0011.
 - Skeleton release 0.3.0: `spec/VERSION` and the contract sheets of `spec/ports/` carry 0.3.0; until the tag,
-  forms changed in place with an entry in `spec/removed.yaml` (`spec/versions.md`). `examples/roles/assistant` has `memory: none` while the personal assistant is deferred
-  (DSP-10, `person_memory_deferred`, MEM-2), and flow 8 drops its `memory.search` step. The manifest fixtures
+  forms changed in place with an entry in `spec/removed.yaml` (`spec/versions.md`). `examples/roles/assistant`
+  has `memory: none` while the personal assistant is deferred (DSP-10, `person_memory_deferred`, MEM-2), and flow 8 drops its `memory.search` step. The manifest fixtures
   allow `person_memory_deferred` beside the memory lints, `approvals: 2` for a risk other than routine passes
   from v0.2, and the INJ-12 output coverage of `ci/check_evals.py` skips `monitor_note` of the deferred MON-7.
 - Decision D-118, skeleton gaps before a v0.3 claim: P2 `seat.resume` names exactly one of `incident` and

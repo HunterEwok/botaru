@@ -1,8 +1,8 @@
 # impl: the reference implementation in Go
 
 This folder holds the reference implementation of the botaru core (D-91, D-92 in
-[docs/decisions.md](../docs/decisions.md)). The implementation claims skeleton 0.3 (release 0.3.0: `spec/VERSION` is 0.3.0,
-the tag `v0.3.0`) with the profiles `core`, `monitor`, `insights`, `governance`, `manager`, `messaging`,
+[docs/decisions.md](../docs/decisions.md)). The implementation claims skeleton 0.3 (release 0.3.0: `spec/VERSION`
+is 0.3.0, the tag `v0.3.0`) with the profiles `core`, `monitor`, `insights`, `governance`, `manager`, `messaging`,
 `campaign`, `knowledge` and `ingress`; the eval rules of the claim are not run (see Checks, "Eval rules not run"). It
 runs the first bot: the hello-bot sequence of [examples/hello-bot/](../examples/hello-bot/) works end to end over the
 wire, from a Telegram message to the model answer in the same chat. How to run it on a server: [DEPLOY.md](DEPLOY.md).
@@ -108,8 +108,8 @@ rotate with an overlap (SEC-5), and `secret.revoke` holds every scope a secret r
 ### Versions, profiles and deferred rules
 
 The core claims skeleton `v0.3` (`spec.Version`) with the profiles of `spec.Profiles` (MAN-8). P2 `status` shows the
-claim as `conforms_to`: `skeleton` is "0.3.0", the number of `spec/VERSION` and of the release, and the profiles are those the installation claims, so `monitor` only with the monitoring system
-configured (D-88).
+claim as `conforms_to`: `skeleton` is "0.3.0", the number of `spec/VERSION` and of the release, and the profiles
+are those the installation claims, so `monitor` only with the monitoring system configured (D-88).
 
 - `apply` refuses with `version_unsupported` and the path a kind whose `since` is later, a field marked with a later
   `x-botaru-version`, the fields of the unclaimed profiles `connections`, `debug` and `sandbox` and tier 2 (MAN-11), and

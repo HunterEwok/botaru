@@ -416,7 +416,7 @@ Other outcomes: with enough space, `ask` and `clean` are `skipped` and the run s
 
 ## Open question
 
-The default `queue_max` is not set: without it an item waits in `pending` until the tenant queue frees below `max_queued` and does not get `over_capacity` (see [docs/open-questions.md](open-questions.md)).
+The default `queue_max` is not set: without it an item waits in `pending` until the tenant queue frees below `max_queued` and does not get `over_capacity` (D-119, ORC-4).
 
 <!-- generated: rules -->
 ## Rules of this section

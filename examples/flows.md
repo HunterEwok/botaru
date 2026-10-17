@@ -231,7 +231,7 @@ observes: [farm.external.outcome, farm.external.duration, farm.schedule.slot, fa
 
 **What `alice` sees:** a table from the job result that the code draws, a paragraph marked as written by the model, and the file `report-2026-09.csv`.
 
-**Archive.** If a copy is needed on disk, the schedule `month-report-archive` on the first day of each month enqueues the same job for the previous month with the targets `group:lead` and `sink:archive`; both report task types are in `system-ops` (PRM-10). The sink `archive` claims the delivery (E2 `claim(delivery)` → `write` → `complete(location)`) and builds the path from the base in its manifest, the tenant and the delivery id, not from model text (DLV-6).
+**Archive.** If a copy is needed on disk, `alice` enqueues the same job for the previous month with the targets `group:lead` and `sink:archive`: a schedule sets no parameter relative to its slot, such as "last month" (D-119), so there is no schedule `month-report-archive`; both report task types are in `system-ops` (PRM-10). The sink `archive` claims the delivery (E2 `claim(delivery)` → `write` → `complete(location)`) and builds the path from the base in its manifest, the tenant and the delivery id, not from model text (DLV-6).
 
 **What must not happen:** the model computes or rounds numbers its own way: the code draws the table; numbers of another tenant, since the closed query sees only the series of `demo` (OBV-3); a connection from the job to the farm store; costs visible to everyone: the report with money exists only for groups `admin` and `lead`, and `user` does not have it (docs/permissions.md).
 

@@ -1,6 +1,6 @@
 # Open questions
 
-This is what the skeleton deliberately leaves open. The first part concerns the skeleton itself: for each question it records what is assumed by default until there is a decision, and what depends on it. The documents and rules are written to these defaults, so a different decision changes the rules and places named in the row. A question that has been answered moves from here to [decisions.md](decisions.md) as a numbered decision; for the release 0.3.0 every default listed here was accepted as D-119, and the tables are empty until a new question comes up. The second part lists what every organization decides when it deploys the farm; the skeleton gives fields and rules for these decisions but does not choose for it.
+This is what the skeleton deliberately leaves open. The first part concerns the skeleton itself: for each question it records what is assumed by default until there is a decision, and what depends on it. The documents and rules are written to these defaults, so a different decision changes the rules and places named in the row. A question that has been answered moves from here to [decisions.md](decisions.md) as a numbered decision; for the release 0.3.0 every default these tables listed was accepted as D-119, and the tables are empty until a new question comes up. The second part lists what every organization decides when it deploys the farm; the skeleton gives fields and rules for these decisions but does not choose for it.
 
 ## Skeleton questions
 

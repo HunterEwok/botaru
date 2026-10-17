@@ -20,7 +20,7 @@ What the promise does not cover and may change in any 0.y.z release, with an ent
 - the fields of manifests with `apiVersion: botaru/v1alpha1`: this is an alpha version until release 1.0.0 (D-44), the changes are visible in the changelog, and `botaru/v1` after 1.0.0 follows the same addition rule;
 - fixtures, check suites and eval cases.
 
-The promise applies from the first published release, 0.3.0 with the tag `v0.3.0`; the releases 0.1.0 and 0.2.0 were never tagged. Before that tag the forms were still being assembled, and changes of forms were made without new major files: a removed schema, closed registry or registry value, or a schema changed incompatibly, was recorded in `spec/removed.yaml` with a reason and the deciding decisions, and `ci/check_additive.py` accepted the change only with that new entry. Once the repository has a tag `v<digit>...`, `ci/check_additive.py` refuses a new entry there, so a breaking change is a new major file.
+The promise applies from the first published release, 0.3.0 with the tag `v0.3.0`; the numbers 0.1.0 and 0.2.0 were never tagged. Before that tag the forms were still being assembled, and changes of forms were made without new major files: a removed schema, closed registry or registry value, or a schema changed incompatibly, was recorded in `spec/removed.yaml` with a reason and the deciding decisions, and `ci/check_additive.py` accepted the change only with that new entry. Once the repository has a tag `v<digit>...`, `ci/check_additive.py` refuses a new entry there, so a breaking change is a new major file.
 
 ## Number map
 
