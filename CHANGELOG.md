@@ -69,6 +69,11 @@ Entries are grouped by area; within a group the newest entry comes first.
   folders of apply, its own toolhosts and monitoring API, core settings, observers of the Bot API and of the model
   calls, and a gate in front of the provider; a monitoring export no longer counts as pending work of a case.
 
+### CI & Checks
+
+- The workflow `claude-review.yml`: a comment with `@claude` on a pull request by the owner, a member or a
+  collaborator runs a Claude review there; it never runs on a push and never pushes (`ci/README.md`, "Claude review").
+
 ## 0.3.0 - 2026-10-17
 
 ### Skeleton & Contracts
