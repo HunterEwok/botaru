@@ -154,6 +154,8 @@ type Bench struct {
 	dataDir       string
 	// resultSchemas are the result schemas of the applied task types (OUT-2).
 	resultSchemas map[string]map[string]any
+	// applies counts the applies of the bench set.
+	applies int
 	// roles are the role folders the bench applies, with their example manifests.
 	roles map[string][]string
 	// agentRoles are the applied roles of worker_kind agent, in name order.
@@ -321,6 +323,7 @@ func (b *Bench) Close() {
 // model profiles (the example ones, each replaced by the real run's profile of the same name).
 func (b *Bench) manifests() ([]map[string]any, error) {
 	root := b.cfg.Root
+	b.agentRoles = nil
 	files := []string{"examples/tenants/demo/tenant.yaml", "examples/tenants/demo2/tenant.yaml", "examples/tenants/farm/tenant.yaml",
 		"examples/tenants/demo/channels.yaml", "examples/tenants/demo/catalog.yaml", "examples/hello-bot/group.yaml"}
 	roleNames := slices.Sorted(mapKeys(b.roles))
@@ -483,9 +486,23 @@ func (b *Bench) apply(ctx context.Context) error {
 		Applied bool             `json:"applied"`
 		Errors  []map[string]any `json:"errors"`
 	}
-	req := map[string]any{"commit": strings.Repeat("e", 40), "manifests": ms}
+	// Each apply names its own commit; the first is the one the eval runs always had.
+	b.applies++
+	commit := strings.Repeat("e", 40)
+	if b.applies > 1 {
+		commit = fmt.Sprintf("%040x", b.applies)
+	}
+	req := map[string]any{"commit": commit, "manifests": ms}
 	if len(b.cfg.Skills) > 0 {
 		req["skills"] = b.cfg.Skills
+	}
+	// The persona texts of the commission seats, for a charter in the set (GOV-4).
+	personas, err := testbench.Personas(b.cfg.Root)
+	if err != nil {
+		return err
+	}
+	if len(personas) > 0 {
+		req["personas"] = personas
 	}
 	if err := b.P2(ctx, "demo", "apply", req, &resp); err != nil {
 		return err

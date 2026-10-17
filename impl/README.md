@@ -53,7 +53,7 @@ How each subsystem behaves: [ARCHITECTURE.md](ARCHITECTURE.md).
 | `internal/ingress` | the webhook driver: Standard Webhooks signatures, the TLS token check, rate and body limits, the mapping of closed fields |
 | `internal/pluginmain` | the flags and start of the own plugins, shared by `botaru-plugin`, `botaru-eval plugin` and `botaru-sim plugin` |
 | `internal/evals` | the eval runner: cases, plan and estimate, generators, seed, bench, checks and reports |
-| `internal/sim` | the farm simulator: the world and its physics, the stubs of `systemctl`, `df` and `journalctl`, the fake Zabbix API, the mock model, the stand, the director and its scenarios |
+| `internal/sim` | the farm simulator: the world and its physics, the stubs of `systemctl`, `df` and `journalctl`, the fake Zabbix API, the plugins of the data bots and the job worker of `data-job`, the mock model, the stand with every role, the director and its scenarios |
 | `internal/agent`, `internal/channel/telegram`, `internal/kbjob`, `internal/p1client` | the workers and their P1 client |
 | `internal/e2e` | the hello-bot sequence and a plugin tool call over the wire with the mock provider, a fake Bot API server and a real toolhost |
 | `internal/conform` | the conformance runner (`conformance/runner.md`): it runs the behaviour fixtures on fresh test benches over HTTP and reports per case and per rule |

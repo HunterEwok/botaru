@@ -54,6 +54,14 @@ func main() {
 		}
 		pluginmain.Exit("botaru-sim plugin", pluginmain.Main(os.Args[2], os.Args[3:]))
 	}
+	// The plugins of the data bots answer from the world's data files.
+	if len(os.Args) > 1 && os.Args[1] == "simplugin" {
+		if len(os.Args) < 3 {
+			fmt.Fprintln(os.Stderr, "usage: botaru-sim simplugin KIND -manifest FILE -world DIR")
+			os.Exit(2)
+		}
+		pluginmain.Exit("botaru-sim simplugin", sim.ServePlugin(os.Args[2], os.Args[3:]))
+	}
 	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 }
 
@@ -359,6 +367,12 @@ var faults = []struct {
 	}},
 }
 
+// labAsks are the everyday questions the people of the lab put to the data bots between faults.
+var labAsks = []struct{ who, ask string }{
+	{"alice", "/geo What is in the bathy-50m raster and the map-areas layer?"},
+	{"bob", "/pipeline Why did the last CTD run fail?"},
+}
+
 // continuous runs the world until the duration ends, quit, Ctrl+C or the fuse: it breaks the
 // world every -fault-every, a person asks about it, and the console takes commands.
 func continuous(ctx context.Context, d *sim.Director, o options, stdin io.Reader, stdout io.Writer) error {
@@ -371,7 +385,7 @@ func continuous(ctx context.Context, d *sim.Director, o options, stdin io.Reader
 	defer cancel()
 	lines := make(chan string)
 	if o.interactive {
-		fmt.Fprintln(stdout, "commands: approve N | reject N | details N | say PERSON TEXT | fault NAME | heal | cards | status | quit")
+		fmt.Fprintln(stdout, "commands: approve N | reject N | details N | say PERSON TEXT | fault NAME | heal | insights on|off | cards | status | quit")
 		go func() {
 			sc := bufio.NewScanner(stdin)
 			for sc.Scan() {
@@ -394,7 +408,14 @@ func continuous(ctx context.Context, d *sim.Director, o options, stdin io.Reader
 			}
 			return ctx.Err()
 		case <-t.C:
-			f := faults[r.IntN(len(faults))]
+			// Now and then a question of the lab instead of a fault.
+			i := r.IntN(len(faults) + len(labAsks))
+			if i >= len(faults) {
+				a := labAsks[i-len(faults)]
+				_, _ = d.S.Say(a.who, a.who+"-dm", a.ask)
+				continue
+			}
+			f := faults[i]
 			if err := breakWorld(ctx, d, f.name); err != nil {
 				return err
 			}
@@ -465,6 +486,12 @@ func command(ctx context.Context, d *sim.Director, line string, out io.Writer) b
 		err = breakWorld(ctx, d, f[1])
 	case "heal":
 		err = d.Heal(ctx)
+	case "insights":
+		if len(f) < 2 || f[1] != "on" && f[1] != "off" {
+			err = errors.New("insights on|off")
+			break
+		}
+		err = d.S.SetInsights(ctx, f[1] == "on")
 	case "cards":
 		for _, c := range d.S.Cards() {
 			fmt.Fprintf(out, "card %d in %s, pressed %q: %s\n", c.No, c.Chat, c.Pressed, strings.ReplaceAll(c.Text, "\n", " "))

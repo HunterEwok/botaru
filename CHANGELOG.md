@@ -8,6 +8,12 @@ Entries are grouped by area; within a group the newest entry comes first.
 
 ## Unreleased
 
+### Skeleton & Contracts
+
+- The demo catalog and `examples/README.md` give trigger 4401 the monitoring class `disk_free` of
+  `spec/model/monitor-map.yaml` instead of `disk_full`, which is an incident class, not a monitoring class: the
+  free space problem now raises `alarm.disk.free.low`.
+
 ### Reference Implementation (impl/)
 
 - `botaru-sim`, the farm simulator ([impl/SIM.md](impl/SIM.md)): the eval test bench with the monitor profile on,
@@ -21,6 +27,13 @@ Entries are grouped by area; within a group the newest entry comes first.
   calls a provider with `-model`. The money fuse `-max-eur` refuses a model call whose reserved worst case would
   reach the cap, holds every tenant with `no_enqueue`, `no_claim` and `cancel_running`, refuses further model calls
   and stops the run. Every event goes to the console and to `sim-events.jsonl`.
+- `botaru-sim` runs every role of `examples/roles` except the deferred `analyst` (sandbox, tier 2) and
+  `assistant` (DSP-10): the data bots with plugins served from the world's data files,
+  the job worker of `data-job` for its schedule tasks, the commission reviewers and the farm manager with its seat
+  assigned. The scenario `incident-and-commission` plays an incident answered by the farm manager and a proposal
+  of `ops-reader`'s analysis through the commission to a person's card; `lab-requests` asks the data bots.
+- The eval bench sends the persona texts with apply, so a set with a commission charter applies, and can apply
+  its set again while it runs.
 - The own plugin `cmd` takes `-program-root` (a test stand only): the manifest's absolute programs run from under
   that directory.
 - The eval bench can carry another program's stand: further roles, an edit of the set and the seed, the skill

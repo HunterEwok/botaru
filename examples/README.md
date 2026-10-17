@@ -115,7 +115,7 @@ hosts:                           # the tenant's machines; core1 and backup1 cann
     services:
       - {name: ctd-qc, unit: ctd-qc-runner-demo.service, control: [start, stop, restart], via: host, no_card: []}   # everything by card
 monitor_triggers:                # the problem class by triggerid, not by its name
-  - {triggerid: "4401", class: disk_full,    item: vfs.fs.size}
+  - {triggerid: "4401", class: disk_free,    item: vfs.fs.size}
   - {triggerid: "4407", class: service_down, item: proc.num}
 ```
 

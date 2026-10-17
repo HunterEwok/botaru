@@ -73,6 +73,10 @@ type Stand struct {
 	chats map[string]string
 	// tripped is set when the fuse held the tenants.
 	tripped bool
+	// watched is the number of done oneshot runs the last pipeline watch saw.
+	watched int
+	// insights says whether the analysis schedule of ops-reader runs.
+	insights bool
 	// held is set once the holds of the fuse are set.
 	held    bool
 	spent   int64
@@ -160,6 +164,10 @@ func Start(ctx context.Context, cfg Config) (_ *Stand, err error) {
 	if err != nil {
 		return nil, err
 	}
+	farm, err := readFarm(cfg.Root)
+	if err != nil {
+		return nil, err
+	}
 	m := func(p string) string { return filepath.Join(cfg.Root, "examples/tools", p, "tool.yaml") }
 	catalog := filepath.Join(cfg.Root, "examples/tenants/demo/catalog.yaml")
 	logs := func(h, f string) string { return logPath(cfg.Work, h, f) }
@@ -169,12 +177,18 @@ func Start(ctx context.Context, cfg Config) (_ *Stand, err error) {
 			if kind == "pipeline" {
 				kind = "queue"
 			}
+			if slices.Contains(SimPluginKinds, kind) {
+				return append([]string{cfg.Exe, "simplugin", kind}, args...), nil
+			}
 			return append([]string{cfg.Exe, "plugin", kind}, args...), nil
 		},
-		EditSeed: editSeed,
+		Roles:    farmRoles,
+		EditSeed: func(sd *evals.Seed) { editSeed(sd); farmSeed(sd) },
 		Skills:   skills,
-		Edit:     func(ms []map[string]any) []map[string]any { return editManifests(ms, cfg) },
-		Monitor:  s.Mon,
+		Edit: func(ms []map[string]any) []map[string]any {
+			return editManifests(farmManifests(ms, farm, s.Insights()), cfg)
+		},
+		Monitor: s.Mon,
 		CoreConfig: func(c *core.Config) {
 			c.Monitor = core.MonitorConfig{Enabled: true}
 		},
@@ -194,10 +208,14 @@ func Start(ctx context.Context, cfg Config) (_ *Stand, err error) {
 					"logs":     {"-manifest", m("logs"), "-source", "postgresql=" + logs("db1", "postgresql.log")},
 					"cmd":      {"-manifest", m("cmd"), "-host", "db1", "-spec-root", cfg.Root, "-program-root", roots["db1"]},
 					"pipeline": {"-manifest", m("pipeline"), "-queue", filepath.Join(cfg.Work, "queue", "demo")},
+					"geo":      {"-manifest", m("geo"), "-world", cfg.Work},
+					"storage":  {"-manifest", m("storage"), "-world", cfg.Work},
+					"data":     {"-manifest", m("data"), "-world", cfg.Work},
 				}},
 				{Host: "ctd1", Plugins: map[string][]string{
 					"cmd":     {"-manifest", m("cmd"), "-host", "ctd1", "-spec-root", cfg.Root, "-program-root", roots["ctd1"]},
 					"service": {"-manifest", m("service"), "-systemctl", filepath.Join(roots["ctd1"], "usr/bin/systemctl")},
+					"batch":   {"-manifest", m("batch"), "-world", cfg.Work},
 				}},
 			}
 		},
@@ -226,6 +244,17 @@ func Start(ctx context.Context, cfg Config) (_ *Stand, err error) {
 	}
 	runCtx, cancel := context.WithCancel(context.Background())
 	s.cancel = cancel
+	if err := s.startJob(ctx, runCtx); err != nil {
+		s.Close()
+		return nil, fmt.Errorf("the data-job worker: %w", err)
+	}
+	// The farm operator gives the farm manager seat to its bot (MGR-1).
+	var seat map[string]any
+	if err := s.Bench.P2(ctx, "farm", "seat.assign", map[string]any{"seat": "farm-manager"}, &seat); err != nil {
+		s.Close()
+		return nil, fmt.Errorf("the farm manager seat: %w", err)
+	}
+	s.log.Addf(KindDirector, "the farm manager seat is %v", seat["state"])
 	for _, f := range []func(context.Context){s.physics, s.queueWorker, s.tailWorld, s.watchStore, s.fuse} {
 		s.done.Add(1)
 		go func() { defer s.done.Done(); f(runCtx) }()
@@ -662,6 +691,53 @@ func (s *Stand) CheckFuse(ctx context.Context) error {
 	return nil
 }
 
+// ReleaseContainment releases the active holds the incidents set (contain_auto) through P2, as
+// a tenant admin does once the cause is gone.
+func (s *Stand) ReleaseContainment(ctx context.Context) error {
+	// Only the containment of incidents (reason contain_auto): not the maintenance holds of the
+	// monitoring system (MON-9) nor the core's own guards, which a person releases on purpose.
+	rows, err := s.Bench.Store().Pool.Query(ctx, `SELECT id, tenant FROM holds WHERE author_kind = 'contain_auto' AND reason = 'contain_auto'
+		AND state = 'active' AND coalesce(source, '') NOT LIKE 'system:%'`)
+	if err != nil {
+		return err
+	}
+	type hold struct{ id, tenant string }
+	var holds []hold
+	for rows.Next() {
+		var h hold
+		if err := rows.Scan(&h.id, &h.tenant); err != nil {
+			rows.Close()
+			return err
+		}
+		holds = append(holds, h)
+	}
+	rows.Close()
+	for _, h := range holds {
+		if err := s.Bench.P2(ctx, h.tenant, "hold.release", map[string]any{"id": h.id}, nil); err != nil {
+			s.log.Addf(KindDirector, "releasing the incident hold %s: %v", h.id, err)
+			continue
+		}
+		s.log.Addf(KindDirector, "a tenant admin released the incident hold %s", h.id)
+	}
+	return nil
+}
+
+// Insights says whether the analysis schedule runs.
+func (s *Stand) Insights() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.insights
+}
+
+// SetInsights starts or pauses the analysis schedule of ops-reader: the bench set is applied
+// again with the schedule changed.
+func (s *Stand) SetInsights(ctx context.Context, on bool) error {
+	s.mu.Lock()
+	s.insights = on
+	s.mu.Unlock()
+	return s.Bench.Apply(ctx)
+}
+
 // Tripped says whether the fuse tripped.
 func (s *Stand) Tripped() bool {
 	s.mu.Lock()
@@ -765,6 +841,10 @@ func (s *Stand) Press(no int, code, who string) error {
 	}
 	c := s.cards[no-1]
 	var data, label string
+	// Approve on the decision card of a proposal is its Accept.
+	if code == "ap" && !slices.ContainsFunc(c.Buttons, func(b Button) bool { return b.Code() == "ap" }) {
+		code = "ac"
+	}
 	for _, b := range c.Buttons {
 		if b.Code() == code {
 			data, label = b.Data, b.Label
