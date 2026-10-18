@@ -67,7 +67,7 @@ func (r *Result) Security() bool {
 func (r *Result) SecurityFindings() int {
 	n := 0
 	for _, f := range r.Findings {
-		if f.Kind == "tools_allowed" || f.Kind == "side_effects" || strings.HasPrefix(f.Check, "common/") && f.Check != "common/result-schema" {
+		if f.Kind == "tools_allowed" || f.Kind == "side_effects" || strings.HasPrefix(f.Check, "common/") && f.Check != "common/result-schema" && f.Check != "common/model-name" {
 			n++
 		}
 	}

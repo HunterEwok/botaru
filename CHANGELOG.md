@@ -11,7 +11,8 @@ Entries are grouped by area; within a group the newest entry comes first.
 ### Skeleton & Contracts
 
 - Safe evolution of the scaffold (D-120, rules EVO-1..EVO-10, additions to v0.3; a tenant without the opt-ins
-  `insights.evolution.enabled` and `insights.gate.required` keeps the behaviour of 0.3.0): the output coupling graph
+  `insights.evolution.enabled` and `insights.gate.required` keeps the behaviour of 0.3.0, except that a revert may
+  also take out a field the change added): the output coupling graph
   of the manifests and the field lock over direct neighbours (EVO-1); the merge gate of a
   manifest change with its diff size and protected path limits (EVO-2), hidden holdout cases (EVO-7), the
   anti-gaming guard (EVO-8) and the opt-in `Tenant.spec.insights.gate` (`required`, `max_fields`,

@@ -3215,7 +3215,7 @@
     to the caller: a task type feeds the roles that claim, enqueue or analyse it, the schedules and
     routes that start it and the dispatcher rules that match it; a tool plugin feeds the roles and
     actions that use it; a skill folder and an action feed the roles that use them; a catalog feeds
-    every task type whose schemas read it with `enum_from`; a script feeds the schedules that run
+    every task type whose schemas read a catalog with `enum_from`; a script feeds the schedules that run
     it; a role feeds the bot groups that select it, and a bot group the dispatcher rules that name
     it. A field under `spec.dispatch.rules` of a tenant belongs to the node of that rule, any other
     field to its object. In a tenant with `insights.evolution.enabled` the field lock of PRP-9 also
@@ -3444,7 +3444,8 @@
     on a person's order: it refuses a checkout with uncommitted changes or without a branch, writes
     the previous values of the reverse edit into a temporary worktree of the branch head with the
     line editor and takes out the fields the change added (`revert_absent`, with the maps they
-    created), refuses when a field no longer holds the accepted value or when the file differs by
+    created; a change with a previous value the reverse edit cannot hold, such as null or a list,
+    has no reverse edit and is reverted by hand), refuses when a field no longer holds the accepted value or when the file differs by
     more than those fields, commits with the line `Botaru-Revert: <id> <reason>`, moves the person's
     branch to that commit only by a fast-forward and applies the set, so the core moves the proposal
     to `reverted`, ends its trial, marks the variant `reverted` and keeps the review rule of a
@@ -11010,8 +11011,9 @@
     On `realized` by a commit the core keeps a reverse edit: the previous values of the same fields
     of the same objects, and the batch number if one commit is linked to several proposals. The
     reverse edit is available to the executor in the "Revert" card (PRP-23) and in P2
-    `proposal.show`. A commit that carries the line `Botaru-Revert: <id> <reason>` and returns these
-    values is linked by the core to the proposal and moves it to `reverted`; the reason is from the
+    `proposal.show`. From v0.3 the reverse edit also names the fields the change added
+    (`revert_absent`, EVO-10). A commit that carries the line `Botaru-Revert: <id> <reason>`, returns
+    these values and takes out those fields is linked by the core to the proposal and moves it to `reverted`; the reason is from the
     closed list `harm_observed` (the change did harm), `superseded` (replaced by another), `other`,
     and a line without a reason is read as `other`. The core writes the revert reason into the
     proposal record and into the author's "My outcomes" (DIG-7).

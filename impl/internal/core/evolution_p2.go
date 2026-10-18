@@ -244,7 +244,7 @@ func (c *Core) ReviewRuleList(ctx context.Context, op Operator, req ReviewRuleLi
 		}
 		rows, err := tx.Query(ctx, `SELECT id, role, category, target_kind, target_name, problem_code, signature, outcome, reason_code, count,
 			proposal_ids, first_at, last_at FROM review_rules r WHERE tenant = $1 AND dropped_at IS NULL AND ($2 = '' OR role = $2)
-			AND category = ANY($3) AND NOT EXISTS (SELECT 1 FROM proposals p WHERE r.proposal_ids ? p.id AND (p.state IN ('sampled', 'sample_presented')
+			AND category = ANY($3) AND NOT EXISTS (SELECT 1 FROM proposals p WHERE p.tenant = r.tenant AND r.proposal_ids ? p.id AND (p.state IN ('sampled', 'sample_presented')
 				OR p.state = 'sample_closed' AND coalesce(p.record->'sample_answer'->>'answer', '') <> 'would_accept'))
 			ORDER BY last_at DESC, id DESC`, tv.Name, req.Role, cats)
 		if err != nil {

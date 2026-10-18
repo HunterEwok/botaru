@@ -91,6 +91,26 @@ func gatedOut(ctx context.Context, tx pgx.Tx, tv *TenantView, p *proposalRow) (b
 	return !ok, err
 }
 
+func passedSteps(recorded []any) int {
+	n := 0
+	for _, s := range recorded {
+		if mmapAny(s)["status"] == "passed" {
+			n++
+		}
+	}
+	return n
+}
+
+func passed(steps []GateStep) []GateStep {
+	var out []GateStep
+	for _, s := range steps {
+		if s.Status == "passed" {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
 func sameSteps(recorded []any, steps []GateStep) bool {
 	if len(recorded) != len(steps) {
 		return false
@@ -212,7 +232,8 @@ func (c *Core) ProposalGate(ctx context.Context, op Operator, req GateRequest) (
 			if g["state"] != r.Verdict {
 				return refuse("conflict", "the gate at this commit is already recorded as %v", g["state"])
 			}
-			if r.Verdict == "failed" || sameSteps(asList(g["steps"]), r.Steps) {
+			// A passed result never gives way to one with fewer passed steps.
+			if r.Verdict == "failed" || sameSteps(asList(g["steps"]), r.Steps) || passedSteps(asList(g["steps"])) > len(passed(r.Steps)) {
 				out = map[string]any{"proposal": p.ID, "state": p.State, "gate": g}
 				return nil
 			}

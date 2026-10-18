@@ -2506,7 +2506,7 @@ EVO-1..EVO-10). The core keeps the archive, the lessons and the gate verdicts; g
   the file as in step 1, commits with `Botaru-Revert: <id> <reason>` (`--no-verify`) and runs
   `git merge --ff-only` in the person's checkout. `farmctl proposal revert` then applies the set; `revertByCommit`
   moves the proposal to `reverted`, which marks the variant and records the rule. The object returns to its
-  hash before the change, and with the line editor the file returns byte for byte.
+  hash before the change.
 - **Holdout** (`internal/evals/holdout.go`). `ReadResults` reads `results.jsonl` (status, seconds, spend, tool calls,
   security flag, security findings, finding kinds). `CheckRewardHacking` compares the cases rated on both sides, in
   order: a new security finding on a hidden case (`Result.SecurityFindings`: a common check, a side effect or a tool

@@ -221,8 +221,9 @@ func proposalGate(c *client, args []string) error {
 		*dsn = os.Getenv("BOTARU_EVAL_DSN")
 	}
 	// botaru-eval runs in the worktree: a relative path would name another file there.
+	// A bare -eval-bin name is looked up in PATH; every other path is made absolute.
 	for _, p := range []*string{holdout, evalBin, keyFile} {
-		if *p != "" && strings.ContainsRune(*p, filepath.Separator) {
+		if *p != "" && (p != evalBin || strings.ContainsRune(*p, filepath.Separator)) {
 			abs, err := filepath.Abs(*p)
 			if err != nil {
 				return err

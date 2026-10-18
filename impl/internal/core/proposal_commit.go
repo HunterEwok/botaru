@@ -182,6 +182,7 @@ func (c *Core) realizeByCommit(ctx context.Context, tx pgx.Tx, now time.Time, p 
 		return false, nil
 	}
 	var patch, absent []any
+	partial := false
 	for _, op := range b.Change.ManifestChange.Ops {
 		doc, applied, err := storedDoc(ctx, tx, op.Target.Kind, p.Tenant, op.Target.Name)
 		if err != nil {
@@ -201,7 +202,14 @@ func (c *Core) realizeByCommit(ctx context.Context, tx pgx.Tx, now time.Time, p 
 		} else if !ok && prev != nil {
 			// The change added the field: its revert takes it out (EVO-10).
 			absent = append(absent, map[string]any{"target": tg, "field": op.Field})
+		} else {
+			// A previous value the reverse edit cannot hold (null, a list, a long text): no
+			// reverse edit at all, so a commit can never revert only part of the change.
+			partial = true
 		}
+	}
+	if partial {
+		patch, absent = nil, nil
 	}
 	r := mmapAny(p.Rec["realization"])
 	if r == nil {

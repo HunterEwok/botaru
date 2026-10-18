@@ -91,8 +91,8 @@ The gate is on for a tenant with `insights.gate.required: true`; the review rule
   and the numbers; `-no-post` prints only. Without `-eval-bin` the regression and holdout steps are `not_run`, and a
   tenant with `insights.gate.required` then keeps the change waiting: only a gate with every step passed counts.
   `botaru-eval` runs as a child process with only `PATH`, `HOME`, `TMPDIR` and the DSN in its environment and the
-  mock model unless `-real -key-file -max-eur`; relative paths of `-holdout-dir`, `-eval-bin` and `-key-file` are
-  made absolute first. `-pending` lists the waiting changes with P2 `proposal.list`, so it also needs
+  mock model unless `-real -key-file -max-eur`; relative paths of `-holdout-dir`, `-key-file` and an `-eval-bin`
+  with a folder are made absolute first (a bare `-eval-bin` name is looked up in `PATH`). `-pending` lists the waiting changes with P2 `proposal.list`, so it also needs
   `proposal.decide:<category>`, and goes on past a change the gate cannot run.
 - `proposal revert` refuses a checkout with uncommitted changes or without a branch, writes the previous values and
   takes out the fields the change added, commits the reverse edit with
