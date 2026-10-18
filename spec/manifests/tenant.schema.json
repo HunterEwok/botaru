@@ -989,6 +989,42 @@
             ]
           },
           "description": "Guards that are only added to the tables of the trial registry."
+        },
+        "gate": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "From v0.3: the merge gate of manifest changes (EVO-9). With required: true a manifest change goes into the digest and can be accepted only after a passed `farmctl proposal gate` at the applied commit; a failed gate dismisses it. Off by default.",
+          "x-botaru-version": "v0.3",
+          "properties": {
+            "required": {
+              "type": "boolean",
+              "description": "Whether a manifest change needs a passed gate; false by default."
+            },
+            "max_fields": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10,
+              "description": "Fields one change may set; 1 by default (EVO-2)."
+            },
+            "max_diff_lines": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 400,
+              "description": "Lines of the unified diff of one change; 40 by default (EVO-2)."
+            }
+          }
+        },
+        "evolution": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "From v0.3: the learning part of the scaffold evolution for the bots of the tenant (EVO-1, EVO-3, EVO-5). With enabled: true a new manifest change is refused when a live review rule names its approach, the PRP-9 lock also parks a change of a direct neighbour in the coupling graph, and an analysis task gets the block `evolution`. The variant archive and the review rules are kept for every tenant and shown to people either way. Off by default, so a tenant keeps the behaviour of 0.3.0.",
+          "x-botaru-version": "v0.3",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Whether the bots of the tenant learn from the archive; false by default."
+            }
+          }
         }
       },
       "description": "The tenant's improvement cycle (DIG-1, DIG-2, PRP-5)."

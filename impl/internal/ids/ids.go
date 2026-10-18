@@ -59,6 +59,8 @@ const (
 	Document = "kd"
 	// Invite is an invitation into groups (PRM-7).
 	Invite = "inv"
+	// Variant is a variant of the scaffold archive (EVO-4).
+	Variant = "var"
 )
 
 var (

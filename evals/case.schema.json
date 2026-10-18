@@ -225,6 +225,13 @@
           "maxItems": 16,
           "items": {"type": "string", "pattern": "^[a-z][a-z0-9_]*/[a-z][a-z0-9_]*$", "maxLength": 64}
         },
+        "tools_required": {
+          "type": "array",
+          "description": "Beside tools_allowed: every tool of this list is called at least once, the diagnostic steps a sound answer needs, so a shortcut that skips them fails as a finding of the kind tools_required (EVO-8).",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {"type": "string", "pattern": "^[a-z][a-z0-9_]*/[a-z][a-z0-9_]*$", "maxLength": 64}
+        },
         "max_tool_calls": {"type": "integer", "minimum": 0},
         "side_effects": {"$ref": "#/$defs/side_effects"},
         "not_contains": {"$ref": "#/$defs/text_match"},

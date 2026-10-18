@@ -3,6 +3,7 @@
 """Eval cases, thresholds and stand data.
 
 - every file evals/cases/<role>/<id>.yaml passes the schema evals/case.schema.json;
+- a check with tools_required also has tools_allowed, which carries it (EVO-8);
 - the case id is unique and equals the file name, the folder is a role from the stand data;
 - the rule numbers in rules are active (a rule version later than the case version is a note);
 - base_case and twin refer to existing cases, twins refer to each other;
@@ -151,6 +152,9 @@ for f in walk(('.yaml', '.yml'), CASES):
     for e in errs[:5]:
         where = '/'.join(str(p) for p in e.absolute_path) or '/'
         rep.error(rp, f'[case_schema] case schema: {where}: {e.message[:200]}')
+    for i, ch in enumerate(((c.get('expect') or {}).get('checks')) or []):
+        if isinstance(ch, dict) and 'tools_required' in ch and 'tools_allowed' not in ch:
+            rep.error(rp, f'[case_tools_required] expect/checks/{i}: tools_required is checked only beside tools_allowed')
     cid = c.get('id')
     if not isinstance(cid, str):
         continue

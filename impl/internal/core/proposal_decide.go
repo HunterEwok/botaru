@@ -164,6 +164,13 @@ func (c *Core) decideProposal(ctx context.Context, w *Worker, ob OnBehalf, req D
 				state = "noted"
 				break
 			}
+			// A gate-required tenant accepts a manifest change only with a passed gate at the
+			// applied commit (EVO-9).
+			if out, err := gatedOut(ctx, tx, press.tv, p); err != nil {
+				return err
+			} else if out {
+				return deny("forbidden", "the change has no passed gate at the applied commit; run the gate again")
+			}
 			// Only one of conflicting changes runs at a time (PRP-9).
 			if holders, err := lockHolders(ctx, tx, p.Tenant, p.ID, lockKeys(b)); err != nil {
 				return err

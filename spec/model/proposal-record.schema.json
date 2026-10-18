@@ -174,7 +174,7 @@
         "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
       },
       "maxItems": 50,
-      "description": "Open proposals that change the same locked field or field group of the same object (PRP-9)."
+      "description": "Open proposals that change the same locked field or field group of the same object (PRP-9), or from v0.3 in a tenant with insights.evolution.enabled a direct neighbour of it in the output coupling graph (EVO-1)."
     },
     "seen_count": {
       "type": "integer",
@@ -216,6 +216,7 @@
             "veto",
             "below_min",
             "low_score",
+            "gate_failed",
             "object_failed",
             "timeout",
             "harm_observed",
@@ -495,6 +496,43 @@
                 }
               ]
             },
+            "revert_absent": {
+              "type": "array",
+              "maxItems": 10,
+              "description": "Fields the change added: the revert takes them out, and the reverse edit holds no previous value for them (PRP-20, EVO-10).",
+              "x-botaru-version": "v0.3",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "target",
+                  "field"
+                ],
+                "properties": {
+                  "target": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "kind",
+                      "name"
+                    ],
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "maxLength": 64
+                      },
+                      "name": {
+                        "$ref": "urn:botaru:schema:common:1#/$defs/name"
+                      }
+                    }
+                  },
+                  "field": {
+                    "type": "string",
+                    "maxLength": 120
+                  }
+                }
+              }
+            },
             "batch": {
               "anyOf": [
                 {
@@ -573,6 +611,143 @@
       },
       "description": "From v0.2: the audit sample item of this proposal (DIG-5, DIG-6).",
       "x-botaru-version": "v0.2"
+    },
+    "gate": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/gate"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "From v0.3: the merge gate result of a manifest change at one applied commit (EVO-9); written only by P2 proposal.gate. It carries the step statuses and codes, never a file, a diff or a hidden case (EVO-7).",
+      "x-botaru-version": "v0.3"
+    }
+  },
+  "$defs": {
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "code",
+        "base_sha",
+        "steps",
+        "holdout_passed",
+        "regression_pass_rate",
+        "fields",
+        "diff_lines",
+        "by",
+        "at"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "passed",
+            "failed"
+          ]
+        },
+        "code": {
+          "anyOf": [
+            {
+              "enum": [
+                "diff_size_exceeded",
+                "forbidden_path_modified",
+                "diff_unrenderable",
+                "lint_failed",
+                "coupling_broken",
+                "regression_failed",
+                "holdout_regression",
+                "reward_hacking_detected",
+                "shortcut_gaming_detected",
+                "audit_tampering_detected"
+              ],
+              "x-botaru-registry": "reasons"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "base_sha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "steps": {
+          "type": "array",
+          "maxItems": 5,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "step",
+              "status"
+            ],
+            "properties": {
+              "step": {
+                "enum": [
+                  "diff",
+                  "lint",
+                  "coupling",
+                  "regression",
+                  "holdout"
+                ]
+              },
+              "status": {
+                "enum": [
+                  "passed",
+                  "failed",
+                  "not_run"
+                ]
+              },
+              "code": {
+                "enum": [
+                  "diff_size_exceeded",
+                  "forbidden_path_modified",
+                  "diff_unrenderable",
+                  "lint_failed",
+                  "coupling_broken",
+                  "regression_failed",
+                  "holdout_regression",
+                  "reward_hacking_detected",
+                  "shortcut_gaming_detected",
+                  "audit_tampering_detected"
+                ],
+                "x-botaru-registry": "reasons"
+              }
+            }
+          }
+        },
+        "holdout_passed": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "regression_pass_rate": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1
+        },
+        "fields": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "diff_lines": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "by": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref"
+        },
+        "at": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+        }
+      }
     }
   }
 }

@@ -368,6 +368,13 @@ func (c *Core) decideSample(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		} else if len(holders) > 0 {
 			return "", deny("forbidden", "another accepted change holds the same field")
 		}
+		// EVO-9: a tenant with a required gate accepts a manifest change only with a passed gate
+		// at the applied commit, also from the audit sample.
+		if out, err := gatedOut(ctx, tx, press.tv, p); err != nil {
+			return "", err
+		} else if out {
+			return "", deny("forbidden", "the change needs a passed gate at the applied commit")
+		}
 		code, err := c.realize(ctx, tx, now, cat, press, p)
 		if err != nil {
 			return "", err

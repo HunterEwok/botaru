@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-proposal-gate-response:1",
+  "title": "P2 proposal.gate: response",
+  "description": "A read: the proposal, its manifest operations, the applied commit and the tenant's gate limits. A recorded result: the proposal's state after it and the gate record.",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "EVO-9"
+  ],
+  "type": "object",
+  "required": [
+    "proposal",
+    "state",
+    "gate"
+  ],
+  "properties": {
+    "proposal": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "tenant": {
+      "type": "string",
+      "maxLength": 100
+    },
+    "category": {
+      "type": "string",
+      "maxLength": 100
+    },
+    "state": {
+      "type": "string",
+      "maxLength": 40
+    },
+    "ops": {
+      "type": "array",
+      "maxItems": 10
+    },
+    "applied_commit": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 64
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "required",
+        "max_fields",
+        "max_diff_lines"
+      ],
+      "properties": {
+        "required": {
+          "type": "boolean"
+        },
+        "max_fields": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10
+        },
+        "max_diff_lines": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 400
+        }
+      }
+    },
+    "gate": {
+      "anyOf": [
+        {
+          "$ref": "urn:botaru:schema:proposal-record:1#/$defs/gate"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  }
+}

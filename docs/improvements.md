@@ -389,6 +389,30 @@ The core checks the guards once a day. A guard beyond tolerance in the bad direc
 
 At the end of the window code computes the outcome ([PRP-22](../conformance/rules.md#PRP-22)): a fired guard gives `worse`; another change on the same subjects gives `mixed`; otherwise the metric is compared in all three computations, and a worsening in any gives `worse`, an improvement in all gives `better`, the rest `unchanged`; too few samples give `undetermined`. The third computation stops two bots of one role from making things worse before "Accept" and better after. When the metric comes only from the author's own attempts, the remaining computation is marked `self_measured`, and a promotion trigger needs a person's "Count it".
 
+### Safe evolution of the scaffold from v0.3
+
+The model stays frozen; the farm gets better only through versioned manifests, and code guards every step (D-120).
+
+**Coupling.** A change to one object can break the objects that read it, so code builds the graph of references between the manifests, from the callee to the caller: a task type feeds the roles, schedules, routes and dispatcher rules that use it, a role feeds its bot groups, a plugin feeds roles and actions, a skill and an action feed roles, a catalog feeds every task type that reads a catalog and a script the schedules that run it ([EVO-1](../conformance/rules.md#EVO-1)). In a tenant with `insights.evolution.enabled` the field lock of PRP-9 also holds the direct neighbours of a locked object; the kinds a proposal may set today are never direct neighbours, so this parks nothing yet. The gate orders the objects of one change from callee to caller.
+
+**The merge gate.** A tenant with `insights.gate.required: true` shows a manifest change to people only after a gate at the commit the core applied ([EVO-9](../conformance/rules.md#EVO-9)). A person with `proposal.gate:<category>` runs `farmctl proposal gate <id>` (or `-pending` from a timer, which also needs `proposal.decide:<category>` to list the proposals); Go code checks the change in a temporary git worktree, in this order, and stops at the first failure:
+
+| Step | What it checks | Code |
+|---|---|---|
+| diff | at most `max_fields` fields (1), `max_diff_lines` lines (40) and one file; no path of the skeleton, no symbolic link, no protected kind or field; the file read back differs by exactly the fields ([EVO-2](../conformance/rules.md#EVO-2)) | `diff_size_exceeded`, `forbidden_path_modified`, `diff_unrenderable` |
+| lint | an `apply` plan of the whole candidate set | `lint_failed` |
+| coupling | no broken reference near a changed object | `coupling_broken` |
+| regression | the visible eval cases of the affected roles, on the base and on the candidate | `regression_failed` |
+| holdout | the hidden cases and the anti-gaming guard ([EVO-7](../conformance/rules.md#EVO-7), [EVO-8](../conformance/rules.md#EVO-8)) | `holdout_regression`, `reward_hacking_detected`, `shortcut_gaming_detected`, `audit_tampering_detected` |
+
+A step without what it needs (no eval binary, no hidden folder, no case rated on both sides with the mock model) is `not_run`, shown, and never counted as passed: the digest waits until every step passed, and a gate run again with the evals replaces a passed result at the same commit. A failed gate moves the proposal to `dismissed(gate_failed)`; nobody is asked. A new apply makes a passed gate stale: the digest waits and "Accept" and "Lift veto" of the audit sample are refused until the gate runs again. A tenant without `required` keeps the behaviour of 0.3.0.
+
+**Hidden cases.** The holdout cases have the format of `evals/cases/` and live in a folder outside the repository and outside every bot's reach. Only the step status, `holdout_passed` and the code leave the gate, for people; a bot sees only `dismissed`.
+
+**Lessons and variants.** A decline by people for the change itself, a veto, a revert for harm and a worse trial become a review rule of the role: the same approach to the same problem and target is refused at creation with `rejected(review_rule)` until a person drops the rule with `farmctl review-rule drop`; lifting the veto of an audit sample item takes it out of the rule its veto taught ([EVO-3](../conformance/rules.md#EVO-3)). The refusal and the `evolution` input below hold only with `insights.evolution.enabled: true`, so a tenant without it keeps the behaviour of 0.3.0; the archive and the rules are kept for people either way. Every proposed change of an object is kept in the variant archive with its parent, fields, outcome and the success of its children ([EVO-4](../conformance/rules.md#EVO-4)). An analysis sees up to five variants with different approaches, not only the last one, and its role's rules: a refusal by people is `declined`, one by the commission or the gate `dismissed`, and a rule only says that an approach is refused, never who refused it or why ([EVO-5](../conformance/rules.md#EVO-5)). People read the archive with `farmctl variant list|show` and write a variant back as a manifest file with `farmctl variant checkout` ([EVO-6](../conformance/rules.md#EVO-6)).
+
+**Revert in one command.** `farmctl proposal revert <id> -reason harm_observed` writes the reverse edit into a temporary worktree, taking out the fields the change added, commits it with `Botaru-Revert`, moves the person's branch forward and applies the set; the proposal becomes `reverted`, the trial ends and the object has its hash from before the change ([EVO-10](../conformance/rules.md#EVO-10)). The core itself still never writes git.
+
 ### "My outcomes"
 
 A bot that only learns "accepted" or "declined" learns to please. So each author bot has "My outcomes": a closed table that only code assembles ([DIG-7](../conformance/rules.md#DIG-7)). It holds its proposals and its refusals at creation: id, category, problem code, state, the class of people's decision, the promised change and the trial outcome, measured outcomes first. It has no names, no reasons for people's decisions, no lens scores and nothing about cases or the queue. From v0.2 a row also gets the trial numbers before and after, with and without the author and the role, and the guard that fired ([DIG-8](../conformance/rules.md#DIG-8)). The last 20 rows go into the bot's next analysis.
@@ -511,6 +535,16 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [DIG-6](../conformance/rules.md#DIG-6) | The blind sample card and a separate "Lift veto" button | v0.2 | yes |
 | [DIG-7](../conformance/rules.md#DIG-7) | The closed form of "My outcomes" | v0.1 | yes |
 | [DIG-8](../conformance/rules.md#DIG-8) | Trial figures in "My outcomes" | v0.2 | no |
+| [EVO-1](../conformance/rules.md#EVO-1) | The output coupling graph of the manifests | v0.3 | yes |
+| [EVO-2](../conformance/rules.md#EVO-2) | A scaffold change stays small and away from the skeleton | v0.3 | yes |
+| [EVO-3](../conformance/rules.md#EVO-3) | Lessons of review become rules of the role | v0.3 | yes |
+| [EVO-4](../conformance/rules.md#EVO-4) | The variant archive and the lineage of the scaffold | v0.3 | yes |
+| [EVO-5](../conformance/rules.md#EVO-5) | Analyses see diverse variants, not only the last one | v0.3 | yes |
+| [EVO-6](../conformance/rules.md#EVO-6) | People read and reuse the archive | v0.3 | no |
+| [EVO-7](../conformance/rules.md#EVO-7) | Hidden holdout cases stay hidden | v0.3 | yes |
+| [EVO-8](../conformance/rules.md#EVO-8) | The anti-gaming guard | v0.3 | yes |
+| [EVO-9](../conformance/rules.md#EVO-9) | The merge gate of a manifest change | v0.3 | yes |
+| [EVO-10](../conformance/rules.md#EVO-10) | A revert in one command | v0.3 | yes |
 | [GOV-6](../conformance/rules.md#GOV-6) | Only the core opens a case | v0.1 | yes |
 | [GOV-9](../conformance/rules.md#GOV-9) | The case outcome after a person's button | v0.2 | yes |
 | [GOV-12](../conformance/rules.md#GOV-12) | The seats that can leave and the person's choice | v0.2 | yes |

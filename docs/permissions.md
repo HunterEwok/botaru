@@ -146,7 +146,7 @@ The model sees a tool only if it is in the role's `tools`, has `access: read`, a
 
 - task and data: `task:<type>`, `task.read:<type>` (other people's tasks of a type), `team.view:<group>` (the `/team` table), `data:<class>`, `msg.send:<kind>`, `kb.write:<corpus>`;
 - actions and services: `action.request:<action>`, `action.approve:<action>` (also `action.approve:service.control[:<service>]` and `action.approve:monitor.script_run` for cards created instead of execution), `service.control:<service>` and `monitor.script_run` (every initiator of a bot's service action needs them; a person also gets `/service`), `script.run`;
-- decisions: `proposal.decide:<category>`, `control.approve`, `incident.manage`, `model_grant.manage`, `governance.confirm:commission`, `governance.attribute`, `proposal.override_veto:<category>`;
+- decisions: `proposal.decide:<category>`, `control.approve`, `incident.manage`, `model_grant.manage`, `governance.confirm:commission`, `governance.attribute`, `proposal.override_veto:<category>`, `proposal.gate:<category>` (from v0.3, EVO-9);
 - holds and control: `hold.set:<scope>`, `hold.release` (also `/control revert <number>` for one incident), `control.apply:<operation>`, `manager.direct`, `task.takeover:<type>`;
 - administration: `admin:people` (ordinary people, campaign pause and cancel, erasure requests), `admin:governance`, `audit.read`, and the operator-only `admin:workers`, `admin:farm`, `admin:debug`.
 

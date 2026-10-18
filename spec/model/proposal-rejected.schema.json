@@ -31,9 +31,10 @@
         "recently_declined",
         "proposal_rate_limited",
         "resubmit_too_early",
+        "review_rule",
         "manager_restricted"
       ],
-      "description": "Refusal reason; from v0.3 also resubmit_too_early (PRP-24) and manager_restricted for a proposal of the farm manager seat in restricted mode (MGR-47).",
+      "description": "Refusal reason; from v0.3 also resubmit_too_early (PRP-24) and manager_restricted for a proposal of the farm manager seat in restricted mode (MGR-47), and review_rule for an approach a live review rule of the role refuses (EVO-3).",
       "x-botaru-registry": "reasons"
     },
     "task": {

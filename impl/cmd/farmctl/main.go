@@ -40,6 +40,20 @@ commands:
                                              apply the manifests of files and folders as one set
   proposal link-commit PROPOSAL SHA         link an applied commit to an accepted manifest change (PRP-19)
   proposal list | proposal show ID          the proposals shown to people that the person may decide (DIG-1)
+  proposal gate ID... | proposal gate -pending [-repo DIR] [-set PATH]... [-base SHA] [-holdout-dir DIR]
+                [-eval-bin BIN [-dsn DSN] [-real -key-file F -max-eur N]] [-no-post]
+                                             the merge gate of manifest changes in a temporary worktree; the
+                                             verdict goes to the core, a hidden case never leaves (EVO-9, EVO-7)
+  proposal patch ID [-repo DIR] [-set PATH]... [-out FILE]
+                                             the accepted change as a patch with Botaru-Proposal (PRP-19)
+  proposal revert ID -reason harm_observed|superseded|other [-repo DIR] [-set PATH]... [-no-apply]
+                                             revert a realized change in one command: a commit with
+                                             Botaru-Revert on the current branch, then apply (EVO-10)
+  variant list [-target KIND:NAME] [-limit N] | variant show ID
+  variant checkout ID -out DIR [-repo DIR] [-set PATH]...
+                                             the variant archive of scaffold changes (EVO-4, EVO-6)
+  review-rule list [-role ROLE] | review-rule drop ID
+                                             the review rules the roles learned from refusals (EVO-3)
   campaign list | campaign show|pause|cancel|retry-failed ID
   script list | script show|cancel ID        campaigns and script runs the person may read (ORC-1, SCR-11)
   escalation list [TENANT] | escalation show ID
@@ -160,6 +174,9 @@ func run(c *client, args []string) error {
 	case "apply":
 		return apply(c, args[1:])
 	case "proposal":
+		if ok, err := proposalEvolution(c, args); ok {
+			return err
+		}
 		switch {
 		case len(args) == 4 && args[1] == "link-commit":
 			return c.print("proposal.link_commit", map[string]any{"proposal": args[2], "commit": args[3]})
@@ -171,6 +188,10 @@ func run(c *client, args []string) error {
 		return errors.New("usage: farmctl proposal list | proposal show ID | proposal link-commit PROPOSAL SHA")
 	case "campaign", "script", "escalation":
 		return objectView(c, args)
+	case "variant":
+		return variant(c, args[1:])
+	case "review-rule":
+		return reviewRule(c, args[1:])
 	case "principal":
 		return principal(c, args[1:])
 	case "grant", "ungrant":
@@ -449,16 +470,9 @@ func apply(c *client, args []string) error {
 		}
 		*commit = strings.TrimSpace(string(out))
 	}
-	docs, err := manifest.ReadFiles(fs.Args())
+	ms, docs, err := readSet(fs.Args(), *asTest)
 	if err != nil {
 		return err
-	}
-	ms := make([]map[string]any, len(docs))
-	for i, d := range docs {
-		if spec, ok := d.Value["spec"].(map[string]any); ok && *asTest && d.Kind == "Tenant" {
-			spec["kind"] = "test"
-		}
-		ms[i] = d.Value
 	}
 	if *drop {
 		root, err := spec.FindRoot(*specRoot)
@@ -473,7 +487,36 @@ func apply(c *client, args []string) error {
 			return err
 		}
 	}
-	req := map[string]any{"commit": *commit, "manifests": ms, "dry_run": *dry}
+	req := applyRequest(docs, ms, *commit, *dry)
+	// The commit message carries the Botaru-Proposal and Botaru-Revert lines (PRP-19, PRP-20).
+	if out, err := exec.Command("git", "-C", dir, "log", "-1", "--format=%B", *commit).Output(); err == nil {
+		if msg := strings.TrimSpace(string(out)); msg != "" {
+			req["message"] = msg
+		}
+	}
+	return c.print("apply", req)
+}
+
+// readSet reads the manifests of files and folders as one set.
+func readSet(paths []string, asTest bool) ([]map[string]any, []manifest.Doc, error) {
+	docs, err := manifest.ReadFiles(paths)
+	if err != nil {
+		return nil, nil, err
+	}
+	ms := make([]map[string]any, len(docs))
+	for i, d := range docs {
+		if spec, ok := d.Value["spec"].(map[string]any); ok && asTest && d.Kind == "Tenant" {
+			spec["kind"] = "test"
+		}
+		ms[i] = d.Value
+	}
+	return ms, docs, nil
+}
+
+// applyRequest is the apply request of a set with the persona files, the skill folders and
+// the git corpus folders it needs.
+func applyRequest(docs []manifest.Doc, ms []map[string]any, commit string, dry bool) map[string]any {
+	req := map[string]any{"commit": commit, "manifests": ms, "dry_run": dry}
 	// The persona files the charters pin go with the set, by their hash (GOV-4).
 	if ps := personaFiles(docs); len(ps) > 0 {
 		req["personas"] = ps
@@ -485,13 +528,7 @@ func apply(c *client, args []string) error {
 	if kn := knowledgeFolders(docs, ms); len(kn) > 0 {
 		req["knowledge"] = kn
 	}
-	// The commit message carries the Botaru-Proposal and Botaru-Revert lines (PRP-19, PRP-20).
-	if out, err := exec.Command("git", "-C", dir, "log", "-1", "--format=%B", *commit).Output(); err == nil {
-		if msg := strings.TrimSpace(string(out)); msg != "" {
-			req["message"] = msg
-		}
-	}
-	return c.print("apply", req)
+	return req
 }
 
 // dropUnsupported asks the core for a plan and removes every field that the plan refuses with

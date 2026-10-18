@@ -1,5 +1,5 @@
 registry: reasons
-version: 11
+version: 12
 description: 'Closed registry of reasons: end of an attempt, refusals at enqueue and at a call, waiting, outcomes of calls,
   approvals and deliveries, and also codes of other parts of the farm. A worker in P1 `fail` passes only a code from here; there is no free
   reason text in the records. Record fields: `meaning` (what it means); `spends_attempt` (whether it spends an attempt: true,
@@ -1554,6 +1554,91 @@ entries:
   retry: null
   outcome: rejected
   rules: [PRP-24]
+- id: review_rule
+  since: v0.3
+  meaning: A proposal of a role for the same problem and the same target whose approach contains the signature of a live review
+    rule of the role, a lesson of an earlier refusal, revert or worse trial, until a person drops the rule.
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [EVO-3]
+- id: gate_failed
+  since: v0.3
+  meaning: 'Proposal `dismissed` reason: the merge gate of a manifest change failed at the applied commit; the code of the failed step is in the record field `gate.code` (EVO-9).'
+  spends_attempt: null
+  retry: null
+  outcome: value
+  rules: [EVO-9]
+- id: diff_size_exceeded
+  since: v0.3
+  meaning: 'Merge gate code (record field `gate.code`): more fields, diff lines or files than the tenant''s gate limits, or a binary change.'
+  spends_attempt: null
+  retry: null
+  outcome: value
+  rules: [EVO-2]
+- id: forbidden_path_modified
+  since: v0.3
+  meaning: 'Merge gate code (record field `gate.code`): a path of the skeleton (ci/, spec/, conformance/, evals/, impl/, .github/), a symbolic link, a protected kind or a field outside the proposable fields.'
+  spends_attempt: null
+  retry: null
+  outcome: value
+  rules: [EVO-2]
+- id: diff_unrenderable
+  since: v0.3
+  meaning: 'Merge gate code (record field `gate.code`): the line editor cannot write the field in place, or the file read back differs by more than the fields of the change.'
+  spends_attempt: null
+  retry: null
+  outcome: value
+  rules: [EVO-2]
+- id: lint_failed
+  since: v0.3
+  meaning: 'Merge gate code (record field `gate.code`): the schema or set checks of the candidate set failed (the apply plan of the core).'
+  spends_attempt: null
+  retry: null
+  outcome: value
+  rules: [EVO-9]
+- id: coupling_broken
+  since: v0.3
+  meaning: 'Merge gate code (record field `gate.code`): a reference near a changed object no longer resolves, or the changed objects have no order from callee to caller.'
+  spends_attempt: null
+  retry: null
+  outcome: value
+  rules: [EVO-1]
+- id: regression_failed
+  since: v0.3
+  meaning: 'Merge gate code (record field `gate.code`): a visible eval case that passed on the base does not pass on the candidate.'
+  spends_attempt: null
+  retry: null
+  outcome: value
+  rules: [EVO-9]
+- id: holdout_regression
+  since: v0.3
+  meaning: 'Merge gate code (record field `gate.code`): the hidden holdout cases pass less often on the candidate.'
+  spends_attempt: null
+  retry: null
+  outcome: value
+  rules: [EVO-8]
+- id: reward_hacking_detected
+  since: v0.3
+  meaning: 'Merge gate code (record field `gate.code`): the visible cases held while the hidden cases fell or missed more facts.'
+  spends_attempt: null
+  retry: null
+  outcome: value
+  rules: [EVO-8]
+- id: shortcut_gaming_detected
+  since: v0.3
+  meaning: 'Merge gate code (record field `gate.code`): the candidate skipped more required diagnostic tools on the hidden cases while getting faster, cheaper or making fewer calls.'
+  spends_attempt: null
+  retry: null
+  outcome: value
+  rules: [EVO-8]
+- id: audit_tampering_detected
+  since: v0.3
+  meaning: 'Merge gate code (record field `gate.code`): a new security finding of the candidate on a hidden case (a canary, a leak, a forbidden side effect or a tool outside its list).'
+  spends_attempt: null
+  retry: null
+  outcome: value
+  rules: [EVO-8]
 - id: match_overflow
   since: v0.1
   meaning: An edge store found more objects for an erase_match than the request keeps (1000 ids in all); its match step fails

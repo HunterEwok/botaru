@@ -20,7 +20,7 @@ FAM_NAMES = {
     'AGG': 'Aggregators', 'APR': 'Approvals', 'ART': 'Files and artifacts', 'AUD': 'Audit',
     'BGR': 'Bot groups', 'BUD': 'Budgets', 'CAP': 'Dependency admission and refusal', 'CNT': 'Continuations',
     'COM': 'Commission', 'DEP': 'Deployment and least privilege', 'DIG': 'Showing proposals to people',
-    'DLV': 'Delivery', 'DSP': 'Task pool and dispatcher', 'FEN': 'Leases', 'GOV': 'Bot governance',
+    'DLV': 'Delivery', 'DSP': 'Task pool and dispatcher', 'EVO': 'Scaffold evolution', 'FEN': 'Leases', 'GOV': 'Bot governance',
     'GW': 'Model gateway', 'HLD': 'Stop', 'IDM': 'Idempotency', 'IDN': 'Identity',
     'ING': 'Incoming external events', 'INJ': 'Injection resistance', 'INS': 'Analysis of own data',
     'KNW': 'Tenant knowledge', 'LCY': 'Tenant lifecycle', 'MAN': 'Manifests', 'MEM': 'Memory',

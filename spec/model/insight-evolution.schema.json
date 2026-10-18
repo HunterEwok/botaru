@@ -1,0 +1,156 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:insight-evolution:1",
+  "title": "Evolution input of an analysis task",
+  "description": "Closed block `evolution` the core puts beside \"My outcomes\" into the input of an analysis task of a role (EVO-3, EVO-5): up to five variants of the scaffold archive with different approaches, the live ones first, and up to twenty live review rules of the role. Only outcome classes, and a review rule without its outcome: no reason codes of people's decisions or refusals, no gate step codes, no case of the hidden set, no text and no names of people (GOV-29, EVO-7). The form is closed at every level.",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "EVO-3",
+    "EVO-5",
+    "EVO-7",
+    "GOV-29"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "variants",
+    "review_rules"
+  ],
+  "properties": {
+    "variants": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "target_kind",
+          "target_name",
+          "fields",
+          "signature",
+          "outcome",
+          "current",
+          "children",
+          "successful_children"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+          },
+          "target_kind": {
+            "enum": [
+              "Schedule",
+              "Tenant",
+              "Catalog"
+            ]
+          },
+          "target_name": {
+            "anyOf": [
+              {
+                "$ref": "urn:botaru:schema:common:1#/$defs/name"
+              },
+              {
+                "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+              }
+            ]
+          },
+          "fields": {
+            "type": "array",
+            "maxItems": 10,
+            "items": {
+              "type": "string",
+              "maxLength": 128,
+              "pattern": "^spec(\\.[a-z_][a-z0-9_]*(\\[[0-9]*\\])?)+$",
+              "description": "Path of a field in the manifest, as the manifest change names it."
+            }
+          },
+          "signature": {
+            "type": "string",
+            "maxLength": 1024,
+            "pattern": "^[A-Za-z]+\\.spec[a-z0-9_.\\[\\]]*:[a-z_]+(,[A-Za-z]+\\.spec[a-z0-9_.\\[\\]]*:[a-z_]+)*$",
+            "description": "Diversity signature: the sorted entries <Kind>.<field>:<direction>, the direction up, down, more_often, less_often, shifted, set or changed (EVO-5)."
+          },
+          "outcome": {
+            "enum": [
+              "pending",
+              "better",
+              "unchanged",
+              "worse",
+              "mixed",
+              "undetermined",
+              "declined",
+              "dismissed",
+              "reverted",
+              "expired",
+              "canceled"
+            ],
+            "description": "Outcome class of the variant: pending, the trial outcome, declined (people refused it), dismissed (the commission or the gate refused it), reverted, expired or canceled; never who refused it or why (EVO-4, GOV-29)."
+          },
+          "current": {
+            "type": "boolean",
+            "description": "The variant made the object as it is applied now."
+          },
+          "children": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000000
+          },
+          "successful_children": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000000
+          }
+        }
+      }
+    },
+    "review_rules": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "target_kind",
+          "target_name",
+          "problem_code",
+          "signature",
+          "count"
+        ],
+        "properties": {
+          "target_kind": {
+            "enum": [
+              "Schedule",
+              "Tenant",
+              "Catalog"
+            ]
+          },
+          "target_name": {
+            "anyOf": [
+              {
+                "$ref": "urn:botaru:schema:common:1#/$defs/name"
+              },
+              {
+                "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+              }
+            ]
+          },
+          "problem_code": {
+            "$ref": "urn:botaru:schema:proposal-body:1#/$defs/problem_code"
+          },
+          "signature": {
+            "type": "string",
+            "maxLength": 1024,
+            "pattern": "^[A-Za-z]+\\.spec[a-z0-9_.\\[\\]]*:[a-z_]+(,[A-Za-z]+\\.spec[a-z0-9_.\\[\\]]*:[a-z_]+)*$",
+            "description": "Diversity signature: the sorted entries <Kind>.<field>:<direction>, the direction up, down, more_often, less_often, shifted, set or changed (EVO-5)."
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000000
+          }
+        }
+      }
+    }
+  }
+}

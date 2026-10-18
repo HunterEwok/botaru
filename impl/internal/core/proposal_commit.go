@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"regexp"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -180,7 +181,8 @@ func (c *Core) realizeByCommit(ctx context.Context, tx pgx.Tx, now time.Time, p 
 	if p.State != "realizing" || b.Change.Kind != "manifest_change" || b.Change.ManifestChange == nil || commit == "" {
 		return false, nil
 	}
-	var patch []any
+	var patch, absent []any
+	partial := false
 	for _, op := range b.Change.ManifestChange.Ops {
 		doc, applied, err := storedDoc(ctx, tx, op.Target.Kind, p.Tenant, op.Target.Name)
 		if err != nil {
@@ -194,9 +196,20 @@ func (c *Core) realizeByCommit(ctx context.Context, tx pgx.Tx, now time.Time, p 
 		if err != nil {
 			return false, err
 		}
+		tg := map[string]any{"kind": op.Target.Kind, "name": op.Target.Name}
 		if old, ok := pathValue(prev, op.Field); ok && scalar(old) {
-			patch = append(patch, map[string]any{"target": map[string]any{"kind": op.Target.Kind, "name": op.Target.Name}, "field": op.Field, "previous": old})
+			patch = append(patch, map[string]any{"target": tg, "field": op.Field, "previous": old})
+		} else if !ok && prev != nil {
+			// The change added the field: its revert takes it out (EVO-10).
+			absent = append(absent, map[string]any{"target": tg, "field": op.Field})
+		} else {
+			// A previous value the reverse edit cannot hold (null, a list, a long text): no
+			// reverse edit at all, so a commit can never revert only part of the change.
+			partial = true
 		}
+	}
+	if partial {
+		patch, absent = nil, nil
 	}
 	r := mmapAny(p.Rec["realization"])
 	if r == nil {
@@ -205,6 +218,9 @@ func (c *Core) realizeByCommit(ctx context.Context, tx pgx.Tx, now time.Time, p 
 	r["commit"], r["link"], r["realized_at"] = commit, link, fmtTime(now)
 	if len(patch) > 0 {
 		r["revert_patch"] = patch
+	}
+	if len(absent) > 0 {
+		r["revert_absent"] = absent
 	}
 	if batch {
 		r["batch"] = commit[:12]
@@ -234,9 +250,20 @@ func scalar(v any) bool {
 // canceled (PRP-20, PRP-22).
 func (c *Core) revertByCommit(ctx context.Context, tx pgx.Tx, now time.Time, p *proposalRow, commit, reason string) error {
 	r := mmapAny(p.Rec["realization"])
-	patch := asList(r["revert_patch"])
-	if p.State != "realized" || len(patch) == 0 {
+	patch, absent := asList(r["revert_patch"]), asList(r["revert_absent"])
+	if p.State != "realized" || len(patch)+len(absent) == 0 {
 		return nil
+	}
+	for _, e := range absent {
+		em := mmapAny(e)
+		tg := mmapAny(em["target"])
+		doc, applied, err := storedDoc(ctx, tx, asString(tg["kind"]), p.Tenant, asString(tg["name"]))
+		if err != nil {
+			return err
+		}
+		if _, ok := pathValue(doc, asString(em["field"])); applied != commit || ok {
+			return nil
+		}
 	}
 	for _, e := range patch {
 		em := mmapAny(e)
@@ -369,7 +396,8 @@ func keysOverlap(a, b []string) bool {
 }
 
 // lockHolders are the proposals of the tenant that hold a lock on one of keys: a manifest
-// change in realizing, or realized while its trial runs (PRP-9).
+// change in realizing, or realized while its trial runs (PRP-9). A lock also holds the direct
+// neighbours of the locked objects in the output coupling graph (EVO-1).
 func lockHolders(ctx context.Context, tx pgx.Tx, tenant, except string, keys []string) ([]any, error) {
 	if len(keys) == 0 {
 		return nil, nil
@@ -380,26 +408,108 @@ func lockHolders(ctx context.Context, tx pgx.Tx, tenant, except string, keys []s
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	var out []any
+	var held []*proposalRow
 	for rows.Next() {
 		q := &proposalRow{}
 		var raw []byte
 		if err := rows.Scan(&q.ID, &raw); err != nil {
+			rows.Close()
 			return nil, err
 		}
 		if err := json.Unmarshal(raw, &q.Rec); err != nil {
+			rows.Close()
 			return nil, err
 		}
-		if keysOverlap(keys, lockKeys(q.body())) {
+		held = append(held, q)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	cg := &couplingOnce{}
+	var out []any
+	for _, q := range held {
+		hit, err := cg.conflict(ctx, tx, tenant, keys, lockKeys(q.body()))
+		if err != nil {
+			return nil, err
+		}
+		if hit {
 			out = append(out, q.ID)
 		}
 	}
-	return out, rows.Err()
+	return out, nil
+}
+
+// evolutionOn says whether the applied Tenant manifest turns on the learning part of the
+// scaffold evolution (insights.evolution.enabled; EVO-1, EVO-3, EVO-5).
+func evolutionOn(ctx context.Context, tx pgx.Tx, tenant string) (bool, error) {
+	doc, _, err := storedDoc(ctx, tx, "Tenant", tenant, tenant)
+	if err != nil || doc == nil {
+		return false, err
+	}
+	v, _ := pathValue(doc, "spec.insights.evolution.enabled")
+	return v == true, nil
+}
+
+// couplingOnce loads the output coupling graph of the applied set at most once per check, and
+// only for a tenant with the evolution on.
+type couplingOnce struct {
+	g       *manifest.Graph
+	checked bool
+	on      bool
+}
+
+// conflict: two manifest changes conflict when they set the same field or one a section of the
+// other (PRP-9), or when an object one of them changes is a direct caller or callee of an object
+// the other changes (EVO-1).
+func (o *couplingOnce) conflict(ctx context.Context, tx pgx.Tx, tenant string, a, b []string) (bool, error) {
+	if len(a) == 0 || len(b) == 0 {
+		return false, nil
+	}
+	if keysOverlap(a, b) {
+		return true, nil
+	}
+	if !o.checked {
+		on, err := evolutionOn(ctx, tx, tenant)
+		if err != nil {
+			return false, err
+		}
+		o.checked, o.on = true, on
+	}
+	if !o.on {
+		return false, nil
+	}
+	if o.g == nil {
+		docs, _, err := loadManifests(ctx, tx)
+		if err != nil {
+			return false, err
+		}
+		o.g = manifest.Coupling(docs)
+	}
+	nb := lockNodes(tenant, b)
+	for _, n := range lockNodes(tenant, a) {
+		for _, m := range o.g.Neighbours(n) {
+			if slices.Contains(nb, m) {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
+// lockNodes are the coupling graph nodes the kind/name/field keys of a change touch.
+func lockNodes(tenant string, keys []string) []manifest.Node {
+	var out []manifest.Node
+	for _, k := range keys {
+		kind, rest, _ := strings.Cut(k, "/")
+		name, field, _ := strings.Cut(rest, "/")
+		out = append(out, manifest.FieldNode(kind, tenant, name, field))
+	}
+	return out
 }
 
 // parkConflicts parks the open proposals of the tenant that change a field the realizing
-// proposal p now locks; their cards go dark (PRP-9).
+// proposal p now locks, or an object coupled to it (EVO-1); their cards go dark (PRP-9).
 func (c *Core) parkConflicts(ctx context.Context, tx pgx.Tx, now time.Time, p *proposalRow) error {
 	keys := lockKeys(p.body())
 	if len(keys) == 0 {
@@ -414,13 +524,21 @@ func (c *Core) parkConflicts(ctx context.Context, tx pgx.Tx, now time.Time, p *p
 	if err != nil {
 		return err
 	}
+	cg := &couplingOnce{}
 	for _, id := range ids {
 		q, err := loadProposal(ctx, tx, id)
 		if err != nil {
 			return err
 		}
 		// A proposal in review finishes its round; the digest parks it if the lock still holds.
-		if !slices.Contains([]string{"screened", "recommended", "presented"}, q.State) || !keysOverlap(keys, lockKeys(q.body())) {
+		if !slices.Contains([]string{"screened", "recommended", "presented"}, q.State) {
+			continue
+		}
+		hit, err := cg.conflict(ctx, tx, p.Tenant, keys, lockKeys(q.body()))
+		if err != nil {
+			return err
+		}
+		if !hit {
 			continue
 		}
 		q.Rec["conflicts_with"] = []any{p.ID}

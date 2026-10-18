@@ -220,6 +220,20 @@ type TenantInsights struct {
 		Metric string   `json:"metric"`
 		Guards []string `json:"guards"`
 	} `json:"extra_guards"`
+	// Gate is the merge gate of manifest changes (EVO-9): when required, a manifest change is
+	// shown and accepted only after a passed gate at the applied commit.
+	Gate *TenantGate `json:"gate"`
+	// Evolution turns on the learning part of the scaffold evolution (EVO-1, EVO-3, EVO-5).
+	Evolution *struct {
+		Enabled bool `json:"enabled"`
+	} `json:"evolution"`
+}
+
+// TenantGate holds the limits of the merge gate.
+type TenantGate struct {
+	Required     bool `json:"required"`
+	MaxFields    int  `json:"max_fields"`
+	MaxDiffLines int  `json:"max_diff_lines"`
 }
 
 // RunEntry is one pipeline of /run: a task type or an action, with its positional arguments.

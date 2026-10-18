@@ -10,12 +10,31 @@ Entries are grouped by area; within a group the newest entry comes first.
 
 ### Skeleton & Contracts
 
+- Safe evolution of the scaffold (D-120, rules EVO-1..EVO-10, additions to v0.3; a tenant without the opt-ins
+  `insights.evolution.enabled` and `insights.gate.required` keeps the behaviour of 0.3.0, except that a revert may
+  also take out a field the change added): the output coupling graph
+  of the manifests and the field lock over direct neighbours (EVO-1); the merge gate of a
+  manifest change with its diff size and protected path limits (EVO-2), hidden holdout cases (EVO-7), the
+  anti-gaming guard (EVO-8) and the opt-in `Tenant.spec.insights.gate` (`required`, `max_fields`,
+  `max_diff_lines`); P2 `proposal.gate` with the capability `proposal.gate:<category>`, the record field `gate`, the
+  proposal transition `recommended`/`presented` → `dismissed(gate_failed)`, the gate before "Lift veto" of the
+  audit sample and the gate codes in `reasons.yaml` (EVO-9); review rules of a role from refused, reverted and worse changes with `rejected(review_rule)` and P2
+  `review_rule.list|drop` (EVO-3); the variant archive with lineage, P2 `variant.list|show` and the analysis block
+  `evolution` (`insight-evolution.schema.json`) without reason codes (EVO-4..EVO-6, GOV-29); the revert in one
+  command, with the realization field `revert_absent` for the fields a change added (EVO-10). The eval check
+  `tools_allowed` takes `tools_required`.
 - The demo catalog and `examples/README.md` give trigger 4401 the monitoring class `disk_free` of
   `spec/model/monitor-map.yaml` instead of `disk_full`, which is an incident class, not a monitoring class: the
   free space problem now raises `alarm.disk.free.low`.
 
 ### Reference Implementation (impl/)
 
+- The scaffold evolution contour (impl/ARCHITECTURE.md "Safe scaffold evolution"): `internal/manifest/coupling.go`,
+  the package `internal/gate` (temporary git worktree, YAML line editor, the steps diff, lint, coupling, regression
+  and holdout, `Patch`, `Revert`, `Checkout`), `internal/evals/holdout.go` (`CheckRewardHacking`), migration
+  `0080_scaffold_evolution` (`scaffold_variants`, `review_rules`), and in farmctl `proposal gate|patch|revert`,
+  `variant list|show|checkout` and `review-rule list|drop`. `botaru-eval -holdout-dir` runs hidden cases from a
+  folder outside the root; `results.jsonl` adds seconds, tool calls, finding kinds and security findings.
 - `botaru-sim`, the farm simulator ([impl/SIM.md](impl/SIM.md)): the eval test bench with the monitor profile on,
   the reference bot `ops-reader`, toolhosts of `web1`, `db1` and `ctd1`, the oneshot executor `pipeline` and the
   monitoring adapter `botaru-zabbix`, whose tools work on a virtual world under the run's directory (machines,
