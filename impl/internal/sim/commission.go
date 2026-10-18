@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -92,9 +93,19 @@ func incidentAndCommission(ctx context.Context, d *Director, sc string) error {
 		return e == nil && reviews >= 2, nil
 	})
 	d.check(sc, "commission_reviewed", err == nil, "%d lens reviews completed", reviews)
-	// The proposal reaches a verdict; a recommended one goes to the deciders on a card.
+	// The proposal reaches a verdict; a recommended one goes to the deciders on a card. A real
+	// model may propose a manifest change, which the gate-required demo shows only after the
+	// merge gate: the director runs it once, as the operator would.
+	gated := false
 	err = d.S.waitFor(ctx, d.Timeout+time.Minute, func() (bool, error) {
-		e := db.QueryRow(ctx, `SELECT state FROM proposals WHERE id = $1`, prop).Scan(&pstate)
+		var kind string
+		e := db.QueryRow(ctx, `SELECT state, kind FROM proposals WHERE id = $1`, prop).Scan(&pstate, &kind)
+		if e == nil && pstate == "recommended" && kind == "manifest_change" && !gated {
+			gated = true
+			if _, _, err := d.S.GateProposal(ctx, prop); err != nil {
+				d.S.log.Addf(KindDirector, "the merge gate of %s: %v", prop, err)
+			}
+		}
 		return e == nil && pstate != "screened" && pstate != "in_review" && pstate != "recommended", nil
 	})
 	d.check(sc, "presented", err == nil && pstate == "presented", "proposal %s", pstate)
@@ -206,7 +217,8 @@ func scaffoldEvolution(ctx context.Context, d *Director, sc string) error {
 		return nil
 	}
 	v := variant()
-	d.check(sc, "proposal_manifest_created", v != nil && v["trial_outcome"] == "pending",
+	d.check(sc, "proposal_manifest_created", v != nil && v["trial_outcome"] == "pending" && v["target_kind"] == "Tenant" &&
+		v["target_name"] == "demo" && v["diversity_signature"] == evolveSignature,
 		"proposal %s %s, variant %v of %v:%v, signature %v, outcome %v", prop, pstate, v["variant_id"], v["target_kind"], v["target_name"],
 		v["diversity_signature"], v["trial_outcome"])
 
@@ -218,7 +230,7 @@ func scaffoldEvolution(ctx context.Context, d *Director, sc string) error {
 	var reviews int
 	_ = db.QueryRow(ctx, `SELECT count(*) FROM tasks WHERE tenant = 'demo' AND type LIKE 'review.%' AND state = 'completed'
 		AND idempotency_key LIKE 'system:review:' || $1 || ':%'`, prop).Scan(&reviews)
-	d.check(sc, "commission_recommended", err == nil && pstate == "recommended", "proposal %s after %d lens reviews", pstate, reviews)
+	d.check(sc, "commission_recommended", err == nil && pstate == "recommended" && reviews >= 2, "proposal %s after %d lens reviews", pstate, reviews)
 	if pstate != "recommended" {
 		return nil
 	}
@@ -237,7 +249,7 @@ func scaffoldEvolution(ctx context.Context, d *Director, sc string) error {
 		steps[st.Name] = st.Status
 		list = append(list, st.Name+" "+st.Status)
 	}
-	for _, n := range []string{"diff", "lint", "coupling"} {
+	for _, n := range []string{"diff", "lint", "coupling", "regression", "holdout"} {
 		checked = checked && steps[n] == gate.Passed
 	}
 	d.check(sc, "gate_passed", rep.Passed() && verdict == "passed" && checked, "verdict %s recorded as %q at %s, proposal %s; %s",
@@ -275,8 +287,12 @@ func scaffoldEvolution(ctx context.Context, d *Director, sc string) error {
 	})
 	var queued string
 	_ = db.QueryRow(ctx, `SELECT coalesce(doc->'spec'->'limits'->>'max_queued', '') FROM manifests WHERE kind = 'Tenant' AND tenant = 'demo' AND name = 'demo'`).Scan(&queued)
-	d.check(sc, "accepted_and_realized", err == nil && pstate == "realized" && queued == fmt.Sprint(EvolveQueued),
-		"%s accepted on the card, trial recorded; commit %s with Botaru-Proposal applied, proposal %s, max_queued %s", who, commit[:12], pstate, queued)
+	card := slices.ContainsFunc(d.S.Cards(), func(c Card) bool { return c.Subject == prop && c.Pressed != "" })
+	msg, _ := d.S.repo.git(ctx, "log", "-1", "--format=%B", commit)
+	trailer := strings.Contains(msg, "Botaru-Proposal: "+prop)
+	d.check(sc, "accepted_and_realized", err == nil && pstate == "realized" && queued == fmt.Sprint(EvolveQueued) && card && trailer,
+		"%s accepted on the card (pressed %v), trial recorded; commit %s (Botaru-Proposal %v) applied, proposal %s, max_queued %s",
+		who, card, commit[:12], trailer, pstate, queued)
 	if pstate != "realized" {
 		return nil
 	}

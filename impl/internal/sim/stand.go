@@ -752,9 +752,6 @@ func (s *Stand) Insights() bool {
 // analysis within an hour of the last one), since a run of the stand plays weeks in minutes:
 // the analyses of the last hour are dated back by that hour.
 func (s *Stand) SetInsights(ctx context.Context, on bool) error {
-	s.mu.Lock()
-	s.insights = on
-	s.mu.Unlock()
 	if on {
 		if _, err := s.Bench.Store().Pool.Exec(ctx, `UPDATE tasks SET created_at = created_at - interval '61 minutes'
 			WHERE tenant = 'demo' AND type = 'ops.insight.v1' AND created_at > now() - interval '61 minutes'`); err != nil {
@@ -766,10 +763,22 @@ func (s *Stand) SetInsights(ctx context.Context, on bool) error {
 		msg = "Resume the analysis schedule of ops-reader"
 	}
 	changed, err := s.repo.setField(ctx, "Schedule", "demo", "ops-insight", "spec.paused", !on, msg)
-	if err != nil || !changed {
+	if err != nil {
 		return err
 	}
-	return s.applyRepo(ctx)
+	if changed {
+		commit, _, err := s.repo.head(ctx)
+		if err != nil {
+			return err
+		}
+		if err := s.applyOrDrop(ctx, commit); err != nil {
+			return err
+		}
+	}
+	s.mu.Lock()
+	s.insights = on
+	s.mu.Unlock()
+	return nil
 }
 
 // Tripped says whether the fuse tripped.

@@ -4,6 +4,7 @@ package sim
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -161,6 +162,9 @@ func number(v any) (float64, bool) {
 		return float64(x), true
 	case int64:
 		return float64(x), true
+	case json.Number:
+		f, err := x.Float64()
+		return f, err == nil
 	case string:
 		var f float64
 		_, err := fmt.Sscan(strings.TrimSpace(x), &f)

@@ -42,6 +42,25 @@ func (s *Stand) applyRepo(ctx context.Context) error {
 	return nil
 }
 
+// applyOrDrop applies the head commit of the farm git and drops that commit when the core
+// refuses it, so a later apply does not carry the change without its Botaru line.
+func (s *Stand) applyOrDrop(ctx context.Context, commit string) error {
+	err := s.applyRepo(ctx)
+	if err == nil {
+		return nil
+	}
+	s.repo.mu.Lock()
+	defer s.repo.mu.Unlock()
+	if head, _, herr := s.repo.head(ctx); herr != nil || head != commit {
+		return err
+	}
+	if _, rerr := s.repo.git(context.WithoutCancel(ctx), "reset", "-q", "--hard", commit+"~1"); rerr != nil {
+		return errors.Join(err, rerr)
+	}
+	s.log.Addf(KindGit, "dropped %s: the core refused it", commit[:12])
+	return err
+}
+
 func firstLine(s string) string {
 	l, _, _ := strings.Cut(s, "\n")
 	return l
@@ -223,7 +242,7 @@ func (s *Stand) Realize(ctx context.Context, id string) (string, error) {
 		return "", err
 	}
 	s.log.Addf(KindGit, "committed the accepted change of %s as %s (Botaru-Proposal)", id, commit[:12])
-	return commit, s.applyRepo(ctx)
+	return commit, s.applyOrDrop(ctx, commit)
 }
 
 // RevertProposal reverts a realized manifest change in one step (EVO-10, PRP-20): the reverse
@@ -270,7 +289,7 @@ func (s *Stand) RevertProposal(ctx context.Context, id, reason string) (*gate.Re
 		return nil, err
 	}
 	s.log.Addf(KindGit, "reverted %s in %s as %s (Botaru-Revert: %s)", id, res.File, res.Commit[:12], reason)
-	return res, s.applyRepo(ctx)
+	return res, s.applyOrDrop(ctx, res.Commit)
 }
 
 // Variants are the variants of the scaffold archive of demo (P2 variant.list, EVO-6).
