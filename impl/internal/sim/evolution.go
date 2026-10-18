@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/HunterEwok/botaru/impl/internal/evals"
 	"github.com/HunterEwok/botaru/impl/internal/gate"
 	"github.com/HunterEwok/botaru/impl/internal/manifest"
 )
@@ -43,11 +44,13 @@ func (s *Stand) applyRepo(ctx context.Context) error {
 }
 
 // applyOrDrop applies the head commit of the farm git and drops that commit when the core
-// refuses it, so a later apply does not carry the change without its Botaru line.
+// refuses it, so a later apply does not carry the change without its Botaru line. After an
+// error of the transport the core may have applied it, so the commit stays.
 func (s *Stand) applyOrDrop(ctx context.Context, commit string) error {
 	err := s.applyRepo(ctx)
-	if err == nil {
-		return nil
+	var refused *evals.RefusedError
+	if err == nil || !errors.As(err, &refused) {
+		return err
 	}
 	s.repo.mu.Lock()
 	defer s.repo.mu.Unlock()

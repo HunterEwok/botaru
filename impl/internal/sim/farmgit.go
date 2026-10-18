@@ -201,9 +201,9 @@ func (r *farmRepo) readSet() ([]map[string]any, error) {
 }
 
 // setField sets a field of one manifest file of the farm folder and commits it with the
-// message; a field that already holds the value commits nothing. It returns whether it
-// committed.
-func (r *farmRepo) setField(ctx context.Context, kind, tenant, name, field string, value any, message string) (bool, error) {
+// message; a field that already holds the value commits nothing. It returns the commit it
+// made, "" for none.
+func (r *farmRepo) setField(ctx context.Context, kind, tenant, name, field string, value any, message string) (string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	md := map[string]any{"name": name}
@@ -214,10 +214,10 @@ func (r *farmRepo) setField(ctx context.Context, kind, tenant, name, field strin
 	path := filepath.Join(r.dir, manifestPath(m))
 	docs, err := manifest.ReadFiles([]string{path})
 	if err != nil {
-		return false, err
+		return "", err
 	}
 	if len(docs) != 1 {
-		return false, fmt.Errorf("%s holds %d manifests", path, len(docs))
+		return "", fmt.Errorf("%s holds %d manifests", path, len(docs))
 	}
 	doc := docs[0].Value
 	cur := doc
@@ -232,18 +232,21 @@ func (r *farmRepo) setField(ctx context.Context, kind, tenant, name, field strin
 	}
 	last := parts[len(parts)-1]
 	if old, ok := cur[last]; ok && fmt.Sprint(old) == fmt.Sprint(value) {
-		return false, nil
+		return "", nil
 	}
 	cur[last] = value
 	if err := writeYAML(path, doc); err != nil {
-		return false, err
+		return "", err
 	}
 	before, _, err := r.head(ctx)
 	if err != nil {
-		return false, err
+		return "", err
 	}
 	after, _, err := r.commitLocked(ctx, message)
-	return err == nil && after != before, err
+	if err != nil || after == before {
+		return "", err
+	}
+	return after, nil
 }
 
 // fieldValue reads a field of a manifest value by its dotted path of map keys.

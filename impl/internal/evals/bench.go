@@ -523,10 +523,18 @@ func (b *Bench) ApplySet(ctx context.Context, ms []map[string]any, commit, messa
 		return err
 	}
 	if !resp.Applied {
-		return fmt.Errorf("the bench set was not applied: %v", resp.Errors)
+		return &RefusedError{fmt.Errorf("the bench set was not applied: %v", resp.Errors)}
 	}
 	return nil
 }
+
+// RefusedError is a P2 call the core answered with a refusal: nothing was done, unlike an error
+// of the transport, after which the call may have taken effect.
+type RefusedError struct{ Err error }
+
+func (e *RefusedError) Error() string { return e.Err.Error() }
+
+func (e *RefusedError) Unwrap() error { return e.Err }
 
 // PlanSet asks the core for the apply plan of a set at a commit and returns its problems, as
 // "<code> <kind> <name> <path>": every schema and set check apply runs, nothing applied.
@@ -839,7 +847,11 @@ func (b *Bench) p2call(ctx context.Context, token, op string, req, out any) erro
 			Reason, Detail string
 		}
 		_ = json.Unmarshal(body, &p)
-		return fmt.Errorf("%s: %d %s %s", op, resp.StatusCode, p.Reason, p.Detail)
+		err := fmt.Errorf("%s: %d %s %s", op, resp.StatusCode, p.Reason, p.Detail)
+		if resp.StatusCode >= 400 && resp.StatusCode < 500 {
+			return &RefusedError{err}
+		}
+		return err
 	}
 	if out != nil {
 		return json.Unmarshal(body, out)

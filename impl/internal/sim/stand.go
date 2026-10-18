@@ -762,15 +762,11 @@ func (s *Stand) SetInsights(ctx context.Context, on bool) error {
 	if on {
 		msg = "Resume the analysis schedule of ops-reader"
 	}
-	changed, err := s.repo.setField(ctx, "Schedule", "demo", "ops-insight", "spec.paused", !on, msg)
+	commit, err := s.repo.setField(ctx, "Schedule", "demo", "ops-insight", "spec.paused", !on, msg)
 	if err != nil {
 		return err
 	}
-	if changed {
-		commit, _, err := s.repo.head(ctx)
-		if err != nil {
-			return err
-		}
+	if commit != "" {
 		if err := s.applyOrDrop(ctx, commit); err != nil {
 			return err
 		}
