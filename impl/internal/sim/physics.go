@@ -87,6 +87,9 @@ func InitFiles(work string, seed int64, now time.Time) error {
 	if err := SaveWorld(work, w); err != nil {
 		return err
 	}
+	if err := initData(work, seed, now); err != nil {
+		return err
+	}
 	return writeChecks(work, w, rand.New(rand.NewPCG(uint64(seed), 1)))
 }
 

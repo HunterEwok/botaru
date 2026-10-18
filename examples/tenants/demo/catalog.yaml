@@ -21,7 +21,7 @@ spec:
       services:
         - {name: ctd-qc, unit: ctd-qc-runner-demo.service, control: [start, stop, restart], via: host, no_card: []}
   monitor_triggers:
-    - {triggerid: "4401", class: disk_full, item: "vfs.fs.size[/data,pfree]"}
+    - {triggerid: "4401", class: disk_free, item: "vfs.fs.size[/data,pfree]"}
     - {triggerid: "4407", class: service_down, item: "net.tcp.service[http]"}
   service_limits: {per_service_hour: 4, per_script_hour: 6, per_tenant_hour: 30}
   resources:

@@ -94,6 +94,10 @@ var (
 	reDisk   = regexp.MustCompile(`(?i)disk|space|full|storage`)
 	reInject = regexp.MustCompile(`(?i)(ai assistant|assistant:|system notice)[^\n]*restart`)
 	reDfData = regexp.MustCompile(`([0-9]+)% /data`)
+	// reUnitDown is a unit state of systemctl that is not running.
+	reUnitDown = regexp.MustCompile(`Active: (inactive|failed)|"state": ?"(inactive|failed)"`)
+	reGeo      = regexp.MustCompile(`(?i)\bgeo\b|bathy|raster|layer|map-areas|dataset`)
+	rePipe     = regexp.MustCompile(`(?i)pipeline|\bruns?\b|ctd|station`)
 )
 
 func dataUsedPct(seen string) int {
@@ -114,6 +118,18 @@ func plan(goal string) []step {
 			{plugin: "logs", tool: "tail", input: map[string]any{"source": "postgresql", "lines": 50}},
 			{plugin: "", tool: "request_action", input: map[string]any{"action": "cleanup_pipeline_tmp", "args": map[string]any{"older_than_days": 7}},
 				when: func(seen string) bool { return dataUsedPct(seen) >= 85 }},
+		}
+	case reGeo.MatchString(g):
+		return []step{
+			{plugin: "geo", tool: "describe", input: map[string]any{"dataset": "bathy-50m"}},
+			{plugin: "geo", tool: "describe_vector", input: map[string]any{"dataset": "map-areas"}},
+		}
+	case rePipe.MatchString(g):
+		return []step{
+			{plugin: "batch", tool: "runs", input: map[string]any{}},
+			{plugin: "batch", tool: "trace", input: map[string]any{"run": "run-2026-09"},
+				when: func(seen string) bool { return strings.Contains(seen, "run-2026-09 failed") }},
+			{plugin: "batch", tool: "trace_summary", input: map[string]any{"stations": "st-05"}},
 		}
 	case reDown.MatchString(g):
 		return []step{
@@ -206,7 +222,15 @@ func (b *Brain) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	var content []map[string]any
 	stop := "end_turn"
-	if next := b.next(goal, seen.String(), names, offered, called); next != nil {
+	if call, ans, ok := governance(system, goal, seen.String(), names, offered, called); ok {
+		if call != nil {
+			call["id"] = fmt.Sprintf("toolu_sim%06d", n)
+			content = []map[string]any{{"type": "text", "text": "Let me read the series."}, call}
+			stop = "tool_use"
+		} else {
+			content = []map[string]any{{"type": "text", "text": ans}}
+		}
+	} else if next := b.next(goal, seen.String(), names, offered, called); next != nil {
 		content = []map[string]any{{"type": "text", "text": "Let me look at that."}, next}
 		next["id"] = fmt.Sprintf("toolu_sim%06d", n)
 		stop = "tool_use"
@@ -258,9 +282,9 @@ var reSchema = regexp.MustCompile(`(?s)matches this JSON Schema, and nothing els
 // answer is the final answer: a JSON object of the result schema, or plain text without one.
 func answer(system, goal, seen string) string {
 	f := findings(seen)
-	summary := "I looked at the logs and the state of the services. " + strings.Join(f.lines, " ")
+	summary := "From what the tools show: " + strings.Join(f.lines, " ")
 	if len(f.lines) == 0 {
-		summary = "I looked at the logs and the checks and found nothing unusual."
+		summary = "I looked at what the tools show and found nothing unusual."
 	}
 	m := reSchema.FindStringSubmatch(system)
 	if m == nil {
@@ -329,7 +353,7 @@ func findings(seen string) found {
 	case strings.Contains(seen, "approval_required") || strings.Contains(seen, "pending"):
 		f.lines = append(f.lines, "The action needs a person's approval; I asked for it.")
 		f.cause, f.needsYou = true, true
-	case strings.Contains(seen, "inactive") || strings.Contains(seen, "failed"):
+	case reUnitDown.MatchString(seen):
 		f.lines = append(f.lines, "nginx.service on web1 is not running.")
 		f.cause = true
 	}
@@ -338,6 +362,16 @@ func findings(seen string) found {
 		if f.diskUsed >= 85 {
 			f.cause = true
 		}
+	}
+	if strings.Contains(seen, "st-05 failed") {
+		f.lines = append(f.lines, "Run run-2026-09 stopped at the QC stage: station st-05 has a salinity spike above 40 psu at 31 m.")
+		f.cause = true
+	}
+	if strings.Contains(seen, "GTiff") {
+		f.lines = append(f.lines, "bathy-50m is a GTiff raster of 4000 by 3000 cells in EPSG:3857 with depths down to 312.4 m.")
+	}
+	if strings.Contains(seen, `"featureCount"`) {
+		f.lines = append(f.lines, "map-areas is a polygon layer of 37 areas with the fields name, area_km2 and note.")
 	}
 	if strings.Contains(seen, "No space left on device") {
 		f.lines = append(f.lines, "PostgreSQL reports \"No space left on device\".")

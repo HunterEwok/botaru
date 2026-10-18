@@ -91,3 +91,11 @@ func (b *Bench) Press(from, chat string, messageID int64, data string) error {
 	b.bot.press(uid, cid, messageID, direct, data)
 	return nil
 }
+
+// Apply applies the bench set again: the Edit hook of the config runs anew, so a stand can
+// change its manifests while it runs. It must not run alongside eval cases, which read the
+// bench's profiles and result schemas.
+func (b *Bench) Apply(ctx context.Context) error { return b.apply(ctx) }
+
+// ResultSchema is the result schema of a task type of the bench set, nil without one.
+func (b *Bench) ResultSchema(taskType string) map[string]any { return b.resultSchemas[taskType] }
