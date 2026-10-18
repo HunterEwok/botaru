@@ -93,7 +93,7 @@ func (b *Bench) Press(from, chat string, messageID int64, data string) error {
 }
 
 // Apply applies the bench set again: the Edit hook of the config runs anew, so a stand can
-// change its manifests while it runs. It must not run alongside eval cases, which read the
+// change its manifests while it runs (with the Commit hook, as a new commit of its git). It must not run alongside eval cases, which read the
 // bench's profiles and result schemas.
 func (b *Bench) Apply(ctx context.Context) error { return b.apply(ctx) }
 

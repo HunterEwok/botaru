@@ -8,6 +8,9 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/HunterEwok/botaru/impl/internal/gate"
+	"github.com/HunterEwok/botaru/impl/internal/jcs"
 )
 
 // incidentAndCommission plays the two governance loops of the farm: an incident with the farm
@@ -15,17 +18,8 @@ import (
 func incidentAndCommission(ctx context.Context, d *Director, sc string) error {
 	start := time.Now().UTC()
 	db := d.S.Bench.Store().Pool
-	// The analysis cites the farm's own series, so there is at least one investigation to cite.
-	var investigations int
-	_ = db.QueryRow(ctx, `SELECT count(*) FROM tasks WHERE tenant = 'demo' AND type = 'ops.investigate.v1' AND state = 'completed'`).Scan(&investigations)
-	if investigations == 0 {
-		key, err := d.S.Say("bob", "bob-dm", "/logs Are there errors in the nginx error log of the last hour?")
-		if err != nil {
-			return err
-		}
-		if _, _, _, err := d.taskEnd(ctx, key); err != nil {
-			return err
-		}
+	if err := d.ensureInvestigation(ctx); err != nil {
+		return err
 	}
 
 	// 1. The incident.
@@ -118,6 +112,22 @@ func incidentAndCommission(ctx context.Context, d *Director, sc string) error {
 	return nil
 }
 
+// ensureInvestigation makes sure there is a completed investigation of ops-reader: the analysis
+// cites the farm's own series.
+func (d *Director) ensureInvestigation(ctx context.Context) error {
+	var investigations int
+	_ = d.S.Bench.Store().Pool.QueryRow(ctx, `SELECT count(*) FROM tasks WHERE tenant = 'demo' AND type = 'ops.investigate.v1' AND state = 'completed'`).Scan(&investigations)
+	if investigations > 0 {
+		return nil
+	}
+	key, err := d.S.Say("bob", "bob-dm", "/logs Are there errors in the nginx error log of the last hour?")
+	if err != nil {
+		return err
+	}
+	_, _, _, err = d.taskEnd(ctx, key)
+	return err
+}
+
 // labRequests are the everyday asks of the lab to the data bots: a raster and a layer to
 // geo-reader, a failed pipeline run to pipeline-reader; and the site checks the data-job
 // worker ran on its schedule.
@@ -144,4 +154,182 @@ func labRequests(ctx context.Context, d *Director, sc string) error {
 	})
 	d.check(sc, "job_checks_ran", err == nil, "%d site check runs of data-job completed", checks)
 	return nil
+}
+
+// evolveSignature is the approach of the mock's manifest change in the archive (EVO-5).
+const evolveSignature = "Tenant.spec.limits.max_queued:down"
+
+// scaffoldEvolution plays the safe scaffold evolution (D-120): ops-reader's analysis proposes a
+// manifest change, the commission recommends it, the merge gate passes it on the farm git, bob
+// accepts it on a card, the stand applies the patch from the farm git, then reverts it in one
+// step for harm; the archive keeps the outcome and a review rule refuses the same approach.
+func scaffoldEvolution(ctx context.Context, d *Director, sc string) error {
+	start := time.Now().UTC()
+	db := d.S.Bench.Store().Pool
+	if err := d.ensureInvestigation(ctx); err != nil {
+		return err
+	}
+	d.S.Brain.SetEvolve(true)
+	defer d.S.Brain.SetEvolve(false)
+	if err := d.S.SetInsights(ctx, true); err != nil {
+		return fmt.Errorf("starting the analysis schedule: %w", err)
+	}
+	defer func() {
+		if err := d.S.SetInsights(context.WithoutCancel(ctx), false); err != nil {
+			d.S.log.Addf(KindDirector, "pausing the analysis schedule: %v", err)
+		}
+	}()
+	d.S.log.Addf(KindDirector, "the analysis schedule of ops-reader runs, in the evolution mode of the mock model")
+
+	// 1. The manifest change and its variant.
+	var prop, pstate string
+	err := d.S.waitFor(ctx, d.Timeout+time.Minute, func() (bool, error) {
+		e := db.QueryRow(ctx, `SELECT id, state FROM proposals WHERE tenant = 'demo' AND kind = 'manifest_change' AND created_at >= $1
+			ORDER BY created_at LIMIT 1`, start).Scan(&prop, &pstate)
+		return e == nil, nil
+	})
+	if err != nil {
+		d.check(sc, "proposal_manifest_created", false, "no manifest change: %v", err)
+		return nil
+	}
+	// The gate runs at the applied commit: the schedule pauses first, so no apply comes between.
+	if err := d.S.SetInsights(ctx, false); err != nil {
+		return fmt.Errorf("pausing the analysis schedule: %w", err)
+	}
+	variant := func() map[string]any {
+		vs, _ := d.S.Variants(ctx)
+		for _, v := range vs {
+			if v["proposal_id"] == prop {
+				return v
+			}
+		}
+		return nil
+	}
+	v := variant()
+	d.check(sc, "proposal_manifest_created", v != nil && v["trial_outcome"] == "pending",
+		"proposal %s %s, variant %v of %v:%v, signature %v, outcome %v", prop, pstate, v["variant_id"], v["target_kind"], v["target_name"],
+		v["diversity_signature"], v["trial_outcome"])
+
+	// 2. The commission.
+	err = d.S.waitFor(ctx, d.Timeout+time.Minute, func() (bool, error) {
+		e := db.QueryRow(ctx, `SELECT state FROM proposals WHERE id = $1`, prop).Scan(&pstate)
+		return e == nil && pstate != "screened" && pstate != "in_review", nil
+	})
+	var reviews int
+	_ = db.QueryRow(ctx, `SELECT count(*) FROM tasks WHERE tenant = 'demo' AND type LIKE 'review.%' AND state = 'completed'
+		AND idempotency_key LIKE 'system:review:' || $1 || ':%'`, prop).Scan(&reviews)
+	d.check(sc, "commission_recommended", err == nil && pstate == "recommended", "proposal %s after %d lens reviews", pstate, reviews)
+	if pstate != "recommended" {
+		return nil
+	}
+
+	// 3. The merge gate on the farm git.
+	rep, after, err := d.S.GateProposal(ctx, prop)
+	if err != nil {
+		d.check(sc, "gate_passed", false, "%v", err)
+		return nil
+	}
+	var verdict string
+	_ = db.QueryRow(ctx, `SELECT coalesce(record->'gate'->>'state', '') FROM proposals WHERE id = $1`, prop).Scan(&verdict)
+	steps, checked := map[string]string{}, true
+	var list []string
+	for _, st := range rep.Steps {
+		steps[st.Name] = st.Status
+		list = append(list, st.Name+" "+st.Status)
+	}
+	for _, n := range []string{"diff", "lint", "coupling"} {
+		checked = checked && steps[n] == gate.Passed
+	}
+	d.check(sc, "gate_passed", rep.Passed() && verdict == "passed" && checked, "verdict %s recorded as %q at %s, proposal %s; %s",
+		rep.Verdict, verdict, rep.BaseSHA[:12], after, strings.Join(list, ", "))
+	if !rep.Passed() {
+		return nil
+	}
+
+	// 4. bob accepts on the card; the stand applies the patch from the farm git.
+	err = d.S.waitFor(ctx, d.Timeout+time.Minute, func() (bool, error) {
+		e := db.QueryRow(ctx, `SELECT state FROM proposals WHERE id = $1`, prop).Scan(&pstate)
+		return e == nil && pstate != "recommended" && pstate != "presented", nil
+	})
+	var trial bool
+	var decidedBy string
+	_ = db.QueryRow(ctx, `SELECT record->'trial' IS NOT NULL AND record->'trial' <> 'null', coalesce(record->'decision'->>'decided_by', '')
+		FROM proposals WHERE id = $1`, prop).Scan(&trial, &decidedBy)
+	who := d.S.personName(decidedBy)
+	if err != nil || pstate != "realizing" || !trial || who != Decider {
+		d.check(sc, "accepted_and_realized", false, "proposal %s, trial %v, decided by %q (needs a person's decision; policy %s)", pstate, trial, who, d.Approve)
+		return nil
+	}
+	before, err := tenantHash(ctx, d)
+	if err != nil {
+		return err
+	}
+	commit, err := d.S.Realize(ctx, prop)
+	if err != nil {
+		d.check(sc, "accepted_and_realized", false, "applying the accepted change: %v", err)
+		return nil
+	}
+	err = d.S.waitFor(ctx, d.Timeout, func() (bool, error) {
+		e := db.QueryRow(ctx, `SELECT state FROM proposals WHERE id = $1`, prop).Scan(&pstate)
+		return e == nil && pstate != "realizing", nil
+	})
+	var queued string
+	_ = db.QueryRow(ctx, `SELECT coalesce(doc->'spec'->'limits'->>'max_queued', '') FROM manifests WHERE kind = 'Tenant' AND tenant = 'demo' AND name = 'demo'`).Scan(&queued)
+	d.check(sc, "accepted_and_realized", err == nil && pstate == "realized" && queued == fmt.Sprint(EvolveQueued),
+		"%s accepted on the card, trial recorded; commit %s with Botaru-Proposal applied, proposal %s, max_queued %s", who, commit[:12], pstate, queued)
+	if pstate != "realized" {
+		return nil
+	}
+
+	// 5. The revert in one step, the archive and the review rule.
+	res, err := d.S.RevertProposal(ctx, prop, "harm_observed")
+	if err != nil {
+		d.check(sc, "reverted_and_rule_recorded", false, "the revert: %v", err)
+		return nil
+	}
+	err = d.S.waitFor(ctx, d.Timeout, func() (bool, error) {
+		e := db.QueryRow(ctx, `SELECT state FROM proposals WHERE id = $1`, prop).Scan(&pstate)
+		return e == nil && pstate != "realized", nil
+	})
+	back, herr := tenantHash(ctx, d)
+	v = variant()
+	var rule map[string]any
+	rules, _ := d.S.ReviewRules(ctx)
+	for _, r := range rules {
+		if r["role"] == "ops-reader" && r["target_kind"] == "Tenant" && r["target_name"] == "demo" && r["signature"] == evolveSignature {
+			rule = r
+		}
+	}
+	// The same approach again: the analysis runs once more and the core refuses it.
+	mark, merr := d.S.Bench.StoreNow(ctx)
+	var refused int
+	if merr == nil && rule != nil {
+		if err := d.S.SetInsights(ctx, true); err != nil {
+			return fmt.Errorf("starting the analysis schedule: %w", err)
+		}
+		_ = d.S.waitFor(ctx, d.Timeout+time.Minute, func() (bool, error) {
+			e := db.QueryRow(ctx, `SELECT count(*) FROM events WHERE tenant = 'demo' AND type = 'proposal.rejected.v1'
+				AND data->>'reason' = 'review_rule' AND time >= $1`, mark).Scan(&refused)
+			return e == nil && refused > 0, nil
+		})
+		if err := d.S.SetInsights(ctx, false); err != nil {
+			return fmt.Errorf("pausing the analysis schedule: %w", err)
+		}
+	}
+	var again int
+	_ = db.QueryRow(ctx, `SELECT count(*) FROM proposals WHERE tenant = 'demo' AND kind = 'manifest_change' AND created_at >= $1`, mark).Scan(&again)
+	d.check(sc, "reverted_and_rule_recorded", err == nil && pstate == "reverted" && herr == nil && back == before && v != nil &&
+		v["trial_outcome"] == "reverted" && rule != nil && refused > 0 && again == 0,
+		"commit %s with Botaru-Revert, proposal %s; Tenant demo hash %s back to %s; variant outcome %v; review rule %v %v; resubmissions refused with rejected(review_rule): %d, new proposals %d",
+		res.Commit[:12], pstate, clip(back, 23), clip(before, 23), v["trial_outcome"], rule["rule"], rule["signature"], refused, again)
+	return nil
+}
+
+// tenantHash is the JCS hash of the applied Tenant manifest of demo.
+func tenantHash(ctx context.Context, d *Director) (string, error) {
+	var doc map[string]any
+	if err := d.S.Bench.Store().Pool.QueryRow(ctx, `SELECT doc FROM manifests WHERE kind = 'Tenant' AND tenant = 'demo' AND name = 'demo'`).Scan(&doc); err != nil {
+		return "", err
+	}
+	return jcs.Hash(doc)
 }

@@ -29,6 +29,16 @@ Entries are grouped by area; within a group the newest entry comes first.
 
 ### Reference Implementation (impl/)
 
+- `botaru-sim` runs the scaffold evolution (D-120, [impl/SIM.md](impl/SIM.md)): the stand keeps its set in a
+  farm git under `<work>/repo` and applies every change as a commit of it, `demo` turns on
+  `insights.evolution` and `insights.gate.required`, `bob` holds `proposal.gate:reliability`, and hidden cases of
+  the stand's own gate suite lie under `<work>/holdout`. The seventh scenario `scaffold-evolution`: the mock
+  model's analysis proposes to lower `spec.limits.max_queued` of `demo`, the commission recommends it, the merge
+  gate passes it on the farm git, `bob` accepts it, the patch with `Botaru-Proposal` is applied, then reverted in
+  one step for harm; the variant gets the outcome `reverted` and a review rule refuses the same approach with
+  `rejected(review_rule)`. Console commands `gate`, `realize`, `revert`, `variants`, `rules` and `evolve`; the
+  event kind `FARM GIT`. The eval bench gains `BenchConfig.Commit`, `PersonOperators`, `P2As`, `ApplySet` and
+  `PlanSet`.
 - The scaffold evolution contour (impl/ARCHITECTURE.md "Safe scaffold evolution"): `internal/manifest/coupling.go`,
   the package `internal/gate` (temporary git worktree, YAML line editor, the steps diff, lint, coupling, regression
   and holdout, `Patch`, `Revert`, `Checkout`), `internal/evals/holdout.go` (`CheckRewardHacking`), migration

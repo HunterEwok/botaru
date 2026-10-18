@@ -25,6 +25,7 @@ const (
 	KindDirector = "DIRECTOR"
 	KindCheck    = "CHECK"
 	KindFuse     = "FUSE"
+	KindGit      = "FARM GIT"
 )
 
 // Line is one event of a run: printed to the console and written as a JSON line to

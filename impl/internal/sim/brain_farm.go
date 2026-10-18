@@ -21,8 +21,8 @@ var (
 )
 
 // governance is the next step of a governance task, or ok false for any other task. A step is
-// a tool call (call set) or the final answer.
-func governance(system, goal, seen string, names []string, offered map[string]map[string]any, called map[string]int) (call map[string]any, answer string, ok bool) {
+// a tool call (call set) or the final answer; evolve makes an analysis propose a manifest change.
+func governance(system, goal, seen string, names []string, offered map[string]map[string]any, called map[string]int, evolve bool) (call map[string]any, answer string, ok bool) {
 	switch {
 	case reReviewLens.MatchString(system):
 		return nil, reviewAnswer(reReviewLens.FindStringSubmatch(system)[1]), true
@@ -33,7 +33,7 @@ func governance(system, goal, seen string, names []string, offered map[string]ma
 				return map[string]any{"type": "tool_use", "name": n, "input": in}, "", true
 			}
 		}
-		return nil, insightAnswer(seen), true
+		return nil, insightAnswer(seen, evolve), true
 	case reIncident.MatchString(system):
 		return nil, managerAnswer(goal), true
 	}
@@ -86,9 +86,15 @@ func insightQuery(schema map[string]any) map[string]any {
 	}
 }
 
+// EvolveQueued is the queue limit of demo the analysis proposes in the evolution mode: lower than
+// the example's 5000, so the change takes the safe direction a Tenant limit may take (PRP-3).
+const EvolveQueued = 4000
+
 // insightAnswer proposes to look at the investigations, citing the value it read; without a
-// value it found nothing.
-func insightAnswer(seen string) string {
+// value it found nothing. In the evolution mode it proposes to lower the queue limit of demo
+// instead (a manifest change of PRP-3 with the attempts of the investigations as its trial
+// metric), so the change goes through the merge gate, the archive and the revert (D-120).
+func insightAnswer(seen string, evolve bool) string {
 	var res struct {
 		Series string `json:"series"`
 		Window string `json:"window"`
@@ -115,6 +121,13 @@ func insightAnswer(seen string) string {
 		"evidence": []any{map[string]any{"kind": "observation", "series": res.Series, "subject": g.Subject, "window": res.Window,
 			"rollup": res.Rollup, "value": g.Points[len(g.Points)-1].Value}},
 		"change": map[string]any{"kind": "none"},
+	}
+	if evolve {
+		body["change"] = map[string]any{"kind": "manifest_change", "manifest_change": map[string]any{"ops": []any{
+			map[string]any{"op": "set", "target": map[string]any{"kind": "Tenant", "name": "demo"}, "field": "spec.limits.max_queued", "value": EvolveQueued}}}}
+		body["benefit"] = map[string]any{"metric": "farm.task.attempts", "subject": g.Subject, "direction": "down", "expected_change_pct": 10, "confidence": "low"}
+		body["cost"] = map[string]any{"one_time_eur": 0, "monthly_eur": 0, "effort": "minutes"}
+		body["risk"] = map[string]any{"level": "low"}
 	}
 	raw, _ := json.Marshal(map[string]any{"proposals": []any{body}})
 	return string(raw)
