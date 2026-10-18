@@ -385,7 +385,8 @@ func continuous(ctx context.Context, d *sim.Director, o options, stdin io.Reader
 	defer cancel()
 	lines := make(chan string)
 	if o.interactive {
-		fmt.Fprintln(stdout, "commands: approve N | reject N | details N | say PERSON TEXT | fault NAME | heal | insights on|off | cards | status | quit")
+		fmt.Fprintln(stdout, "commands: approve N | reject N | details N | say PERSON TEXT | fault NAME | heal | insights on|off | evolve on|off | "+
+			"gate ID | realize ID | revert ID [REASON] | variants | rules | cards | status | quit")
 		go func() {
 			sc := bufio.NewScanner(stdin)
 			for sc.Scan() {
@@ -492,6 +493,68 @@ func command(ctx context.Context, d *sim.Director, line string, out io.Writer) b
 			break
 		}
 		err = d.S.SetInsights(ctx, f[1] == "on")
+	case "evolve":
+		if len(f) < 2 || f[1] != "on" && f[1] != "off" {
+			err = errors.New("evolve on|off")
+			break
+		}
+		d.S.Brain.SetEvolve(f[1] == "on")
+		fmt.Fprintf(out, "the mock model's analyses propose %s\n", map[bool]string{true: "a manifest change", false: "changes of the kind none"}[f[1] == "on"])
+	case "gate":
+		if len(f) != 2 {
+			err = errors.New("gate PROPOSAL")
+			break
+		}
+		rep, state, gerr := d.S.GateProposal(ctx, f[1])
+		if rep != nil {
+			fmt.Fprintf(out, "gate %s: %s %s; the proposal is %s\n", f[1], rep.Verdict, rep.Code, state)
+		}
+		err = gerr
+	case "realize":
+		if len(f) != 2 {
+			err = errors.New("realize PROPOSAL")
+			break
+		}
+		commit, rerr := d.S.Realize(ctx, f[1])
+		if rerr == nil {
+			fmt.Fprintf(out, "applied %s at %s\n", f[1], commit)
+		}
+		err = rerr
+	case "revert":
+		if len(f) != 2 && len(f) != 3 {
+			err = errors.New("revert PROPOSAL [harm_observed|superseded|other]")
+			break
+		}
+		reason := "harm_observed"
+		if len(f) == 3 {
+			reason = f[2]
+		}
+		res, rerr := d.S.RevertProposal(ctx, f[1], reason)
+		if rerr == nil {
+			fmt.Fprintf(out, "reverted %s in %s at %s\n", f[1], res.File, res.Commit)
+		}
+		err = rerr
+	case "variants":
+		vs, verr := d.S.Variants(ctx)
+		for _, v := range vs {
+			fmt.Fprintf(out, "%s%v %v:%v %v outcome %v live %v children %v (better %v) proposal %v\n", strings.Repeat("  ", depth(v["depth"])),
+				v["variant_id"], v["target_kind"], v["target_name"], v["diversity_signature"], v["trial_outcome"], v["live"],
+				v["children_count"], v["successful_children_count"], v["proposal_id"])
+		}
+		if verr == nil && len(vs) == 0 {
+			fmt.Fprintln(out, "no variants")
+		}
+		err = verr
+	case "rules":
+		rs, rerr := d.S.ReviewRules(ctx)
+		for _, r := range rs {
+			fmt.Fprintf(out, "rule %v of %v: %v:%v problem %v approach %v, %v (%v), %v time(s)\n", r["rule"], r["role"], r["target_kind"],
+				r["target_name"], r["problem_code"], r["signature"], r["outcome"], r["reason_code"], r["count"])
+		}
+		if rerr == nil && len(rs) == 0 {
+			fmt.Fprintln(out, "no live review rules")
+		}
+		err = rerr
 	case "cards":
 		for _, c := range d.S.Cards() {
 			fmt.Fprintf(out, "card %d in %s, pressed %q: %s\n", c.No, c.Chat, c.Pressed, strings.ReplaceAll(c.Text, "\n", " "))
@@ -518,6 +581,12 @@ func command(ctx context.Context, d *sim.Director, line string, out io.Writer) b
 		fmt.Fprintln(out, "error:", err)
 	}
 	return false
+}
+
+// depth is the depth of a variant in its lineage, from variant.list.
+func depth(v any) int {
+	n, _ := v.(float64)
+	return int(n)
 }
 
 // providerKey reads the provider key from the key file or the environment.

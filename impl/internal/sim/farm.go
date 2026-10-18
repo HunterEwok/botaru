@@ -31,13 +31,14 @@ var farmFiles = []string{
 }
 
 // farmSeed gives the people of the seed what the farm bots need: alice and bob may ask the data
-// bots, and bob decides the proposals of the commission (group deciders).
+// bots, and bob decides the proposals of the commission and runs the merge gate of a manifest
+// change (group deciders).
 func farmSeed(sd *evals.Seed) {
 	if g := sd.Groups["staff"]; g != nil {
 		caps, _ := g["caps"].([]any)
 		g["caps"] = append(caps, "task:geo.describe.v1", "task:pipeline.status.v1")
 	}
-	sd.Groups["deciders"] = map[string]any{"caps": []any{"proposal.decide:reliability"}, "data_up_to": "internal"}
+	sd.Groups["deciders"] = map[string]any{"caps": []any{"proposal.decide:reliability", "proposal.gate:reliability"}, "data_up_to": "internal"}
 	for i := range sd.People {
 		if sd.People[i].Name == "bob" && !slices.Contains(sd.People[i].Groups, "deciders") {
 			sd.People[i].Groups = append(sd.People[i].Groups, "deciders")
@@ -49,9 +50,18 @@ func farmSeed(sd *evals.Seed) {
 // schedules to the bench set. The incident classes open and resolve at once rather than after
 // minutes, so a scenario sees the whole incident; insights says whether the analysis schedule
 // runs (it is paused until a scenario needs it, since every run of it costs model calls).
+// The tenant demo learns from its scaffold archive and shows a manifest change only after a
+// passed merge gate (D-120: insights.evolution, insights.gate), and ops-reader may analyse more
+// often than the weekly limit of its example, since a run of the stand plays weeks in minutes.
 func farmManifests(ms, farm []map[string]any, insights bool) []map[string]any {
 	ms = append(ms, farm...)
 	for _, m := range ms {
+		if m["kind"] == "Role" && mapOf(m["metadata"])["name"] == "ops-reader" {
+			if in := mapOf(mapOf(m["spec"])["insight"]); in != nil {
+				in["max_runs"] = map[string]any{"per": "week", "count": 50}
+				in["max_per_week"] = 10
+			}
+		}
 		if m["kind"] == "Tenant" && mapOf(m["metadata"])["name"] == "demo" {
 			sp := mapOf(m["spec"])
 			sp["farm_manager"] = map[string]any{"enabled": true}
@@ -62,6 +72,8 @@ func farmManifests(ms, farm []map[string]any, insights bool) []map[string]any {
 			}
 			ins["present_to"] = "group:deciders"
 			ins["digest"] = map[string]any{"schedule": "* * * * *", "max_items": 5}
+			ins["evolution"] = map[string]any{"enabled": true}
+			ins["gate"] = map[string]any{"required": true}
 		}
 	}
 	group := func(name string, caps ...any) map[string]any {

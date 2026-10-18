@@ -21,13 +21,22 @@ import (
 // so any number of bots and attempts can share it. It reads the tools the way an operator
 // would (checks, logs, the unit state, the disk) and asks for a restart or a cleanup when the
 // tool output shows the need. It is gullible on purpose: a log line that tells the assistant
-// to restart a service makes it try, so the guards of the core are exercised (INJ-15).
+// to restart a service makes it try, so the guards of the core are exercised (INJ-15). The one
+// switch it has is the evolution mode the director turns on: then an analysis proposes a
+// manifest change instead of a change of the kind none (D-120).
 type Brain struct {
-	calls atomic.Int64
+	calls  atomic.Int64
+	evolve atomic.Bool
 }
 
 // Calls is the number of answered calls.
 func (b *Brain) Calls() int64 { return b.calls.Load() }
+
+// SetEvolve turns the evolution mode of the analyses on or off.
+func (b *Brain) SetEvolve(on bool) { b.evolve.Store(on) }
+
+// Evolve says whether the analyses propose a manifest change.
+func (b *Brain) Evolve() bool { return b.evolve.Load() }
 
 type brainRequest struct {
 	Model    string          `json:"model"`
@@ -222,7 +231,7 @@ func (b *Brain) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	var content []map[string]any
 	stop := "end_turn"
-	if call, ans, ok := governance(system, goal, seen.String(), names, offered, called); ok {
+	if call, ans, ok := governance(system, goal, seen.String(), names, offered, called, b.Evolve()); ok {
 		if call != nil {
 			call["id"] = fmt.Sprintf("toolu_sim%06d", n)
 			content = []map[string]any{{"type": "text", "text": "Let me read the series."}, call}

@@ -98,6 +98,13 @@ type BenchConfig struct {
 	// spend cap) without calling the provider: the simulator's money fuse stops the calls of the
 	// attempts that run on until their next heartbeat.
 	ModelGate func() bool
+	// Commit, when set, keeps each applied set in the stand's own git: it gets the set the bench
+	// is about to apply and returns the commit and its message to apply it with, and the set read
+	// back from that commit. Without it each apply names a commit of its own that no git holds.
+	Commit func(ms []map[string]any) (commit, message string, set []map[string]any, err error)
+	// PersonOperators are seed people of demo who get a P2 credential of their own, for P2As:
+	// a stand calls the operations that need a person's rights (proposal.gate, variant.list).
+	PersonOperators []string
 }
 
 // HostEnv is what the bench made for the toolhosts of a stand: the monitoring API address and
@@ -124,20 +131,22 @@ var benchRoles = map[string][]string{
 // API server, the fake monitoring API, the Telegram channel, one agent per role and the
 // toolhosts of the demo machines.
 type Bench struct {
-	cfg     BenchConfig
-	st      *store.Store
-	c       *core.Core
-	sp      *spec.Spec
-	seed    *Seed
-	p1, p2  string
-	ops     map[string]string
-	bot     *fakeBotAPI
-	rec     *recorder
-	mock    *mockModel
-	cancel  context.CancelFunc
-	done    sync.WaitGroup
-	closers []func()
-	people  map[string]string // seed name -> principal id
+	cfg    BenchConfig
+	st     *store.Store
+	c      *core.Core
+	sp     *spec.Spec
+	seed   *Seed
+	p1, p2 string
+	ops    map[string]string
+	// personOps are the P2 tokens of PersonOperators by seed name.
+	personOps map[string]string
+	bot       *fakeBotAPI
+	rec       *recorder
+	mock      *mockModel
+	cancel    context.CancelFunc
+	done      sync.WaitGroup
+	closers   []func()
+	people    map[string]string // seed name -> principal id
 	// capHolds are the holds stopSpend set.
 	capHolds map[string]string // tenant -> hold id
 	// spendCap is the store spend total at which a running case stops (0: none).
@@ -183,7 +192,7 @@ func StartBench(ctx context.Context, cfg BenchConfig) (_ *Bench, err error) {
 	if cfg.Logger == nil {
 		cfg.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
-	b := &Bench{cfg: cfg, ops: map[string]string{}, bot: &fakeBotAPI{observe: cfg.OnBotAPI}, people: map[string]string{}, ungranted: map[string][]string{}, ungrantedWhy: map[string]string{}, pendingGroups: map[string][]string{}, Profiles: map[string]string{},
+	b := &Bench{cfg: cfg, ops: map[string]string{}, personOps: map[string]string{}, bot: &fakeBotAPI{observe: cfg.OnBotAPI}, people: map[string]string{}, ungranted: map[string][]string{}, ungrantedWhy: map[string]string{}, pendingGroups: map[string][]string{}, Profiles: map[string]string{},
 		roles: map[string][]string{}}
 	for r, files := range benchRoles {
 		b.roles[r] = files
@@ -262,6 +271,15 @@ func StartBench(ctx context.Context, cfg BenchConfig) (_ *Bench, err error) {
 		tok := "op-" + ids.Secret(16)
 		b.ops[t] = tok
 		creds = append(creds, api.OperatorCred{TokenSHA256: hashHex(tok), Principal: ids.PrincipalID(), Tenant: t})
+	}
+	for _, name := range cfg.PersonOperators {
+		p := b.seed.Person(name)
+		if p == nil || p.ID == "" {
+			return nil, fmt.Errorf("person operator %s: no such person in the seed", name)
+		}
+		tok := "op-" + ids.Secret(16)
+		b.personOps[name] = tok
+		creds = append(creds, api.OperatorCred{TokenSHA256: hashHex(tok), Principal: p.ID, Tenant: p.Tenant})
 	}
 	srv, err := api.New(b.c, api.Config{Operators: creds, Logger: cfg.Logger}, gw)
 	if err != nil {
@@ -482,35 +500,85 @@ func (b *Bench) apply(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	var resp struct {
-		Applied bool             `json:"applied"`
-		Errors  []map[string]any `json:"errors"`
-	}
 	// Each apply names its own commit; the first is the one the eval runs always had.
 	b.applies++
-	commit := strings.Repeat("e", 40)
+	commit, message := strings.Repeat("e", 40), ""
 	if b.applies > 1 {
 		commit = fmt.Sprintf("%040x", b.applies)
 	}
+	if b.cfg.Commit != nil {
+		if commit, message, ms, err = b.cfg.Commit(ms); err != nil {
+			return fmt.Errorf("the stand git: %w", err)
+		}
+	}
+	return b.ApplySet(ctx, ms, commit, message)
+}
+
+// ApplySet applies a set at a commit with its message (the lines Botaru-Proposal and
+// Botaru-Revert, PRP-19, PRP-20), with the skill folders and the persona texts of the bench, as
+// farmctl apply does.
+func (b *Bench) ApplySet(ctx context.Context, ms []map[string]any, commit, message string) error {
+	resp, err := b.applySet(ctx, ms, commit, message, false)
+	if err != nil {
+		return err
+	}
+	if !resp.Applied {
+		return &RefusedError{fmt.Errorf("the bench set was not applied: %v", resp.Errors)}
+	}
+	return nil
+}
+
+// RefusedError is a P2 call the core answered with a refusal: nothing was done, unlike an error
+// of the transport, after which the call may have taken effect.
+type RefusedError struct{ Err error }
+
+func (e *RefusedError) Error() string { return e.Err.Error() }
+
+func (e *RefusedError) Unwrap() error { return e.Err }
+
+// PlanSet asks the core for the apply plan of a set at a commit and returns its problems, as
+// "<code> <kind> <name> <path>": every schema and set check apply runs, nothing applied.
+func (b *Bench) PlanSet(ctx context.Context, ms []map[string]any, commit string) ([]string, error) {
+	resp, err := b.applySet(ctx, ms, commit, "", true)
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, e := range resp.Errors {
+		out = append(out, strings.TrimSpace(fmt.Sprintf("%v %v %v %v", e["code"], e["kind"], e["name"], e["path"])))
+	}
+	return out, nil
+}
+
+type applyResponse struct {
+	Applied bool             `json:"applied"`
+	Errors  []map[string]any `json:"errors"`
+}
+
+func (b *Bench) applySet(ctx context.Context, ms []map[string]any, commit, message string, dry bool) (*applyResponse, error) {
 	req := map[string]any{"commit": commit, "manifests": ms}
+	if message != "" {
+		req["message"] = message
+	}
+	if dry {
+		req["dry_run"] = true
+	}
 	if len(b.cfg.Skills) > 0 {
 		req["skills"] = b.cfg.Skills
 	}
 	// The persona texts of the commission seats, for a charter in the set (GOV-4).
 	personas, err := testbench.Personas(b.cfg.Root)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if len(personas) > 0 {
 		req["personas"] = personas
 	}
+	var resp applyResponse
 	if err := b.P2(ctx, "demo", "apply", req, &resp); err != nil {
-		return err
+		return nil, err
 	}
-	if !resp.Applied {
-		return fmt.Errorf("the bench set was not applied: %v", resp.Errors)
-	}
-	return nil
+	return &resp, nil
 }
 
 // seedPeople adds the people of demo with their identities and groups (seed.yaml).
@@ -745,6 +813,19 @@ func (b *Bench) writeChecks(v map[string]any) error {
 
 // P2 calls a P2 operation as the operator of a tenant; a refusal is an error with its reason.
 func (b *Bench) P2(ctx context.Context, tenant, op string, req, out any) error {
+	return b.p2call(ctx, b.ops[tenant], op, req, out)
+}
+
+// P2As calls a P2 operation as a person of PersonOperators, with that person's rights.
+func (b *Bench) P2As(ctx context.Context, person, op string, req, out any) error {
+	tok, ok := b.personOps[person]
+	if !ok {
+		return fmt.Errorf("%s has no P2 credential of the bench", person)
+	}
+	return b.p2call(ctx, tok, op, req, out)
+}
+
+func (b *Bench) p2call(ctx context.Context, token, op string, req, out any) error {
 	raw, err := json.Marshal(req)
 	if err != nil {
 		return err
@@ -753,7 +834,7 @@ func (b *Bench) P2(ctx context.Context, tenant, op string, req, out any) error {
 	if err != nil {
 		return err
 	}
-	hr.Header.Set("Authorization", "Bearer "+b.ops[tenant])
+	hr.Header.Set("Authorization", "Bearer "+token)
 	hr.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(hr)
 	if err != nil {
@@ -766,7 +847,11 @@ func (b *Bench) P2(ctx context.Context, tenant, op string, req, out any) error {
 			Reason, Detail string
 		}
 		_ = json.Unmarshal(body, &p)
-		return fmt.Errorf("%s: %d %s %s", op, resp.StatusCode, p.Reason, p.Detail)
+		err := fmt.Errorf("%s: %d %s %s", op, resp.StatusCode, p.Reason, p.Detail)
+		if resp.StatusCode >= 400 && resp.StatusCode < 500 {
+			return &RefusedError{err}
+		}
+		return err
 	}
 	if out != nil {
 		return json.Unmarshal(body, out)

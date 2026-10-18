@@ -63,6 +63,8 @@ var Scenarios = []Scenario{
 	{"incident-and-commission", "db1:/data fills to 3% free: an incident opens and the farm manager answers it; then ops-reader's analysis " +
 		"proposes a change, the commission (reviewer-a, reviewer-b) reviews it and bob decides it on a card", incidentAndCommission},
 	{"lab-requests", "alice asks geo-reader about a raster and a layer, bob asks pipeline-reader why a CTD run failed; data-job runs the site checks on its schedule", labRequests},
+	{"scaffold-evolution", "ops-reader's analysis proposes to lower the queue limit of demo; the commission recommends it, the merge gate passes it " +
+		"on the farm git, bob accepts it, the patch is applied and then reverted in one step; the archive and a review rule keep the lesson", scaffoldEvolution},
 }
 
 // Find is the scenario of a name.

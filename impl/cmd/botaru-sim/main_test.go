@@ -6,6 +6,8 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+
+	"github.com/HunterEwok/botaru/impl/internal/sim"
 )
 
 func TestOptions(t *testing.T) {
@@ -46,5 +48,25 @@ func TestPrices(t *testing.T) {
 	}
 	if o.priceIn != 0.5 || o.priceOut != 5 || o.scenario != "" {
 		t.Fatalf("an override: %+v", o)
+	}
+}
+
+// TestEvolutionUsage: the console commands of the scaffold evolution say their usage before
+// they reach the stand.
+func TestEvolutionUsage(t *testing.T) {
+	d := &sim.Director{}
+	for line, want := range map[string]string{
+		"gate":                "gate PROPOSAL",
+		"realize":             "realize PROPOSAL",
+		"revert":              "revert PROPOSAL",
+		"revert a b c":        "revert PROPOSAL",
+		"evolve maybe":        "evolve on|off",
+		"insights":            "insights on|off",
+		"no-such-command now": "unknown command",
+	} {
+		var out bytes.Buffer
+		if quit := command(t.Context(), d, line, &out); quit || !strings.Contains(out.String(), want) {
+			t.Errorf("%q: quit %v, %q", line, quit, out.String())
+		}
 	}
 }

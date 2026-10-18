@@ -64,6 +64,10 @@ type Stand struct {
 	Mon   *Monitor
 	Brain *Brain
 	log   *Log
+	// repo is the farm git of the stand set, holdout the folder of the hidden cases of its
+	// merge gate (D-120).
+	repo    *farmRepo
+	holdout string
 
 	mu sync.Mutex
 	// cards are the cards the bot sent with buttons, by number.
@@ -128,6 +132,13 @@ func Start(ctx context.Context, cfg Config) (_ *Stand, err error) {
 	now := time.Now().UTC()
 	if err := InitFiles(cfg.Work, cfg.Seed, now); err != nil {
 		return nil, fmt.Errorf("world: %w", err)
+	}
+	if s.repo, err = initRepo(cfg.Work); err != nil {
+		return nil, fmt.Errorf("the farm git: %w", err)
+	}
+	s.holdout = filepath.Join(cfg.Work, "holdout")
+	if err := writeCases(s.holdout, hiddenCases); err != nil {
+		return nil, err
 	}
 	roots := map[string]string{}
 	for _, h := range []string{"web1", "db1", "ctd1"} {
@@ -222,6 +233,12 @@ func Start(ctx context.Context, cfg Config) (_ *Stand, err error) {
 		OnBotAPI:    s.onBotAPI,
 		OnModelCall: s.onModelCall,
 		ModelGate:   s.gate,
+		// The first apply commits the stand set to the farm git; later changes are commits of
+		// their own (SetInsights, Realize, RevertProposal).
+		Commit: func(ms []map[string]any) (string, string, []map[string]any, error) {
+			return s.repo.writeSet(ctx, ms, "The stand set of botaru-sim")
+		},
+		PersonOperators: []string{Decider},
 	}
 	if err := os.MkdirAll(bcfg.WorkDir, 0o755); err != nil {
 		return nil, err
@@ -729,13 +746,35 @@ func (s *Stand) Insights() bool {
 	return s.insights
 }
 
-// SetInsights starts or pauses the analysis schedule of ops-reader: the bench set is applied
-// again with the schedule changed.
+// SetInsights starts or pauses the analysis schedule of ops-reader: the change of its paused
+// field is a commit of the farm git, applied. A schedule already in that state is left alone.
+// On start the stand plays the merge window of the analyses forward (INS-4: no scheduled
+// analysis within an hour of the last one), since a run of the stand plays weeks in minutes:
+// the analyses of the last hour are dated back by that hour.
 func (s *Stand) SetInsights(ctx context.Context, on bool) error {
+	if on {
+		if _, err := s.Bench.Store().Pool.Exec(ctx, `UPDATE tasks SET created_at = created_at - interval '61 minutes'
+			WHERE tenant = 'demo' AND type = 'ops.insight.v1' AND created_at > now() - interval '61 minutes'`); err != nil {
+			return err
+		}
+	}
+	msg := "Pause the analysis schedule of ops-reader"
+	if on {
+		msg = "Resume the analysis schedule of ops-reader"
+	}
+	commit, err := s.repo.setField(ctx, "Schedule", "demo", "ops-insight", "spec.paused", !on, msg)
+	if err != nil {
+		return err
+	}
+	if commit != "" {
+		if err := s.applyOrDrop(ctx, commit); err != nil {
+			return err
+		}
+	}
 	s.mu.Lock()
 	s.insights = on
 	s.mu.Unlock()
-	return s.Bench.Apply(ctx)
+	return nil
 }
 
 // Tripped says whether the fuse tripped.
