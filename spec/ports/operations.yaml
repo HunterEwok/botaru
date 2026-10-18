@@ -671,6 +671,51 @@ entries:
     rules: [PRP-19, PRP-8]
     profiles: [insights]
     contract: false
+  - id: P2.proposal.gate
+    port: P2
+    op: proposal.gate
+    since: v0.3
+    request: p2-proposal-gate-request
+    response: p2-proposal-gate-response
+    rules: [EVO-7, EVO-9]
+    profiles: [insights]
+    contract: false
+  - id: P2.variant.list
+    port: P2
+    op: variant.list
+    since: v0.3
+    request: p2-variant-list-request
+    response: p2-variant-list-response
+    rules: [EVO-4, EVO-6]
+    profiles: [insights]
+    contract: false
+  - id: P2.variant.show
+    port: P2
+    op: variant.show
+    since: v0.3
+    request: p2-variant-show-request
+    response: p2-variant-show-response
+    rules: [EVO-6, EVO-7]
+    profiles: [insights]
+    contract: false
+  - id: P2.review_rule.list
+    port: P2
+    op: review_rule.list
+    since: v0.3
+    request: p2-review-rule-list-request
+    response: p2-review-rule-list-response
+    rules: [EVO-3]
+    profiles: [insights]
+    contract: false
+  - id: P2.review_rule.drop
+    port: P2
+    op: review_rule.drop
+    since: v0.3
+    request: p2-review-rule-drop-request
+    response: p2-review-rule-drop-response
+    rules: [EVO-3]
+    profiles: [insights]
+    contract: false
   - id: P2.commission.status
     port: P2
     op: commission.status

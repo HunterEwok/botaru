@@ -127,6 +127,12 @@ func (c *Core) sendDigest(ctx context.Context, tx pgx.Tx, now time.Time, cat *Ca
 		if urgent && (b.Category != "security" || b.Problem.Severity != "high") {
 			continue
 		}
+		// A manifest change of a gate-required tenant waits for its gate (EVO-9).
+		if out, err := gatedOut(ctx, tx, tv, p); err != nil {
+			return err
+		} else if out {
+			continue
+		}
 		cands = append(cands, p)
 	}
 	slices.SortStableFunc(cands, func(a, b *proposalRow) int {

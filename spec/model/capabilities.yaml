@@ -1,5 +1,5 @@
 registry: capabilities
-version: 2
+version: 3
 description: >-
   Capabilities (permission strings in groups), the order of data classes and task tiers.
   The kind field says what the entry describes: capability (a capability form),
@@ -170,6 +170,15 @@ entries:
     wildcard: not allowed
     meaning: accept, reject or defer a proposal of this category
     rules: [PRM-13]
+  - id: proposal.gate
+    kind: capability
+    since: v0.3
+    form: 'proposal.gate:<category>'
+    privileged: always
+    holders: [human]
+    wildcard: not allowed
+    meaning: run the merge gate of a manifest change of this category and record its verdict (P2 proposal.gate, EVO-9)
+    rules: [EVO-9]
   - id: hold.set
     kind: capability
     since: v0.1

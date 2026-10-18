@@ -14,7 +14,7 @@ A proposal (`Proposal`) is born at a successful `complete` of an analysis or agg
 | `in_review` | the code checks passed, the `tree_budget_eur` sum of the review types is reserved, the lens tasks are handed out (for the kind `none` only `value` and `security`, COM-14) | no |
 | `recommended` | the code verdict is "recommend"; waits for the digest | no |
 | `parked` | waits; the reason is from a closed list: `score`, `veto_lens_missing`, `review_budget`, `conflict`, `evidence_drift` | no |
-| `dismissed` | did not pass a code check or the verdict; the reason: a check code (for example `no_op`), `veto`, `below_min`, `low_score` | yes; can be selected into the audit sample |
+| `dismissed` | did not pass a code check, the verdict or the merge gate; the reason: a check code (for example `no_op`), `veto`, `below_min`, `low_score`, `gate_failed` | yes; can be selected into the audit sample |
 | `presented` | went into a delivered digest; the card waits for a decision | no |
 | `declined` | a person pressed "Reject" with a reason from a closed list | yes |
 | `expired` | the `park_ttl`, `recommend_ttl` or `decide_ttl` deadline expired | yes |
@@ -47,6 +47,7 @@ An aggregator proposal does not change the states of other proposals: an overlap
 | `recommended` | `presented` | delivery of the `proposal_digest` digest through a channel (E1) | the evidence reread before showing is within tolerance | DIG-1, DIG-2, PRP-2 |
 | `recommended` | `parked` | the `proposal` loop when assembling the digest | an evidence drift (`evidence_drift`) or a conflict | PRP-2, PRP-9 |
 | `recommended` | `expired` | the `proposal` loop | 28 days without being shown (`recommend_ttl`) | PRP-6 |
+| `recommended`, `presented` | `dismissed` | P2 `proposal.gate` with a failed result (`gate_failed`); from v0.3 | a person with `proposal.gate:<category>` ran the merge gate of the manifest change at the applied commit and it failed; the card goes out | EVO-9 |
 | `presented` | `realizing` | the "Accept" button: the `decide` operation (P1) from the card's channel (APR-4) | the kind is not `none`; the person has the right to decide and to start the realization; the target is not locked by a conflict or a running trial | DIG-3, PRP-4, PRP-9, PRP-18, PRP-21 |
 | `presented` | `noted` | the "Accept" button | the kind is `none` | DIG-3, PRP-4 |
 | `presented` | `declined` | the "Reject" button and the reason card | the reason is from a closed list | DIG-3, DIG-4, PRP-5 |
@@ -69,6 +70,7 @@ An aggregator proposal does not change the states of other proposals: an overlap
 - "Accept", "Reject", "Postpone", the answers of the blind card and "Lift veto" are done only by a `human` principal with strong identity and the right, from the card's channel, with the `nonce`, once; bots, `service` and `system` do not decide (APR-4, DIG-3, DIG-6). The core accepts "Lift veto" only after "Details" was opened (APR-14).
 - No transition except "Accept" and "Lift veto" creates tasks above level 0, tool calls, approvals, script runs, patches and messages, except the delivery of the digest and the cards; "Accept" creates exactly one ordinary path object (PRP-4).
 - Only the core sets `realized`, and only by a verified link; a value that is already in place or was set without a link does not count as execution (PRP-19).
+- A manifest change of a tenant with `insights.gate.required` goes into a digest and is accepted only with a passed gate at the applied commit; without it the change waits in `recommended` until the gate or `recommend_ttl` (EVO-9).
 - At most one proposal per field of one object in `realizing` or with a running trial; "Accept" is unavailable while the target is locked (PRP-9).
 - Every proposal of a kind other than `none` that moved to `realizing` has exactly one trial record, created in the same transaction (PRP-21).
 - The open states for the limits of a role and a bot: `screened`, `in_review`, `recommended`, `presented`, `parked` (INS-4, PRP-5, PRP-16); `parked(conflict)` because of an earlier accepted proposal of another author does not take the bot's slot (PRP-16).

@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-review-rule-list-response:1",
+  "title": "P2 review_rule.list: response",
+  "description": "Live review rules with the reason codes that taught them; for people only (EVO-3, GOV-29).",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "EVO-3"
+  ],
+  "type": "object",
+  "required": [
+    "items"
+  ],
+  "properties": {
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "rule",
+          "role",
+          "category",
+          "target_kind",
+          "target_name",
+          "problem_code",
+          "signature",
+          "outcome",
+          "reason_code",
+          "count",
+          "proposals",
+          "first_at",
+          "last_at"
+        ],
+        "properties": {
+          "rule": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "role": {
+            "type": "string"
+          },
+          "category": {
+            "$ref": "urn:botaru:schema:proposal-body:1#/$defs/category"
+          },
+          "target_kind": {
+            "type": "string"
+          },
+          "target_name": {
+            "type": "string"
+          },
+          "problem_code": {
+            "type": "string"
+          },
+          "signature": {
+            "type": "string"
+          },
+          "outcome": {
+            "enum": [
+              "rejected_by_commission",
+              "rejected_by_human",
+              "reverted",
+              "worse"
+            ]
+          },
+          "reason_code": {
+            "type": "string"
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "proposals": {
+            "type": "array",
+            "items": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+            }
+          },
+          "first_at": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+          },
+          "last_at": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+          }
+        }
+      }
+    }
+  }
+}

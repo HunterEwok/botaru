@@ -64,6 +64,7 @@ type options struct {
 	maxEURSet                                bool
 	repeats                                  int
 	out, index                               string
+	holdout                                  string
 }
 
 func run(args []string, stdout, stderr io.Writer) int {
@@ -85,6 +86,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	fs.IntVar(&o.repeats, "repeats", 1, "runs of each blocking case; all must pass (3 before a model or runtime change)")
 	fs.StringVar(&o.out, "out", "", "a directory for report.xml (JUnit), results.jsonl and summary.txt")
 	fs.StringVar(&o.index, "index", "", "the EvalReports manifest to add the entries of a real run to (evals/reports/index.yaml)")
+	fs.StringVar(&o.holdout, "holdout-dir", "", "run the hidden holdout cases of this folder (the layout of evals/cases, outside the skeleton root) instead of evals/cases (EVO-7)")
 	fs.BoolVar(&o.keepDB, "keep-db", false, "keep the run's database for a look afterwards")
 	fs.BoolVar(&o.verbose, "v", false, "log the bench")
 	showVersion := fs.Bool("version", false, "print the version")
@@ -147,9 +149,9 @@ func runWith(o options, stdout, stderr io.Writer) (int, error) {
 	if err != nil {
 		return 1, err
 	}
-	all, err := evals.LoadCases(root)
+	all, err := loadCases(root, o)
 	if err != nil {
-		return 1, err
+		return 2, err
 	}
 	f := evals.Filter{Roles: split(o.roles), IDs: split(o.cases), Version: claim.Version}
 	in, later := evals.Select(all, f)
@@ -245,6 +247,40 @@ func runWith(o options, stdout, stderr io.Writer) (int, error) {
 		return 1, nil
 	}
 	return 0, nil
+}
+
+// loadCases reads the cases of the run: evals/cases, or the hidden holdout folder, which must
+// lie outside the skeleton root so that no bot, case author or analysis reads it from the
+// repository, and whose outcomes never go into the index of eval reports (EVO-7).
+func loadCases(root string, o options) ([]*evals.Case, error) {
+	if o.holdout == "" {
+		return evals.LoadCases(root)
+	}
+	if o.index != "" {
+		return nil, errors.New("-holdout-dir and -index exclude each other: holdout outcomes never go into the index")
+	}
+	dir, err := filepath.Abs(o.holdout)
+	if err != nil {
+		return nil, err
+	}
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return nil, err
+	}
+	// Through links too: a link inside the root to the folder is still inside.
+	if r, err := filepath.EvalSymlinks(absRoot); err == nil {
+		absRoot = r
+	}
+	if d, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = d
+	}
+	if rel, err := filepath.Rel(absRoot, dir); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return nil, errors.New("-holdout-dir lies inside the skeleton root; the hidden cases live outside the repository")
+	}
+	if _, err := os.Stat(dir); err != nil {
+		return nil, fmt.Errorf("-holdout-dir: %w", err)
+	}
+	return evals.LoadCasesFrom(dir)
 }
 
 func writeReports(ctx context.Context, o options, b *evals.Bench, rep *evals.Report, stdout io.Writer) error {

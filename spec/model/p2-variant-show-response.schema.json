@@ -1,0 +1,172 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-variant-show-response:1",
+  "title": "P2 variant.show: response",
+  "description": "One variant with its fields before and after and its chain of parents (EVO-6).",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "EVO-6",
+    "EVO-7"
+  ],
+  "type": "object",
+  "required": [
+    "variant_id",
+    "target_kind",
+    "target_name",
+    "proposal_id",
+    "author_role",
+    "diversity_signature",
+    "trial_outcome",
+    "live",
+    "children_count",
+    "successful_children_count",
+    "created_at"
+  ],
+  "properties": {
+    "variant_id": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "target_kind": {
+      "type": "string"
+    },
+    "target_name": {
+      "type": "string"
+    },
+    "parent_variant_id": {
+      "anyOf": [
+        {
+          "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "base_commit": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "proposal_id": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "author_role": {
+      "type": "string"
+    },
+    "author_bot_id": {
+      "anyOf": [
+        {
+          "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "diversity_signature": {
+      "type": "string"
+    },
+    "trial_outcome": {
+      "enum": [
+        "pending",
+        "better",
+        "unchanged",
+        "worse",
+        "mixed",
+        "undetermined",
+        "rejected_at_gate",
+        "rejected_by_commission",
+        "rejected_by_human",
+        "reverted",
+        "expired",
+        "canceled"
+      ]
+    },
+    "reason_code": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Reason of a refusal or a revert; for a person only, never in a bot's input (GOV-29)."
+    },
+    "live": {
+      "type": "boolean"
+    },
+    "children_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "successful_children_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "depth": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "created_at": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+    },
+    "patch": {
+      "type": "array",
+      "description": "The fields and values the variant sets."
+    },
+    "revert_patch": {
+      "type": "array",
+      "description": "The fields and the values before the variant."
+    },
+    "gate": {
+      "anyOf": [
+        {
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "The gate result: verdict, step code, base commit and numbers; never a case of the hidden set (EVO-7)."
+    },
+    "manifest_sha256": {
+      "type": "string"
+    },
+    "base_sha256": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "proposal_state": {
+      "type": "string"
+    },
+    "trial": {
+      "anyOf": [
+        {
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "lineage": {
+      "type": "array",
+      "description": "The parents from the nearest up."
+    },
+    "tenant": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/name"
+    }
+  }
+}

@@ -26,7 +26,7 @@ How each subsystem behaves: [ARCHITECTURE.md](ARCHITECTURE.md).
 | Command | What it is |
 |---|---|
 | `botaru-core` | the core: the P1 listener with the P4 path, the separate P2 listener, the test-control listener of a test bench, and the background loops over a PostgreSQL store (among them reaper, deadline, hold, schedule, campaign, script, grant, inbox, erasure, budget, retention, observe, proposal, governance, identity, incident, alarm, monitor, audit-head and health) |
-| `farmctl` | the operator's tool for P2: `apply`, people (including `principal offboard`), memberships, `worker enroll`, `secret revoke`, the tenant lifecycle and exports, holds, `incident`, `control`, `manager`, `seat`, `bot`, `campaign`, `script`, `escalation` and `proposal` views, `spend reconcile`, `backup report`, `restore`, `drain`, `status`, `doctor`, `health`, `audit verify` |
+| `farmctl` | the operator's tool for P2: `apply`, people (including `principal offboard`), memberships, `worker enroll`, `secret revoke`, the tenant lifecycle and exports, holds, `incident`, `control`, `manager`, `seat`, `bot`, `campaign`, `script`, `escalation` and `proposal` views, the scaffold evolution (`proposal gate|patch|revert`, `variant list|show|checkout`, `review-rule list|drop`, see ARCHITECTURE.md "Safe scaffold evolution"), `spend reconcile`, `backup report`, `restore`, `drain`, `status`, `doctor`, `health`, `audit verify` |
 | `botaru-agent` | the agent worker of one role (E4 adapter and its own runtime loop, D-93); calls the model only through P4 |
 | `botaru-telegram` | the E1 Telegram channel of one farm channel: `getUpdates` polling and `sendMessage` deliveries |
 | `botaru-toolhost` | the E3 tool execution adapter of one machine and tenant: claims tool calls over P1 and runs each in a fresh child process of its plugin |
@@ -52,7 +52,7 @@ How each subsystem behaves: [ARCHITECTURE.md](ARCHITECTURE.md).
 | `internal/toolhost`, `internal/plugins` | the toolhost and the own plugins |
 | `internal/ingress` | the webhook driver: Standard Webhooks signatures, the TLS token check, rate and body limits, the mapping of closed fields |
 | `internal/pluginmain` | the flags and start of the own plugins, shared by `botaru-plugin`, `botaru-eval plugin` and `botaru-sim plugin` |
-| `internal/evals` | the eval runner: cases, plan and estimate, generators, seed, bench, checks and reports |
+| `internal/evals` | the eval runner: cases, plan and estimate, generators, seed, bench, checks and reports; the hidden holdout cases and the anti-gaming guard (EVO-7, EVO-8) |
 | `internal/sim` | the farm simulator: the world and its physics, the stubs of `systemctl`, `df` and `journalctl`, the fake Zabbix API, the plugins of the data bots and the job worker of `data-job`, the mock model, the stand with every role, the director and its scenarios |
 | `internal/agent`, `internal/channel/telegram`, `internal/kbjob`, `internal/p1client` | the workers and their P1 client |
 | `internal/e2e` | the hello-bot sequence and a plugin tool call over the wire with the mock provider, a fake Bot API server and a real toolhost |
@@ -62,8 +62,34 @@ How each subsystem behaves: [ARCHITECTURE.md](ARCHITECTURE.md).
 | `internal/config` | the deployment settings of the core process; secrets are referenced by file path |
 | `internal/money` | euros in manifests to the integer units of records: `eur_micros` for usage and reserves, euro cents for limits and reports |
 | `internal/texts` | the code text catalog read from `spec/bindings/channels/messages/` and the installation's own catalogs |
-| `internal/manifest`, `internal/yamlx` | typed views of farm manifests after the schema check; YAML read as the skeleton means it (dates stay strings) |
+| `internal/manifest`, `internal/yamlx` | typed views of farm manifests after the schema check, and the output coupling graph between them (EVO-1); YAML read as the skeleton means it (dates stay strings) |
+| `internal/gate` | the merge gate of a manifest change in a temporary git worktree (diff size and protected paths, lint, coupling, regression, holdout), the line editor of YAML fields, the patch of an accepted change and the revert in one command (EVO-2, EVO-9, EVO-10) |
 | `internal/ids`, `internal/version` | object ids (a kind prefix and a ULID) and random secrets; the build version of the binaries |
+
+## farmctl for the scaffold evolution
+
+```sh
+farmctl proposal gate p_01J... -repo ~/farm -set tenants/demo -set shared \
+  -holdout-dir ~/holdout -eval-bin botaru-eval -dsn postgres://eval@127.0.0.1/postgres
+farmctl proposal gate -pending -repo ~/farm               # every change waiting for its gate, from a timer
+farmctl proposal patch p_01J... -repo ~/farm -out p.patch   # an accepted change; then git am p.patch
+farmctl proposal revert p_01J... -reason harm_observed -repo ~/farm
+farmctl variant list -target Tenant:demo
+farmctl variant show var_01J...
+farmctl variant checkout var_01J... -out ./v -repo ~/farm
+farmctl review-rule list -role ops-reader
+farmctl review-rule drop 12
+```
+
+- `proposal gate` reads the change and the applied commit through P2 `proposal.gate`, checks out that commit into
+  `os.MkdirTemp("", "botaru-gate-*")` with `git worktree add --detach` and removes the worktree after every run. It
+  prints a line per step and the diff, and posts only the verdict, the step statuses and codes, `holdout_passed`
+  and the numbers; `-no-post` prints only. Without `-eval-bin` the regression and holdout steps are `not_run`;
+  `botaru-eval` runs as a child process with only `PATH`, `HOME` and `TMPDIR` in its environment and the mock model
+  unless `-real -key-file -max-eur`.
+- `proposal revert` refuses a checkout with uncommitted changes or without a branch, commits the reverse edit with
+  `Botaru-Revert: <id> <reason>`, moves the branch only by a fast-forward and runs `apply` of the set; `-no-apply`
+  stops after the commit. Push the branch afterwards.
 
 ## Key implementation decisions
 

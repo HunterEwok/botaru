@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-review-rule-drop-request:1",
+  "title": "P2 review_rule.drop: request",
+  "description": "A person who may decide the rule's category drops a live review rule; the role may propose that approach again (EVO-3, C1). Denial: forbidden, not_found.",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "EVO-3"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "rule"
+  ],
+  "properties": {
+    "rule": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    }
+  }
+}

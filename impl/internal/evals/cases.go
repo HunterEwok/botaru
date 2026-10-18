@@ -46,7 +46,17 @@ type Case struct {
 
 // LoadCases reads every case file under evals/cases/, sorted by role and id.
 func LoadCases(root string) ([]*Case, error) {
-	base := filepath.Join(root, "evals/cases")
+	return loadCases(filepath.Join(root, "evals/cases"), root)
+}
+
+// LoadCasesFrom reads every case file under a folder of the same layout as evals/cases/, such
+// as a hidden holdout set outside the repository (EVO-7), sorted by role and id; the file of a
+// case is relative to that folder.
+func LoadCasesFrom(base string) ([]*Case, error) {
+	return loadCases(base, base)
+}
+
+func loadCases(base, root string) ([]*Case, error) {
 	var files []string
 	err := filepath.WalkDir(base, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {

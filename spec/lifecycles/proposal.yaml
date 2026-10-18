@@ -22,8 +22,8 @@ machines:
     meaning: 'waits; the reason is from a closed list: `score`, `veto_lens_missing`, `review_budget`, `conflict`, `evidence_drift`'
   - id: dismissed
     terminal: true
-    meaning: 'did not pass a code check or the verdict; the reason: a check code (for example `no_op`), `veto`, `below_min`,
-      `low_score`'
+    meaning: 'did not pass a code check, the verdict or the merge gate; the reason: a check code (for example `no_op`), `veto`,
+      `below_min`, `low_score`, `gate_failed`'
   - id: presented
     terminal: false
     meaning: went into a delivered digest; the card waits for a decision
@@ -242,6 +242,20 @@ machines:
     when: 28 days without being shown (`recommend_ttl`)
     rules:
     - PRP-6
+  - from:
+      states:
+      - recommended
+      - presented
+      text: '`recommended`, `presented`'
+    to:
+      states:
+      - dismissed
+      text: '`dismissed`'
+    by: P2 `proposal.gate` with a failed result (`gate_failed`); from v0.3
+    when: a person with `proposal.gate:<category>` ran the merge gate of the manifest change at the applied commit and it
+      failed; the card goes out
+    rules:
+    - EVO-9
   - from:
       states:
       - presented

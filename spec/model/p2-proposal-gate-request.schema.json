@@ -1,0 +1,142 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-proposal-gate-request:1",
+  "title": "P2 proposal.gate: request",
+  "description": "The merge gate of a manifest change (EVO-9). Without result: what the gate needs (the operations, the applied commit, the tenant's limits). With result: the closed verdict of `farmctl proposal gate`, recorded once per applied commit; a failed gate dismisses the proposal with the reason `gate_failed`. The result carries no file, no diff text and no hidden case (EVO-7). Denial: forbidden (no `proposal.gate:<category>`), not_found, conflict (the gate ran on another commit than the applied one, or a different verdict is recorded at this commit), already_decided, input_schema_invalid.",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "EVO-7",
+    "EVO-9"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "proposal"
+  ],
+  "properties": {
+    "proposal": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "verdict",
+        "code",
+        "base_sha",
+        "steps",
+        "holdout_passed",
+        "regression_pass_rate",
+        "fields",
+        "diff_lines"
+      ],
+      "properties": {
+        "verdict": {
+          "enum": [
+            "passed",
+            "failed"
+          ]
+        },
+        "code": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/code"
+            },
+            {
+              "type": "string",
+              "maxLength": 0
+            }
+          ]
+        },
+        "base_sha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$",
+          "maxLength": 40
+        },
+        "steps": {
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "step",
+              "status"
+            ],
+            "properties": {
+              "step": {
+                "enum": [
+                  "diff",
+                  "lint",
+                  "coupling",
+                  "regression",
+                  "holdout"
+                ]
+              },
+              "status": {
+                "enum": [
+                  "passed",
+                  "failed",
+                  "not_run"
+                ]
+              },
+              "code": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/code"
+                  },
+                  {
+                    "type": "string",
+                    "maxLength": 0
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "holdout_passed": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "regression_pass_rate": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1
+        },
+        "fields": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "diff_lines": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100000
+        }
+      }
+    }
+  },
+  "$defs": {
+    "code": {
+      "enum": [
+        "diff_size_exceeded",
+        "forbidden_path_modified",
+        "diff_unrenderable",
+        "lint_failed",
+        "coupling_broken",
+        "regression_failed",
+        "holdout_regression",
+        "reward_hacking_detected",
+        "shortcut_gaming_detected",
+        "audit_tampering_detected"
+      ],
+      "x-botaru-registry": "reasons"
+    }
+  }
+}

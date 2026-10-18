@@ -42,6 +42,8 @@ type Result struct {
 	// NotCounted are the side effect counters this runner does not count.
 	NotCounted []string
 	Seconds    float64
+	// ToolCalls counts the tool calls of the case's last run.
+	ToolCalls int
 	// spendErr is set when the store could not say the spend of an attempt; capped when the
 	// spend cap stopped the case.
 	spendErr error
@@ -372,6 +374,7 @@ func (r *Runner) runCase(ctx context.Context, c *Case, profile string, n int) *R
 			res.Status, res.Detail = NotRun, "the case called a model, and the mock model has no script for it: needs a real model"
 			return res
 		}
+		res.ToolCalls = len(o.ToolCalls)
 		var findings []*Finding
 		if got := o.state(); got != c.State {
 			findings = append(findings, &Finding{Check: "state", Detail: fmt.Sprintf("state %s, want %s", got, c.State), Security: c.Blocking})

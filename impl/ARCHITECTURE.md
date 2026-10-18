@@ -2437,6 +2437,66 @@ link count and the longer window against `role_incidents_three` (HLD-9).
   warns at its path).
 - The charter of a tenant with commission seats and the `Commission` manifest are checked as described under Commission.
 
+### Safe scaffold evolution
+
+The model stays frozen; the scaffold improves only through manifest changes, and Go code guards every step (D-120,
+EVO-1..EVO-10). The core keeps the archive, the lessons and the gate verdicts; git and the evals run only in
+`farmctl` on a person's command (PRP-23).
+
+- **Coupling** (`internal/manifest/coupling.go`). `Coupling(docs)` builds the graph callee → caller: TaskType →
+  Role (`claims`, `may_enqueue`, `insight.types`), Schedule, Route and the dispatcher rules that match it; ToolPlugin,
+  Action and Skill → Role; ToolPlugin → Action (executor); Script → Schedule; Role → BotGroup → dispatcher rule;
+  Catalog → TaskType when a schema reads `enum_from`. A field under `spec.dispatch.rules[i]` of a tenant is the node
+  `DispatchRule/<tenant>/<i>`, any other tenant field the Tenant node. `lockHolders` and `parkConflicts` count a
+  direct neighbour of a locked object as a conflict, so such a proposal parks with `conflict` like a same-field one;
+  the graph of the applied set is loaded at most once per lock check, and only when no field overlaps. For today's targets (Schedule cron and zone, tenant limits) no edge
+  links two proposable objects, so this parks nothing yet.
+- **Variant archive** (`variants.go`, migration `0080`). `createVariants` writes one row of `scaffold_variants` per
+  target object of a new `manifest_change`: the fields with their values after and before, the JCS hash of the
+  object before and after, the applied commit, the parent (the live variant whose hash equals the object's current
+  hash) and the diversity signature. `syncVariants` runs on every write of the proposal record and moves the
+  outcome (`pending`, the trial outcome, `rejected_at_gate`, `rejected_by_commission`, `rejected_by_human`,
+  `reverted`, `expired`, `canceled`), the live flag, the gate metrics and the parent's counters. Identity, fields
+  and hashes never change.
+- **Review rules.** A decline with `too_risky`, `wrong_data`, `too_costly` or `not_relevant`, a `dismissed(veto)`,
+  a revert with `harm_observed` and a trial `worse` upsert a row of `review_rules` keyed by tenant, role, target,
+  problem code and signature; the count grows on a repeat. `reviewRuleHit` refuses a new proposal of the role with
+  `rejected(review_rule)` when its signature contains every entry of a live rule's. P2 `review_rule.drop` needs
+  `proposal.decide:<category>` of the rule's category.
+- **Analysis input.** `claim` adds the block `evolution` (`insight-evolution.schema.json`) to an analysis task: up
+  to five variants of different signatures (live first, then by successful children, newest) and up to 20 live
+  rules, as outcome classes, without reason or gate codes (GOV-29).
+- **Gate verdict** (`proposal_gate.go`). P2 `proposal.gate` with `proposal.gate:<category>`: without a result it
+  returns the operations, the applied commit (`apply_status`) and the tenant's limits; with a result it checks the
+  closed shape (five steps in order, at most one failed with a gate code, `holdout_passed` following the holdout
+  step), refuses a base other than the applied commit with `conflict`, records `record.gate` once per commit and
+  moves a failed proposal from `recommended` or `presented` to `dismissed(gate_failed)`. With
+  `insights.gate.required`, `sendDigest` skips a manifest change without a passed gate at the applied commit, and
+  "Accept" refuses it with `forbidden`.
+- **The gate** (`internal/gate`). `Run` checks out the base into `os.MkdirTemp("", "botaru-gate-*")` by
+  `git worktree add --detach`; `close` removes the worktree with `--force`, the folder and prunes, also on failure.
+  The line editor (`yamledit.go`) reads the file with yaml.v3 node positions and replaces only the bytes of a
+  one-line scalar in its quoting style, or inserts missing keys before the first key of the block mapping that
+  starts a line; block scalars, flow collections, anchors and aliases are `diff_unrenderable`. Step 1 then stages
+  everything, checks paths first (`ci/`, `spec/`, `conformance/`, `evals/`, `impl/`, `.github/`, mode 120000 or a
+  path through a symlink, protected kinds) and sizes second (fields, lines, files, binary), and re-reads the set: only
+  the target documents may differ, each exactly by the operations (`jcs.Canonical` equality). Lint is a P2 `apply`
+  dry run of the candidate set (`planLint` in farmctl). Coupling compares the missing references near the changed
+  nodes with those of the base, so an old dangling reference is not the change's, and orders the nodes. Regression
+  and holdout run the `Suite` on a base and a candidate worktree for the affected roles (every role for a tenant or
+  dispatcher field); `evals.CheckRewardHacking` decides the holdout code. Only the codes leave; `Report.Diff` is
+  printed by farmctl and never posted.
+- **Revert** (`gate.Revert`). It refuses a dirty checkout or a detached head, checks that every field still holds
+  the accepted value, writes the previous values with the line editor in a worktree of the branch head, verifies
+  the file as in step 1, commits with `Botaru-Revert: <id> <reason>` (`--no-verify`) and runs
+  `git merge --ff-only` in the person's checkout. `farmctl proposal revert` then applies the set; `revertByCommit`
+  moves the proposal to `reverted`, which marks the variant and records the rule. The object returns to its
+  hash before the change, and with the line editor the file returns byte for byte.
+- **Holdout** (`internal/evals/holdout.go`). `ReadResults` reads `results.jsonl` (status, seconds, spend, tool calls,
+  security flag, finding kinds). `CheckRewardHacking` compares the cases rated on both sides, in order: a new
+  security finding on a hidden case, more `tools_required` misses while faster, cheaper or with fewer calls, a held
+  visible pass rate with a lower hidden one or more `equals` misses, and a lower hidden pass rate.
+
 ## Campaigns, Scripts & Translator
 
 ### Campaigns

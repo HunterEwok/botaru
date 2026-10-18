@@ -294,6 +294,13 @@ func (c *Core) createProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat
 			return fp, rejection("recently_declined")
 		}
 	}
+	// A lesson people or the commission gave the role about this approach to this problem stays
+	// until a person drops it (EVO-3).
+	if hit, err := reviewRuleHit(ctx, tx, now, a.Tenant, a.Role, b); err != nil {
+		return fp, err
+	} else if hit {
+		return fp, rejection("review_rule")
+	}
 	// An open duplicate counts the arrival and takes the new evidence (PRP-5).
 	var dupID string
 	var dupRec []byte
@@ -365,7 +372,10 @@ func (c *Core) createProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO proposals (id, tenant, role, worker, task, fingerprint, kind, state, record, created_at, updated_at, state_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, 'screened', $8, $9, $9, $9)`, id, a.Tenant, a.Role, a.Worker, a.Task, fp, kind, recRaw, now)
-	return fp, err
+	if err != nil {
+		return fp, err
+	}
+	return fp, createVariants(ctx, tx, now, id, a.Tenant, a.Role, a.Acting.Bot, b)
 }
 
 // proposalBody is the part of botaru.proposal/v1 the core reads; the note is never read.

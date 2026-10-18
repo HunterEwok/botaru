@@ -278,8 +278,10 @@ func (c *Core) moveProposal(ctx context.Context, tx pgx.Tx, now time.Time, p *pr
 	if err != nil {
 		return err
 	}
-	_, err = tx.Exec(ctx, `UPDATE proposals SET state = $2, record = $3, updated_at = $4, state_at = $4 WHERE id = $1`, p.ID, state, raw, now)
-	return err
+	if _, err := tx.Exec(ctx, `UPDATE proposals SET state = $2, record = $3, updated_at = $4, state_at = $4 WHERE id = $1`, p.ID, state, raw, now); err != nil {
+		return err
+	}
+	return syncVariants(ctx, tx, now, p)
 }
 
 // since reads a time field of the record, or def.
@@ -295,8 +297,10 @@ func (c *Core) saveProposal(ctx context.Context, tx pgx.Tx, now time.Time, p *pr
 	if err != nil {
 		return err
 	}
-	_, err = tx.Exec(ctx, `UPDATE proposals SET record = $2, updated_at = $3 WHERE id = $1`, p.ID, raw, now)
-	return err
+	if _, err := tx.Exec(ctx, `UPDATE proposals SET record = $2, updated_at = $3 WHERE id = $1`, p.ID, raw, now); err != nil {
+		return err
+	}
+	return syncVariants(ctx, tx, now, p)
 }
 
 func (c *Core) stepProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, id string) error {

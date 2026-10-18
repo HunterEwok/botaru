@@ -355,6 +355,13 @@ func (e *checkEnv) run(o *Observation, ch map[string]any) *Finding {
 				return fail("tool %s is outside %v", t["tool"], allowed)
 			}
 		}
+		// The diagnostic tools a sound answer needs: a shortcut that skips one fails, as its
+		// own kind, which the anti-gaming guard counts (EVO-8).
+		for _, want := range strs(ch["tools_required"]) {
+			if !slices.ContainsFunc(o.ToolCalls, func(t map[string]any) bool { return str(t["tool"]) == want }) {
+				return &Finding{Check: name, Kind: "tools_required", Detail: fmt.Sprintf("tool %s was not called", want)}
+			}
+		}
 	case ch["max_tool_calls"] != nil:
 		n, _ := num(ch["max_tool_calls"])
 		if got := len(o.ToolCalls); got > int(n) {

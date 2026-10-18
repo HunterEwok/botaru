@@ -69,6 +69,41 @@ func (s *Server) p2Views(ctx context.Context, oper core.Operator, op string, m m
 		}
 		out, err := s.c.ProposalShow(ctx, oper, req)
 		return out, true, err
+	case "proposal.gate":
+		req, err := decode[core.GateRequest](m)
+		if err != nil {
+			return nil, true, err
+		}
+		out, err := s.c.ProposalGate(ctx, oper, req)
+		return out, true, err
+	case "variant.list":
+		req, err := decode[core.VariantListRequest](m)
+		if err != nil {
+			return nil, true, err
+		}
+		out, err := s.c.VariantList(ctx, oper, req)
+		return out, true, err
+	case "variant.show":
+		req, err := decode[core.VariantShowRequest](m)
+		if err != nil {
+			return nil, true, err
+		}
+		out, err := s.c.VariantShow(ctx, oper, req)
+		return out, true, err
+	case "review_rule.list":
+		req, err := decode[core.ReviewRuleListRequest](m)
+		if err != nil {
+			return nil, true, err
+		}
+		out, err := s.c.ReviewRuleList(ctx, oper, req)
+		return out, true, err
+	case "review_rule.drop":
+		req, err := decode[core.ReviewRuleDropRequest](m)
+		if err != nil {
+			return nil, true, err
+		}
+		out, err := s.c.ReviewRuleDrop(ctx, oper, req)
+		return out, true, err
 	case "escalation.list", "escalation.show":
 		for k := range m {
 			if !slices.Contains(escalationFields[op], k) {

@@ -31,6 +31,7 @@ The line under a rule heading:
 | [DIG](#dig) | Showing proposals to people | [docs/improvements.md](../docs/improvements.md) | 8 | 6 | 4 | 4 | 0 | 0 |
 | [DLV](#dlv) | Delivery | [docs/tasks-and-delivery.md](../docs/tasks-and-delivery.md) | 16 | 9 | 14 | 2 | 0 | 0 |
 | [DSP](#dsp) | Task pool and dispatcher | [docs/coordination.md](../docs/coordination.md) | 8 | 7 | 7 | 1 | 0 | 0 |
+| [EVO](#evo) | Scaffold evolution | [docs/improvements.md](../docs/improvements.md) | 10 | 9 | 0 | 0 | 10 | 0 |
 | [FEN](#fen) | Leases | [docs/tasks-and-delivery.md](../docs/tasks-and-delivery.md) | 7 | 5 | 7 | 0 | 0 | 0 |
 | [GOV](#gov) | Bot governance | [docs/improvements.md](../docs/improvements.md) | 29 | 22 | 9 | 10 | 10 | 0 |
 | [GW](#gw) | Model gateway | [docs/models-and-money.md](../docs/models-and-money.md) | 15 | 14 | 15 | 0 | 0 | 0 |
@@ -65,7 +66,7 @@ The line under a rule heading:
 | [TEN](#ten) | Tenants | [docs/architecture.md](../docs/architecture.md) | 8 | 8 | 8 | 0 | 0 | 0 |
 | [TIM](#tim) | Time and clocks | [docs/operations.md](../docs/operations.md) | 4 | 2 | 3 | 1 | 0 | 0 |
 | [TRN](#trn) | Translator | [docs/coordination.md](../docs/coordination.md) | 7 | 5 | 4 | 1 | 2 | 0 |
-| Total | | | 476 | 367 | 377 | 69 | 30 | 0 |
+| Total | | | 486 | 376 | 377 | 69 | 40 | 0 |
 
 Retired numbers (46) are listed in [retired.md](retired.md), deferred rules (43) in [deferred.md](deferred.md).
 
@@ -1149,6 +1150,101 @@ serves [G4](../docs/goals.md) · since v0.1 · non-waivable · profile core · c
 A task for an empty or busy bot group waits in `submitted` with a `waiting_reason`; there is no overflow to workers outside the group. A task that nobody took before `start_by` stays in `submitted` and raises the alarm `alarm.task.unclaimed`; core code (the `deadline` loop) raises the alarm under the common alarm schema (OBS-6), and the monitoring system passes it to people (MON-1).
 
 Checked by: `fx-dsp-11`
+
+<a id="evo"></a>
+## EVO: Scaffold evolution
+
+Explained in: [docs/improvements.md](../docs/improvements.md)
+
+<a id="EVO-1"></a>
+### EVO-1. The output coupling graph of the manifests
+
+serves [G5](../docs/goals.md) · since v0.3 · non-waivable · profile insights · check: impl · decisions: D-120
+
+Code builds a directed graph of the references between the manifests of a set, from the callee to the caller: a task type feeds the roles that claim, enqueue or analyse it, the schedules and routes that start it and the dispatcher rules that match it; a tool plugin, a skill folder, an action and a catalog that a type's schemas read with `enum_from` feed their callers; a role feeds the bot groups that select it, and a bot group the dispatcher rules that name it. A field under `spec.dispatch.rules` of a tenant belongs to the node of that rule, any other field to its object. The field lock of PRP-9 also holds the direct neighbours of every object the locked change sets: an open `manifest_change` proposal that sets an object which is a direct caller or callee of a locked one goes to `parked(conflict)` and returns when the lock is released. The gate (EVO-9) refuses a change after which a reference within one step of a changed object names nothing, and orders several changes from callee to caller.
+
+Checked by: `impl:internal/manifest/TestCouplingEdges`, `impl:internal/manifest/TestCouplingTopoOrder`, `impl:internal/gate/TestGateCoupling`
+
+<a id="EVO-2"></a>
+### EVO-2. A scaffold change stays small and away from the skeleton
+
+serves [G5](../docs/goals.md) · since v0.3 · non-waivable · profile insights · check: impl · decisions: D-120
+
+The diff step of the gate writes the fields of a `manifest_change` into the file that holds the target object, changing only the bytes of the old values or adding the missing keys as lines, and refuses the change when it sets more fields than the tenant's `insights.gate.max_fields` (1 by default), when its unified diff has more lines than `max_diff_lines` (40 by default), when it touches more than one file or a binary file (`diff_size_exceeded`); when it touches a path under `ci/`, `spec/`, `conformance/`, `evals/`, `impl/` or `.github/`, a symbolic link or a path under one, a manifest of a protected kind (Governance, Commission, IncidentClass, Group, ModelProfile, Sink, Channel, EvalReports) or a field outside the proposable fields of PRP-3 (`forbidden_path_modified`); and when the editor cannot write a field in place or the file read back differs from the base by more than exactly those fields (`diff_unrenderable`). Path checks come before size checks.
+
+Checked by: `impl:internal/gate/TestGateForbiddenPaths`, `impl:internal/gate/TestGateDiffSize`
+
+<a id="EVO-3"></a>
+### EVO-3. Lessons of review become rules of the role
+
+serves [G5](../docs/goals.md) · since v0.3 · non-waivable · profile insights · check: impl · decisions: D-120
+
+When a `manifest_change` proposal leaves by a lesson about its approach, the core keeps a review rule of its role: the tenant, the role, the target object, the problem code, the diversity signature of the approach (EVO-5), the outcome class and the reason code. A lesson is a decline by people with `too_risky`, `wrong_data`, `too_costly` or `not_relevant`, a `dismissed(veto)`, a revert with `harm_observed` and a trial outcome `worse`; "not now", a duplicate, "already done", `other`, a gate refusal and an expiry teach nothing. A repeat counts on the same rule. A later proposal of the role for the same problem and the same target whose signature contains every entry of a live rule's signature is refused at creation with `rejected(review_rule)`, without a record. A rule stays until a person who may decide its category drops it through P2 `review_rule.drop` (C1). The role's analysis input carries its live rules, at most 20, with the outcome class and without the reason code (GOV-29).
+
+Checked by: `impl:internal/core/TestVariantArchiveRevert`, `impl:internal/core/TestP2VariantViews`
+
+<a id="EVO-4"></a>
+### EVO-4. The variant archive and the lineage of the scaffold
+
+serves [G5](../docs/goals.md) · since v0.3 · non-waivable · profile insights · check: impl · decisions: D-120
+
+For every target object of every `manifest_change` proposal the core writes a variant at creation: an id `var_<ULID>`, the tenant, the target, the parent, the applied commit and manifest hash it starts from, the proposal, the author role and bot, the hash of the manifest after the change, the fields with their values after and before, the diversity signature, the gate result (EVO-9), the outcome and its reason code, a live flag and the counts of its children and of its children with the outcome `better`. The parent is the live variant of the object while the object is still what that variant made it; otherwise the variant has no parent and starts from the applied commit, as after a person's own commit. The outcome is `pending` while the proposal is open, then the trial outcome, or `rejected_at_gate`, `rejected_by_commission`, `rejected_by_human`, `reverted`, `expired` or `canceled`. A realized variant is live and takes the live flag from the object's previous one; a reverted one is not. Variants of rejected, reverted and intermediate changes stay. The identity, the fields and the hashes never change.
+
+Checked by: `impl:internal/core/TestVariantArchiveRevert`, `impl:internal/core/TestVariantLineage`
+
+<a id="EVO-5"></a>
+### EVO-5. Analyses see diverse variants, not only the last one
+
+serves [G5](../docs/goals.md) · since v0.3 · non-waivable · profile insights · check: impl · decisions: D-120
+
+The diversity signature of a variant is the sorted list of its entries `<Kind>.<field>:<direction>`: up or down for a number or a duration, more_often, less_often or shifted for a cron expression, set for a field the object did not have, changed otherwise. Code puts the closed block `evolution` (`spec/model/insight-evolution.schema.json`) beside "My outcomes" into every analysis task of a role: up to five variants of the role's targets with different signatures, the live ones first, then by the number of successful children and the newest, so that unchanged, mixed and refused approaches stand beside the current one, each with its outcome class, fields, signature and counts, and the role's live review rules (EVO-3). The block has no reason codes, no gate step codes and no text (GOV-29, EVO-7).
+
+Checked by: `impl:internal/core/TestVariantArchiveRevert`, `impl:internal/core/TestDiversitySignature`
+
+<a id="EVO-6"></a>
+### EVO-6. People read and reuse the archive
+
+serves [G5](../docs/goals.md) · since v0.3 · waivable · profile insights · check: impl · decisions: D-120
+
+A person who may decide a category reads the variants of that category in P2 `variant.list` (the tree of each target, parents before children, with outcomes, reason codes and the success of children) and `variant.show` (the fields before and after, the gate result, the trial and the chain of parents); every read goes into the audit. `farmctl variant checkout <id> -out <dir>` writes the variant's fields and, with `-repo`, the manifest file of the target from the repository with those fields set, for reuse or a new branch. Nothing in the archive changes the farm by itself.
+
+Checked by: `impl:internal/core/TestP2VariantViews`
+
+<a id="EVO-7"></a>
+### EVO-7. Hidden holdout cases stay hidden
+
+serves [G5](../docs/goals.md) · since v0.3 · non-waivable · profile insights · check: impl · decisions: D-120
+
+The holdout cases have the format of `evals/cases/` and live in a folder outside the farm repository, outside every worktree and outside the reach of every bot; `botaru-eval -holdout- dir` refuses a folder inside its root and never writes the cases to an EvalReports index. Only the gate reads their outcomes. What leaves the gate is the step status, `holdout_passed` and one code (`holdout_regression`, `reward_hacking_detected`, `shortcut_gaming_detected`, `audit_tampering_detected`); a case id, its text, its prompts or its details never reach the core, a proposal record, a card or a bot. A person sees the code in P2 and in `farmctl`; a bot sees only the outcome class `rejected_at_gate` (GOV-29).
+
+Checked by: `impl:internal/gate/TestGateRewardHacking`
+
+<a id="EVO-8"></a>
+### EVO-8. The anti-gaming guard
+
+serves [G5](../docs/goals.md) · since v0.3 · non-waivable · profile insights · check: impl · decisions: D-120
+
+Code compares the base and the candidate on the cases rated on both sides, first on the visible cases of the affected roles and then on the hidden ones, in this order: a new security finding of the candidate on a hidden case (a canary, a leak, a forbidden side effect, a tool outside its list) is `audit_tampering_detected`; more skipped required diagnostic tools (`tools_required`) on the hidden cases while the candidate got faster, cheaper or made fewer tool calls is `shortcut_gaming_detected`; a visible pass rate not lower while the hidden pass rate is lower or more facts are missed is `reward_hacking_detected`; a lower hidden pass rate otherwise is `holdout_regression`. A hidden set with no case rated on both sides is `not_run`, never passed. The visible step before it fails with `regression_failed` when a case that passed on the base does not pass on the candidate.
+
+Checked by: `impl:internal/evals/TestCheckRewardHacking`, `impl:internal/gate/TestGateRewardHacking`
+
+<a id="EVO-9"></a>
+### EVO-9. The merge gate of a manifest change
+
+serves [G5](../docs/goals.md) · since v0.3 · non-waivable · profile insights · check: impl · decisions: D-120
+
+A person with `proposal.gate:<category>` runs `farmctl proposal gate` on a `manifest_change` in `recommended` or `presented`. Go code checks it in a temporary git worktree of the commit the core applied (`os.MkdirTemp("", "botaru-gate-*")`, removed after every run) in a fixed order, stopping at the first failure: diff (EVO-2), lint (an `apply` plan of the candidate set, with every schema and set check of apply), coupling (EVO-1), regression and holdout (EVO-8) on worktrees of the base and of the candidate; a step without what it needs is `not_run`. The closed result goes to the core by P2 `proposal.gate`, which records it once per applied commit in the record field `gate`; a failed gate moves the proposal to `dismissed(gate_failed)`, archives the variant as `rejected_at_gate` with the step code and never reaches a person. A tenant with `insights.gate.required` puts a manifest change into a digest and accepts it only while it has a passed gate at the applied commit; after a new apply the gate runs again. A tenant without it keeps the behaviour of 0.3.0. The model takes no part in any step (C2).
+
+Checked by: `impl:internal/gate/TestGateValidDiff`, `impl:internal/core/TestProposalGate`
+
+<a id="EVO-10"></a>
+### EVO-10. A revert in one command
+
+serves [G5](../docs/goals.md) · since v0.3 · non-waivable · profile insights · check: impl · decisions: D-120
+
+`farmctl proposal revert <id> -reason harm_observed|superseded|other` reverts a realized change on a person's order: it refuses a checkout with uncommitted changes or without a branch, writes the previous values of the reverse edit into a temporary worktree of the branch head with the line editor, refuses when a field no longer holds the accepted value or when the file differs by more than those fields, commits with the line `Botaru-Revert: <id> <reason>`, moves the person's branch to that commit only by a fast-forward and applies the set, so the core moves the proposal to `reverted`, ends its trial, marks the variant `reverted` and keeps the review rule of a harmful change (EVO-3). The target object then has the manifest hash it had before the change. The core itself never writes git (PRP-23); the person pushes.
+
+Checked by: `impl:internal/gate/TestRevert`, `impl:internal/core/TestVariantArchiveRevert`
 
 <a id="fen"></a>
 ## FEN: Leases

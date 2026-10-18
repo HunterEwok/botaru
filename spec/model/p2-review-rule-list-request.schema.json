@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-review-rule-list-request:1",
+  "title": "P2 review_rule.list: request",
+  "description": "The live review rules of one's own tenant in the categories the person may decide, optionally of one role (EVO-3). Denial: forbidden.",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "EVO-3"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "role": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/name"
+    }
+  }
+}

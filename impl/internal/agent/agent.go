@@ -105,6 +105,8 @@ type attemptPayload struct {
 	// earlier proposals of an analysis task (DIG-7, INS-5).
 	Facts      any `json:"facts"`
 	MyOutcomes any `json:"my_outcomes"`
+	// Evolution are the variants and review rules of the role in an analysis task (EVO-5).
+	Evolution any `json:"evolution"`
 	// Skills are the role's skill-refs and SkillFiles their files by path (SKL-2).
 	Skills     []skillRef                   `json:"skills"`
 	SkillFiles map[string]map[string]string `json:"skill_files"`
@@ -119,6 +121,9 @@ func dataText(p attemptPayload) string {
 	}
 	if p.MyOutcomes != nil {
 		data["my_outcomes"] = p.MyOutcomes
+	}
+	if p.Evolution != nil {
+		data["evolution"] = p.Evolution
 	}
 	if len(data) == 0 {
 		return ""

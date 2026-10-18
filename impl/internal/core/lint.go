@@ -32,7 +32,7 @@ var timeoutCeilings = map[string]int64{"lease": 120, "heartbeat": 30, "tool_star
 // never hold (PRM-10, PRM-16).
 var decisionCaps = map[string]bool{"action.approve": true, "proposal.decide": true, "control.approve": true, "control.apply": true,
 	"hold.set": true, "hold.release": true, "script.run": true, "incident.manage": true, "manager.direct": true, "audit.read": true,
-	"governance.confirm": true, "governance.attribute": true, "proposal.override_veto": true, "model_grant.manage": true, "task.takeover": true}
+	"governance.confirm": true, "governance.attribute": true, "proposal.override_veto": true, "proposal.gate": true, "model_grant.manage": true, "task.takeover": true}
 
 var (
 	reTaskWildcard = regexp.MustCompile(`^[a-z][a-z0-9_]*(\.[a-z0-9_]+)*\.\*$`)

@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-review-rule-drop-response:1",
+  "title": "P2 review_rule.drop: response",
+  "description": "The dropped rule.",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "EVO-3"
+  ],
+  "type": "object",
+  "required": [
+    "rule",
+    "dropped"
+  ],
+  "properties": {
+    "rule": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "dropped": {
+      "const": true
+    }
+  }
+}

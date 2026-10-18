@@ -112,6 +112,15 @@ func WriteResults(w io.Writer, rep *Report) error {
 		if len(r.NotCounted) > 0 {
 			line["not_counted"] = r.NotCounted
 		}
+		// The numbers a gate compares between a base and a candidate (EVO-8).
+		line["seconds"], line["tool_calls"] = r.Seconds, r.ToolCalls
+		kinds := map[string]int{}
+		for _, f := range r.Findings {
+			kinds[f.Kind]++
+		}
+		if len(kinds) > 0 {
+			line["finding_kinds"] = kinds
+		}
 		if err := enc.Encode(line); err != nil {
 			return err
 		}

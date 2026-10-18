@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"regexp"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -369,7 +370,8 @@ func keysOverlap(a, b []string) bool {
 }
 
 // lockHolders are the proposals of the tenant that hold a lock on one of keys: a manifest
-// change in realizing, or realized while its trial runs (PRP-9).
+// change in realizing, or realized while its trial runs (PRP-9). A lock also holds the direct
+// neighbours of the locked objects in the output coupling graph (EVO-1).
 func lockHolders(ctx context.Context, tx pgx.Tx, tenant, except string, keys []string) ([]any, error) {
 	if len(keys) == 0 {
 		return nil, nil
@@ -380,26 +382,84 @@ func lockHolders(ctx context.Context, tx pgx.Tx, tenant, except string, keys []s
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	var out []any
+	var held []*proposalRow
 	for rows.Next() {
 		q := &proposalRow{}
 		var raw []byte
 		if err := rows.Scan(&q.ID, &raw); err != nil {
+			rows.Close()
 			return nil, err
 		}
 		if err := json.Unmarshal(raw, &q.Rec); err != nil {
+			rows.Close()
 			return nil, err
 		}
-		if keysOverlap(keys, lockKeys(q.body())) {
+		held = append(held, q)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	cg := &couplingOnce{}
+	var out []any
+	for _, q := range held {
+		hit, err := cg.conflict(ctx, tx, tenant, keys, lockKeys(q.body()))
+		if err != nil {
+			return nil, err
+		}
+		if hit {
 			out = append(out, q.ID)
 		}
 	}
-	return out, rows.Err()
+	return out, nil
+}
+
+// couplingOnce loads the output coupling graph of the applied set at most once per check.
+type couplingOnce struct {
+	g *manifest.Graph
+}
+
+// conflict: two manifest changes conflict when they set the same field or one a section of the
+// other (PRP-9), or when an object one of them changes is a direct caller or callee of an object
+// the other changes (EVO-1).
+func (o *couplingOnce) conflict(ctx context.Context, tx pgx.Tx, tenant string, a, b []string) (bool, error) {
+	if len(a) == 0 || len(b) == 0 {
+		return false, nil
+	}
+	if keysOverlap(a, b) {
+		return true, nil
+	}
+	if o.g == nil {
+		docs, _, err := loadManifests(ctx, tx)
+		if err != nil {
+			return false, err
+		}
+		o.g = manifest.Coupling(docs)
+	}
+	nb := lockNodes(tenant, b)
+	for _, n := range lockNodes(tenant, a) {
+		for _, m := range o.g.Neighbours(n) {
+			if slices.Contains(nb, m) {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
+// lockNodes are the coupling graph nodes the kind/name/field keys of a change touch.
+func lockNodes(tenant string, keys []string) []manifest.Node {
+	var out []manifest.Node
+	for _, k := range keys {
+		kind, rest, _ := strings.Cut(k, "/")
+		name, field, _ := strings.Cut(rest, "/")
+		out = append(out, manifest.FieldNode(kind, tenant, name, field))
+	}
+	return out
 }
 
 // parkConflicts parks the open proposals of the tenant that change a field the realizing
-// proposal p now locks; their cards go dark (PRP-9).
+// proposal p now locks, or an object coupled to it (EVO-1); their cards go dark (PRP-9).
 func (c *Core) parkConflicts(ctx context.Context, tx pgx.Tx, now time.Time, p *proposalRow) error {
 	keys := lockKeys(p.body())
 	if len(keys) == 0 {
@@ -414,13 +474,21 @@ func (c *Core) parkConflicts(ctx context.Context, tx pgx.Tx, now time.Time, p *p
 	if err != nil {
 		return err
 	}
+	cg := &couplingOnce{}
 	for _, id := range ids {
 		q, err := loadProposal(ctx, tx, id)
 		if err != nil {
 			return err
 		}
 		// A proposal in review finishes its round; the digest parks it if the lock still holds.
-		if !slices.Contains([]string{"screened", "recommended", "presented"}, q.State) || !keysOverlap(keys, lockKeys(q.body())) {
+		if !slices.Contains([]string{"screened", "recommended", "presented"}, q.State) {
+			continue
+		}
+		hit, err := cg.conflict(ctx, tx, p.Tenant, keys, lockKeys(q.body()))
+		if err != nil {
+			return err
+		}
+		if !hit {
 			continue
 		}
 		q.Rec["conflicts_with"] = []any{p.ID}
