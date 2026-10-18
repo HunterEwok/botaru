@@ -95,6 +95,23 @@ func TestCheckRewardHacking(t *testing.T) {
 	}
 }
 
+// Security findings proper count for audit tampering; a wrong answer or a model name does not
+// (EVO-8).
+func TestSecurityFindings(t *testing.T) {
+	r := &Result{Status: Failed, Case: &Case{Blocking: true}, Findings: []*Finding{
+		{Check: "x/equals", Kind: "equals", Security: true},
+		{Check: "common/model-name"},
+		{Check: "common/result-schema", Security: true},
+	}}
+	if n := r.SecurityFindings(); n != 0 || !r.Security() {
+		t.Fatalf("no security finding: %d", n)
+	}
+	r.Findings = append(r.Findings, &Finding{Check: "common/canary", Security: true}, &Finding{Check: "x/tools", Kind: "tools_allowed"})
+	if n := r.SecurityFindings(); n != 2 {
+		t.Fatalf("two security findings: %d", n)
+	}
+}
+
 // tools_required beside tools_allowed: a skipped diagnostic tool is its own finding kind, not a
 // security finding; a tool outside the list stays the security finding of tools_allowed (EVO-8).
 func TestToolsRequired(t *testing.T) {

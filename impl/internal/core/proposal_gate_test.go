@@ -103,9 +103,13 @@ func TestProposalGate(t *testing.T) {
 	if err := b.c.spec.Validate("urn:botaru:schema:proposal-record:1", jsonMap(t, recordOf(t, b, id))); err != nil {
 		t.Fatalf("record: %v", err)
 	}
-	// One verdict per commit.
+	// One verdict per commit; a passed result with fewer passed steps does not replace it.
 	if _, err := b.c.ProposalGate(ctx, alice, GateRequest{Proposal: id, Result: pass}); err != nil {
 		t.Fatalf("a repeat: %v", err)
+	}
+	if res, err := b.c.ProposalGate(ctx, alice, GateRequest{Proposal: id, Result: partialGate(base)}); err != nil ||
+		passedSteps(asList(mmapAny(res["gate"])["steps"])) != 5 {
+		t.Fatalf("a weaker repeat: %v %v", res, err)
 	}
 	if _, err := b.c.ProposalGate(ctx, alice, GateRequest{Proposal: id, Result: gateResult(base, "failed", "coupling_broken")}); reasonOf(err) != "conflict" {
 		t.Fatalf("another verdict at the same commit: %v", err)

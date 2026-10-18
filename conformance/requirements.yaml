@@ -3445,7 +3445,7 @@
     the previous values of the reverse edit into a temporary worktree of the branch head with the
     line editor and takes out the fields the change added (`revert_absent`, with the maps they
     created; a change with a previous value the reverse edit cannot hold, such as null or a list,
-    has no reverse edit and is reverted by hand), refuses when a field no longer holds the accepted value or when the file differs by
+    has no reverse edit: a person reverts it by hand, and the proposal stays `realized`), refuses when a field no longer holds the accepted value or when the file differs by
     more than those fields, commits with the line `Botaru-Revert: <id> <reason>`, moves the person's
     branch to that commit only by a fast-forward and applies the set, so the core moves the proposal
     to `reverted`, ends its trial, marks the variant `reverted` and keeps the review rule of a
