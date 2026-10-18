@@ -31,9 +31,9 @@ type Missing struct {
 }
 
 // Graph is the directed graph of the references between the manifests of a set, from the
-// callee to the caller: ToolPlugin, Skill, Catalog and Action feed TaskType and Role; TaskType
-// feeds Role, Schedule, Route and DispatchRule; Role feeds BotGroup; BotGroup feeds
-// DispatchRule; Script feeds Schedule (EVO-1). References are by name, as manifests write them.
+// callee to the caller: ToolPlugin feeds Role and Action; Skill and Action feed Role; Catalog
+// feeds TaskType; TaskType feeds Role, Schedule, Route and DispatchRule; Role feeds BotGroup;
+// BotGroup feeds DispatchRule; Script feeds Schedule (EVO-1). References are by name, as manifests write them.
 type Graph struct {
 	nodes   map[Node]bool
 	callers map[Node][]Node
@@ -145,7 +145,7 @@ func Coupling(docs []Doc) *Graph {
 		}
 	}
 	// A catalog list feeds every task type whose schemas take values from a catalog
-	// (enum_from), in the catalog's tenant.
+	// (enum_from): a task type is global, so every tenant's catalogs feed it.
 	for _, t := range types {
 		if !usesCatalog(t.Value) {
 			continue

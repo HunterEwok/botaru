@@ -18,13 +18,26 @@ func gateEdit(ms []map[string]any) {
 	}
 }
 
+// gateResult is a gate result with every step passed, or failed at the coupling step.
 func gateResult(base, verdict, code string) *GateResult {
 	steps := []GateStep{{Step: "diff", Status: "passed"}, {Step: "lint", Status: "passed"}, {Step: "coupling", Status: "passed"},
-		{Step: "regression", Status: "not_run"}, {Step: "holdout", Status: "not_run"}}
+		{Step: "regression", Status: "passed"}, {Step: "holdout", Status: "passed"}}
+	held, rate := true, 1.0
+	r := &GateResult{Verdict: verdict, Code: code, BaseSHA: base, Steps: steps, Fields: 1, DiffLines: 2, HoldoutPassed: &held, RegressionPassRate: &rate}
 	if verdict == "failed" {
 		steps[2] = GateStep{Step: "coupling", Status: "failed", Code: code}
+		steps[3], steps[4] = GateStep{Step: "regression", Status: "not_run"}, GateStep{Step: "holdout", Status: "not_run"}
+		r.HoldoutPassed, r.RegressionPassRate = nil, nil
 	}
-	return &GateResult{Verdict: verdict, Code: code, BaseSHA: base, Steps: steps, Fields: 1, DiffLines: 2}
+	return r
+}
+
+// partialGate is a passed gate whose eval steps did not run.
+func partialGate(base string) *GateResult {
+	r := gateResult(base, "passed", "")
+	r.Steps[3], r.Steps[4] = GateStep{Step: "regression", Status: "not_run"}, GateStep{Step: "holdout", Status: "not_run"}
+	r.HoldoutPassed, r.RegressionPassRate = nil, nil
+	return r
 }
 
 // A tenant with a required gate shows a manifest change only after a passed gate at the
@@ -70,6 +83,16 @@ func TestProposalGate(t *testing.T) {
 	}
 	if _, err := b.c.ProposalGate(ctx, alice, GateRequest{Proposal: id, Result: gateResult(base, "failed", "")}); reasonOf(err) != "input_schema_invalid" {
 		t.Fatalf("a failed gate without a code: %v", err)
+	}
+	// A passed gate whose eval steps did not run is recorded, but a step that did not run never
+	// counts as passed: the digest keeps waiting.
+	if res, err := b.c.ProposalGate(ctx, alice, GateRequest{Proposal: id, Result: partialGate(base)}); err != nil || res["state"] != "recommended" {
+		t.Fatalf("partial %v %v", res, err)
+	}
+	b.loop(t, "proposal")
+	b.drain(t)
+	if state, _ := proposalState(t, b); state != "recommended" {
+		t.Fatalf("a gate with steps not run let the change out: %s", state)
 	}
 	pass := gateResult(base, "passed", "")
 	res, err := b.c.ProposalGate(ctx, alice, GateRequest{Proposal: id, Result: pass})

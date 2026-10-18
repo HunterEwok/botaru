@@ -223,6 +223,10 @@ type TenantInsights struct {
 	// Gate is the merge gate of manifest changes (EVO-9): when required, a manifest change is
 	// shown and accepted only after a passed gate at the applied commit.
 	Gate *TenantGate `json:"gate"`
+	// Evolution turns on the learning part of the scaffold evolution (EVO-1, EVO-3, EVO-5).
+	Evolution *struct {
+		Enabled bool `json:"enabled"`
+	} `json:"evolution"`
 }
 
 // TenantGate holds the limits of the merge gate.

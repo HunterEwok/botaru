@@ -37,6 +37,11 @@ func variantsOf(t *testing.T, b *bench) []variantRow {
 	return out
 }
 
+// evolutionEdit turns on the learning part of the evolution for the tenant demo.
+func evolutionEdit(ms []map[string]any) {
+	specOf(ms, "Tenant", "demo")["insights"].(map[string]any)["evolution"] = map[string]any{"enabled": true}
+}
+
 func variantOf(t *testing.T, b *bench, proposal string) variantRow {
 	t.Helper()
 	for _, v := range variantsOf(t, b) {
@@ -54,7 +59,7 @@ func variantOf(t *testing.T, b *bench, proposal string) variantRow {
 // the rule as outcome classes only (EVO-3, EVO-4, EVO-5, GOV-29).
 func TestVariantArchiveRevert(t *testing.T) {
 	ctx := context.Background()
-	b := newCommissionBench(t, true, presentEdit)
+	b := newCommissionBench(t, true, presentEdit, evolutionEdit)
 	id, other := acceptLimits(t, b)
 	vs := variantsOf(t, b)
 	if len(vs) != 2 {
@@ -261,8 +266,12 @@ func TestP2VariantViews(t *testing.T) {
 		t.Fatal(err)
 	}
 	validOut(t, b, "p2-review-rule-drop-response", dropped)
-	if _, err := b.c.ReviewRuleDrop(ctx, alice, ReviewRuleDropRequest{Rule: int64(n)}); reasonOf(err) != "not_found" {
-		t.Fatalf("a second drop: %v", err)
+	// A repeat by the same person is the same answer; for anyone else the rule is gone.
+	if again, err := b.c.ReviewRuleDrop(ctx, alice, ReviewRuleDropRequest{Rule: int64(n)}); err != nil || again["dropped"] != true {
+		t.Fatalf("a second drop: %v %v", again, err)
+	}
+	if _, err := b.c.ReviewRuleDrop(ctx, Operator{Principal: b.op.Principal, Tenant: "demo"}, ReviewRuleDropRequest{Rule: int64(n)}); reasonOf(err) != "not_found" {
+		t.Fatalf("a drop by another person: %v", err)
 	}
 	if rules, err := b.c.ReviewRuleList(ctx, alice, ReviewRuleListRequest{}); err != nil || len(asList(rules["items"])) != 0 {
 		t.Fatalf("after the drop %v %v", rules, err)

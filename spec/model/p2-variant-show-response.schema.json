@@ -166,7 +166,7 @@
       "description": "The parents from the nearest up."
     },
     "tenant": {
-      "$ref": "urn:botaru:schema:common:1#/$defs/name"
+      "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
     }
   }
 }

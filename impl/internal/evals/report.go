@@ -108,7 +108,8 @@ func WriteResults(w io.Writer, rep *Report) error {
 	enc := json.NewEncoder(w)
 	for _, r := range rep.Results {
 		line := map[string]any{"case": r.Case.ID, "role": r.Case.Role, "status": r.Status, "blocking": r.Case.Blocking, "rules": r.Case.Rules,
-			"detail": r.Detail, "repeats": r.Repeats, "eur_micros": r.Spend, "security_failure": r.Security()}
+			"detail": r.Detail, "repeats": r.Repeats, "eur_micros": r.Spend, "security_failure": r.Security(),
+			"security_findings": r.SecurityFindings()}
 		if len(r.NotCounted) > 0 {
 			line["not_counted"] = r.NotCounted
 		}

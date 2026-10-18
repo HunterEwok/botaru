@@ -212,10 +212,12 @@ machines:
       - presented
       text: '`presented`'
     by: delivery of the `proposal_digest` digest through a channel (E1)
-    when: the evidence reread before showing is within tolerance
+    when: the evidence reread before showing is within tolerance; from v0.3 a manifest change of a tenant with `insights.gate.required`
+      has a passed gate at the applied commit
     rules:
     - DIG-1
     - DIG-2
+    - EVO-9
     - PRP-2
   - from:
       states:
@@ -266,9 +268,10 @@ machines:
       text: '`realizing`'
     by: 'the "Accept" button: the `decide` operation (P1) from the card''s channel (APR-4)'
     when: the kind is not `none`; the person has the right to decide and to start the realization; the target is not locked
-      by a conflict or a running trial
+      by a conflict or a running trial; from v0.3 the gate as above
     rules:
     - DIG-3
+    - EVO-9
     - PRP-18
     - PRP-21
     - PRP-4
@@ -428,9 +431,10 @@ machines:
       text: '`realizing`'
     by: the "Accept" button (no veto) or "Lift veto" (there is a veto, the capability `proposal.override_veto:<category>`,
       after "Details")
-    when: the kind is not `none`; the rights; the target is not locked
+    when: the kind is not `none`; the rights; the target is not locked; from v0.3 the gate as for "Accept"
     rules:
     - DIG-6
+    - EVO-9
     - PRP-18
     - PRP-21
     - PRP-4

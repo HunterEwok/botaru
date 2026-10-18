@@ -92,6 +92,27 @@
                   }
                 ]
               }
+            },
+            "if": {
+              "properties": {
+                "status": {
+                  "enum": [
+                    "passed",
+                    "not_run"
+                  ]
+                }
+              }
+            },
+            "then": {
+              "additionalProperties": false,
+              "properties": {
+                "step": true,
+                "status": true,
+                "code": {
+                  "type": "string",
+                  "maxLength": 0
+                }
+              }
             }
           }
         },

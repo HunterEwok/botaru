@@ -174,7 +174,7 @@
         "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
       },
       "maxItems": 50,
-      "description": "Open proposals that change the same locked field or field group of the same object (PRP-9)."
+      "description": "Open proposals that change the same locked field or field group of the same object (PRP-9), or from v0.3 in a tenant with insights.evolution.enabled a direct neighbour of it in the output coupling graph (EVO-1)."
     },
     "seen_count": {
       "type": "integer",
@@ -495,6 +495,43 @@
                   "type": "null"
                 }
               ]
+            },
+            "revert_absent": {
+              "type": "array",
+              "maxItems": 10,
+              "description": "Fields the change added: the revert takes them out, and the reverse edit holds no previous value for them (PRP-20, EVO-10).",
+              "x-botaru-version": "v0.3",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "target",
+                  "field"
+                ],
+                "properties": {
+                  "target": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "kind",
+                      "name"
+                    ],
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "maxLength": 64
+                      },
+                      "name": {
+                        "$ref": "urn:botaru:schema:common:1#/$defs/name"
+                      }
+                    }
+                  },
+                  "field": {
+                    "type": "string",
+                    "maxLength": 120
+                  }
+                }
+              }
             },
             "batch": {
               "anyOf": [

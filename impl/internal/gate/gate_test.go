@@ -451,3 +451,77 @@ func TestEvalRunnerNoCases(t *testing.T) {
 		t.Fatalf("%v %v", r, err)
 	}
 }
+
+// A path git would quote (a non-ASCII name) is still checked, and the editor never writes
+// through a symbolic link, inside the worktree or outside it (EVO-2).
+func TestGateQuotedAndLinkedPaths(t *testing.T) {
+	repo := newRepo(t)
+	ctx := context.Background()
+	if err := os.Rename(filepath.Join(repo, "evals/schedules.yaml"), filepath.Join(repo, "evals/schédules.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(t.TempDir(), "outside.yaml")
+	body := strings.ReplaceAll(strings.ReplaceAll(evalSchedule, "in-evals", "far"), "evals", "x")
+	if err := os.WriteFile(outside, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(repo, "tenants/demo/far.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, repo, "shared/near.yaml", strings.ReplaceAll(body, "far", "near"))
+	if err := os.Symlink("../../shared/near.yaml", filepath.Join(repo, "tenants/demo/near.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	gitT(t, repo, "add", "-A")
+	gitT(t, repo, "commit", "-q", "-m", "paths")
+	one := func(name string) Change {
+		return Change{Proposal: "prp_1", Tenant: "demo", Ops: []Op{{Kind: "Schedule", Name: name, Field: "spec.cron", Value: "0 3 * * *"}}}
+	}
+	for _, tc := range []struct {
+		name string
+		cfg  Config
+	}{
+		{"in-evals", Config{Repo: repo}},
+		{"far", Config{Repo: repo}},
+		{"near", Config{Repo: repo, Sets: []string{"tenants", "roles.yaml"}}},
+	} {
+		rep, err := Run(ctx, tc.cfg, one(tc.name))
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if rep.Passed() || rep.Code != ForbiddenPathModified {
+			t.Fatalf("%s: %+v", tc.name, rep)
+		}
+	}
+	if b, _ := os.ReadFile(outside); string(b) != body {
+		t.Fatalf("the file outside changed:\n%s", b)
+	}
+	noWorktrees(t, repo)
+}
+
+// A field the change added is taken out by the revert, with the map it created, so the file
+// returns byte for byte (EVO-10).
+func TestRevertAddedField(t *testing.T) {
+	repo := newRepo(t)
+	ctx := context.Background()
+	origBytes, _ := os.ReadFile(filepath.Join(repo, "tenants/demo/tenant.yaml"))
+	ch := Change{Proposal: "prp_8", Tenant: "demo", Ops: []Op{{Kind: "Tenant", Name: "demo", Field: "spec.campaigns.max_active", Value: 2}}}
+	patch, err := Patch(ctx, Config{Repo: repo}, ch, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pf := filepath.Join(t.TempDir(), "p.patch")
+	if err := os.WriteFile(pf, patch, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitT(t, repo, "am", "-q", pf)
+	res, err := Revert(ctx, RevertRequest{Repo: repo, Tenant: "demo", Proposal: "prp_8", Reason: "other",
+		Fields: []RevertField{{Kind: "Tenant", Name: "demo", Field: "spec.campaigns.max_active", Accepted: 2, Absent: true}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(repo, "tenants/demo/tenant.yaml")); string(b) != string(origBytes) || res.Commit == "" {
+		t.Fatalf("file after the revert:\n%s", b)
+	}
+	noWorktrees(t, repo)
+}

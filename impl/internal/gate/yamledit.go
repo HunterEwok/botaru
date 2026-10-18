@@ -210,8 +210,7 @@ func replaceScalar(src []byte, lines []int, n *yaml.Node, v any) ([]byte, error)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]byte, 0, len(src)+len(text))
-	out = append(out, src[:start]...)
+	out := append([]byte{}, src[:start]...)
 	out = append(out, text...)
 	return append(out, src[end:]...), nil
 }
@@ -253,8 +252,7 @@ func insertKeys(src []byte, lines []int, m *yaml.Node, parts []string, v any) ([
 		}
 		b.WriteString("\n")
 	}
-	out := make([]byte, 0, len(src)+b.Len())
-	out = append(out, src[:at]...)
+	out := append([]byte{}, src[:at]...)
 	out = append(out, b.String()...)
 	return append(out, src[at:]...), nil
 }
@@ -319,4 +317,87 @@ func render(v any, style yaml.Style) (string, error) {
 		return s, nil
 	}
 	return "", errUnrenderable
+}
+
+// removeField takes a one-line scalar field out of the document number doc of a YAML file: the
+// key's line goes, and so does the line of every parent key left without a key, while that line
+// holds only the parent key and sits right above. It undoes an insertion by setField byte for
+// byte.
+func removeField(src []byte, doc int, field string) ([]byte, error) {
+	root, err := documentNode(src, doc)
+	if err != nil {
+		return nil, err
+	}
+	lines := lineStarts(src)
+	type step struct{ m, k, v *yaml.Node }
+	var chain []step
+	cur := root
+	parts := strings.Split(field, ".")
+	for i, part := range parts {
+		name, idx, err := splitPart(part)
+		if err != nil {
+			return nil, err
+		}
+		if cur.Kind != yaml.MappingNode || cur.Style&yaml.FlowStyle != 0 || cur.Anchor != "" {
+			return nil, fmt.Errorf("%s: %w", field, errUnrenderable)
+		}
+		var k, v *yaml.Node
+		for j := 0; j+1 < len(cur.Content); j += 2 {
+			if cur.Content[j].Value == name {
+				k, v = cur.Content[j], cur.Content[j+1]
+			}
+		}
+		if k == nil {
+			return nil, fmt.Errorf("%s: no key %s: %w", field, name, errUnrenderable)
+		}
+		chain = append(chain, step{cur, k, v})
+		if idx != noIndex {
+			if i == len(parts)-1 || v.Kind != yaml.SequenceNode || v.Style&yaml.FlowStyle != 0 {
+				return nil, fmt.Errorf("%s: %w", field, errUnrenderable)
+			}
+			if idx == onlyElement {
+				if len(v.Content) != 1 {
+					return nil, fmt.Errorf("%s: %w", field, errUnrenderable)
+				}
+				idx = 0
+			}
+			if idx >= len(v.Content) {
+				return nil, fmt.Errorf("%s: %w", field, errUnrenderable)
+			}
+			// Pruning stops at a list element.
+			chain = nil
+			cur = v.Content[idx]
+			continue
+		}
+		cur = v
+	}
+	if len(chain) == 0 {
+		return nil, fmt.Errorf("%s: %w", field, errUnrenderable)
+	}
+	startsLine := func(n *yaml.Node) bool {
+		off, err := offset(src, lines, n)
+		return err == nil && strings.TrimLeft(string(src[lines[n.Line-1]:off]), " ") == ""
+	}
+	lineEnd := func(line int) int { // line is 1-based
+		if line < len(lines) {
+			return lines[line]
+		}
+		return len(src)
+	}
+	leaf := chain[len(chain)-1]
+	if leaf.v.Kind != yaml.ScalarNode || leaf.v.Style&(yaml.LiteralStyle|yaml.FoldedStyle) != 0 || leaf.v.Anchor != "" ||
+		leaf.v.Line != leaf.k.Line || !startsLine(leaf.k) {
+		return nil, fmt.Errorf("%s: %w", field, errUnrenderable)
+	}
+	startLine := leaf.k.Line
+	for j := len(chain) - 2; j >= 0; j-- {
+		p := chain[j]
+		if len(p.v.Content) != 2 || !startsLine(p.k) || p.v.Line == p.k.Line || p.k.Line+1 != startLine ||
+			strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(string(src[lines[p.k.Line-1]:lineEnd(p.k.Line)])), ":")) != p.k.Value {
+			break
+		}
+		startLine = p.k.Line
+	}
+	out := append([]byte{}, src[:lines[startLine-1]]...)
+	return append(out, src[lineEnd(leaf.k.Line):]...), nil
 }

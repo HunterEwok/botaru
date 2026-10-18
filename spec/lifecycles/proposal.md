@@ -44,11 +44,11 @@ An aggregator proposal does not change the states of other proposals: an overlap
 | `parked` | `screened` | the `proposal` loop | the evidence changed by more than the declared share; the trial of the conflicting proposal ended; the `review` line was topped up; the lens with a veto has an executor again | PRP-5, PRP-9, COM-6, COM-7 |
 | `parked` | `expired` | the `proposal` loop | `park_ttl` expired (30 days by default) | PRP-6 |
 | `parked` (`score`), `dismissed` (`veto`, `below_min`, `low_score`) | `sampled` | the `proposal` loop, the monthly audit sample | selected by the recorded seed | DIG-5 |
-| `recommended` | `presented` | delivery of the `proposal_digest` digest through a channel (E1) | the evidence reread before showing is within tolerance | DIG-1, DIG-2, PRP-2 |
+| `recommended` | `presented` | delivery of the `proposal_digest` digest through a channel (E1) | the evidence reread before showing is within tolerance; from v0.3 a manifest change of a tenant with `insights.gate.required` has a passed gate at the applied commit | DIG-1, DIG-2, PRP-2, EVO-9 |
 | `recommended` | `parked` | the `proposal` loop when assembling the digest | an evidence drift (`evidence_drift`) or a conflict | PRP-2, PRP-9 |
 | `recommended` | `expired` | the `proposal` loop | 28 days without being shown (`recommend_ttl`) | PRP-6 |
 | `recommended`, `presented` | `dismissed` | P2 `proposal.gate` with a failed result (`gate_failed`); from v0.3 | a person with `proposal.gate:<category>` ran the merge gate of the manifest change at the applied commit and it failed; the card goes out | EVO-9 |
-| `presented` | `realizing` | the "Accept" button: the `decide` operation (P1) from the card's channel (APR-4) | the kind is not `none`; the person has the right to decide and to start the realization; the target is not locked by a conflict or a running trial | DIG-3, PRP-4, PRP-9, PRP-18, PRP-21 |
+| `presented` | `realizing` | the "Accept" button: the `decide` operation (P1) from the card's channel (APR-4) | the kind is not `none`; the person has the right to decide and to start the realization; the target is not locked by a conflict or a running trial; from v0.3 the gate as above | DIG-3, PRP-4, PRP-9, PRP-18, PRP-21, EVO-9 |
 | `presented` | `noted` | the "Accept" button | the kind is `none` | DIG-3, PRP-4 |
 | `presented` | `declined` | the "Reject" button and the reason card | the reason is from a closed list | DIG-3, DIG-4, PRP-5 |
 | `presented` | `recommended` | the "Postpone" button | at most 2 times | DIG-3 |
@@ -60,7 +60,7 @@ An aggregator proposal does not change the states of other proposals: an overlap
 | `sampled` | `sample_presented` | delivery of `proposal_sample_card` through a channel (E1) | a recipient with `proposal.decide:<category>`; the recipient's address and ceiling | DIG-5, DIG-6, DIG-2 |
 | `sample_presented` | `sample_judged` | the "Would accept" button | the answer is written to the sample and scores the forecasts before the scores are shown | DIG-6, COM-16 |
 | `sample_presented` | `sample_closed` | the "Would not accept" button or the `decide_ttl` deadline | | DIG-6 |
-| `sample_judged` | `realizing` | the "Accept" button (no veto) or "Lift veto" (there is a veto, the capability `proposal.override_veto:<category>`, after "Details") | the kind is not `none`; the rights; the target is not locked | DIG-6, PRP-4, PRP-9, PRP-18, PRP-21 |
+| `sample_judged` | `realizing` | the "Accept" button (no veto) or "Lift veto" (there is a veto, the capability `proposal.override_veto:<category>`, after "Details") | the kind is not `none`; the rights; the target is not locked; from v0.3 the gate as for "Accept" | DIG-6, PRP-4, PRP-9, PRP-18, PRP-21, EVO-9 |
 | `sample_judged` | `noted` | the "Accept" or "Lift veto" button | the kind is `none` | DIG-6, PRP-4 |
 | `sample_judged` | `sample_closed` | the "Reject" button or the `decide_ttl` deadline | | DIG-6 |
 
@@ -70,7 +70,7 @@ An aggregator proposal does not change the states of other proposals: an overlap
 - "Accept", "Reject", "Postpone", the answers of the blind card and "Lift veto" are done only by a `human` principal with strong identity and the right, from the card's channel, with the `nonce`, once; bots, `service` and `system` do not decide (APR-4, DIG-3, DIG-6). The core accepts "Lift veto" only after "Details" was opened (APR-14).
 - No transition except "Accept" and "Lift veto" creates tasks above level 0, tool calls, approvals, script runs, patches and messages, except the delivery of the digest and the cards; "Accept" creates exactly one ordinary path object (PRP-4).
 - Only the core sets `realized`, and only by a verified link; a value that is already in place or was set without a link does not count as execution (PRP-19).
-- A manifest change of a tenant with `insights.gate.required` goes into a digest and is accepted only with a passed gate at the applied commit; without it the change waits in `recommended` until the gate or `recommend_ttl` (EVO-9).
+- A manifest change of a tenant with `insights.gate.required` goes into a digest and is accepted, also by "Lift veto" of the audit sample, only with a passed gate at the applied commit whose every step passed; without it the change waits in `recommended` until the gate or `recommend_ttl` (EVO-9). A failed gate on a `sample_judged` item records the result and keeps the state.
 - At most one proposal per field of one object in `realizing` or with a running trial; "Accept" is unavailable while the target is locked (PRP-9).
 - Every proposal of a kind other than `none` that moved to `realizing` has exactly one trial record, created in the same transaction (PRP-21).
 - The open states for the limits of a role and a bot: `screened`, `in_review`, `recommended`, `presented`, `parked` (INS-4, PRP-5, PRP-16); `parked(conflict)` because of an earlier accepted proposal of another author does not take the bot's slot (PRP-16).

@@ -100,6 +100,8 @@ type Op struct {
 	Name  string `json:"name"`
 	Field string `json:"field"`
 	Value any    `json:"value"`
+	// Remove takes the key out instead of setting it: the revert of a field the change added.
+	Remove bool `json:"remove,omitempty"`
 }
 
 // Change is the manifest change of one proposal of a tenant.
@@ -412,9 +414,6 @@ func prepare(ctx context.Context, cfg Config, dir string, ch Change, extra func(
 		}
 		fields[op.Kind+"/"+op.Name+"/"+op.Field] = true
 	}
-	if len(fields) > cfg.MaxFields {
-		return nil, &refusal{DiffSizeExceeded, fmt.Sprintf("%d fields, at most %d", len(fields), cfg.MaxFields)}, nil
-	}
 	before, err := readSets(dir, cfg.Sets)
 	if err != nil {
 		return nil, nil, err
@@ -432,6 +431,9 @@ func prepare(ctx context.Context, cfg Config, dir string, ch Change, extra func(
 		targets[key] = t
 	}
 	if err := write(dir, targets, ch.Ops); err != nil {
+		if errors.Is(err, errThroughLink) {
+			return nil, &refusal{ForbiddenPathModified, err.Error()}, nil
+		}
 		if errors.Is(err, errUnrenderable) {
 			return nil, &refusal{DiffUnrenderable, err.Error()}, nil
 		}
@@ -449,16 +451,29 @@ func prepare(ctx context.Context, cfg Config, dir string, ch Change, extra func(
 	return c, nil, nil
 }
 
-// write applies the operations to the target files with the line editor.
+// errThroughLink refuses a target file that is or lies under a symbolic link: the editor never
+// writes through a link, so nothing outside the worktree changes (EVO-2).
+var errThroughLink = errors.New("the file is or lies under a symbolic link")
+
+// write applies the operations to the target files with the line editor; an operation with
+// Remove takes its key out.
 func write(dir string, targets map[string]target, ops []Op) error {
 	for _, op := range ops {
 		t := targets[op.Kind+"/"+op.Name]
+		if throughLink(dir, t.file) {
+			return fmt.Errorf("%s: %w", t.file, errThroughLink)
+		}
 		p := filepath.Join(dir, t.file)
 		src, err := os.ReadFile(p)
 		if err != nil {
 			return err
 		}
-		out, err := setField(src, t.doc, op.Field, op.Value)
+		var out []byte
+		if op.Remove {
+			out, err = removeField(src, t.doc, op.Field)
+		} else {
+			out, err = setField(src, t.doc, op.Field, op.Value)
+		}
 		if err != nil {
 			return fmt.Errorf("%s %s %s: %w", op.Kind, op.Name, op.Field, err)
 		}
@@ -496,6 +511,8 @@ func check(ctx context.Context, cfg Config, dir string, before []manifest.Doc, t
 		}
 	}
 	switch {
+	case fields > cfg.MaxFields:
+		return c, &refusal{DiffSizeExceeded, fmt.Sprintf("%d fields, at most %d", fields, cfg.MaxFields)}, nil
 	case len(changes) == 0:
 		return c, &refusal{DiffUnrenderable, "the change sets the values the files already hold"}, nil
 	case len(changes) > 1:
@@ -529,6 +546,12 @@ func semantic(dir string, before, after []manifest.Doc, targets map[string]targe
 		want[key] = cloneDoc(t.d.Value)
 	}
 	for _, op := range ops {
+		if op.Remove {
+			if !removePath(want[op.Kind+"/"+op.Name], strings.Split(op.Field, ".")) {
+				return &refusal{DiffUnrenderable, op.Field + " is not in " + op.Kind + " " + op.Name}
+			}
+			continue
+		}
 		if !setPath(want[op.Kind+"/"+op.Name], op.Field, op.Value) {
 			return &refusal{DiffUnrenderable, op.Field + " has no place in " + op.Kind + " " + op.Name}
 		}
@@ -676,6 +699,51 @@ func setPath(doc map[string]any, path string, v any) bool {
 		cur = list[idx]
 	}
 	return false
+}
+
+// removePath takes a field out of a manifest value, and with it every map on the way that it
+// leaves empty, as setPath created them.
+func removePath(doc map[string]any, parts []string) bool {
+	if doc == nil || len(parts) == 0 {
+		return false
+	}
+	name, idx, err := splitPart(parts[0])
+	if err != nil {
+		return false
+	}
+	next, ok := doc[name]
+	if !ok {
+		return false
+	}
+	if len(parts) == 1 {
+		if idx != noIndex {
+			return false
+		}
+		delete(doc, name)
+		return true
+	}
+	if idx != noIndex {
+		list, ok := next.([]any)
+		if idx == onlyElement {
+			if len(list) != 1 {
+				return false
+			}
+			idx = 0
+		}
+		if !ok || idx >= len(list) {
+			return false
+		}
+		m, ok := list[idx].(map[string]any)
+		return ok && removePath(m, parts[1:])
+	}
+	m, ok := next.(map[string]any)
+	if !ok || !removePath(m, parts[1:]) {
+		return false
+	}
+	if len(m) == 0 {
+		delete(doc, name)
+	}
+	return true
 }
 
 // pathValue reads a field of a manifest value with the parts of setPath.

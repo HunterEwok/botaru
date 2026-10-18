@@ -70,7 +70,7 @@ How each subsystem behaves: [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ```sh
 farmctl proposal gate p_01J... -repo ~/farm -set tenants/demo -set shared \
-  -holdout-dir ~/holdout -eval-bin botaru-eval -dsn postgres://eval@127.0.0.1/postgres
+  -holdout-dir ~/holdout -eval-bin botaru-eval            # the DSN of botaru-eval from $BOTARU_EVAL_DSN
 farmctl proposal gate -pending -repo ~/farm               # every change waiting for its gate, from a timer
 farmctl proposal patch p_01J... -repo ~/farm -out p.patch   # an accepted change; then git am p.patch
 farmctl proposal revert p_01J... -reason harm_observed -repo ~/farm
@@ -81,13 +81,21 @@ farmctl review-rule list -role ops-reader
 farmctl review-rule drop 12
 ```
 
+The gate is on for a tenant with `insights.gate.required: true`; the review rule refusal, the wider lock and the
+`evolution` input of analysis tasks with `insights.evolution.enabled: true`. Without them a tenant keeps the behaviour of
+0.3.0, and the archive and the rules are still kept for people.
+
 - `proposal gate` reads the change and the applied commit through P2 `proposal.gate`, checks out that commit into
   `os.MkdirTemp("", "botaru-gate-*")` with `git worktree add --detach` and removes the worktree after every run. It
   prints a line per step and the diff, and posts only the verdict, the step statuses and codes, `holdout_passed`
-  and the numbers; `-no-post` prints only. Without `-eval-bin` the regression and holdout steps are `not_run`;
-  `botaru-eval` runs as a child process with only `PATH`, `HOME` and `TMPDIR` in its environment and the mock model
-  unless `-real -key-file -max-eur`.
-- `proposal revert` refuses a checkout with uncommitted changes or without a branch, commits the reverse edit with
+  and the numbers; `-no-post` prints only. Without `-eval-bin` the regression and holdout steps are `not_run`, and a
+  tenant with `insights.gate.required` then keeps the change waiting: only a gate with every step passed counts.
+  `botaru-eval` runs as a child process with only `PATH`, `HOME`, `TMPDIR` and the DSN in its environment and the
+  mock model unless `-real -key-file -max-eur`; relative paths of `-holdout-dir`, `-eval-bin` and `-key-file` are
+  made absolute first. `-pending` lists the waiting changes with P2 `proposal.list`, so it also needs
+  `proposal.decide:<category>`, and goes on past a change the gate cannot run.
+- `proposal revert` refuses a checkout with uncommitted changes or without a branch, writes the previous values and
+  takes out the fields the change added, commits the reverse edit with
   `Botaru-Revert: <id> <reason>`, moves the branch only by a fast-forward and runs `apply` of the set; `-no-apply`
   stops after the commit. Push the branch afterwards.
 

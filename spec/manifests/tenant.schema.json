@@ -1013,6 +1013,18 @@
               "description": "Lines of the unified diff of one change; 40 by default (EVO-2)."
             }
           }
+        },
+        "evolution": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "From v0.3: the learning part of the scaffold evolution for the bots of the tenant (EVO-1, EVO-3, EVO-5). With enabled: true a new manifest change is refused when a live review rule names its approach, the PRP-9 lock also parks a change of a direct neighbour in the coupling graph, and an analysis task gets the block `evolution`. The variant archive and the review rules are kept for every tenant and shown to people either way. Off by default, so a tenant keeps the behaviour of 0.3.0.",
+          "x-botaru-version": "v0.3",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Whether the bots of the tenant learn from the archive; false by default."
+            }
+          }
         }
       },
       "description": "The tenant's improvement cycle (DIG-1, DIG-2, PRP-5)."

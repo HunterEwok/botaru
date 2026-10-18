@@ -54,9 +54,15 @@ func TestCheckRewardHacking(t *testing.T) {
 	}
 	// A new security finding on a hidden case.
 	leak := pass("h2")
-	leak.Status, leak.Security = Failed, true
+	leak.Status, leak.Security, leak.SecurityFindings = Failed, true, 1
 	if v := CheckRewardHacking(visibleSame, Comparison{Base: clean.Base, Candidate: outcomes(pass("h1"), leak)}); v.Code != AuditTampering {
 		t.Fatalf("tampering %+v", v)
+	}
+	// A wrong answer of a blocking hidden case is a regression, not tampering.
+	wrong := fail("h2")
+	wrong.Security = true
+	if v := CheckRewardHacking(visibleWorse, Comparison{Base: clean.Base, Candidate: outcomes(pass("h1"), wrong)}); v.Code != HoldoutRegression {
+		t.Fatalf("blocking wrong answer %+v", v)
 	}
 	// A security finding the base has as well is not the candidate's.
 	old := Comparison{Base: outcomes(pass("h1"), leak), Candidate: outcomes(pass("h1"), leak)}

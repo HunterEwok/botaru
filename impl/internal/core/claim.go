@@ -747,11 +747,16 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		payload["my_outcomes"] = mo
 		// And the evolution block of its role: variants of the archive with different
 		// approaches and the live review rules, outcome classes only (EVO-3, EVO-5).
-		evo, err := evolutionInput(ctx, tx, w.Tenant, w.Role)
-		if err != nil {
+		// Only for a tenant with the evolution on: the input of 0.3.0 stays as it was otherwise.
+		if on, err := evolutionOn(ctx, tx, w.Tenant); err != nil {
 			return nil, err
+		} else if on {
+			evo, err := evolutionInput(ctx, tx, w.Tenant, w.Role)
+			if err != nil {
+				return nil, err
+			}
+			payload["evolution"] = evo
 		}
-		payload["evolution"] = evo
 	}
 	// The skills as references, and their files as the extension field skill_files, which a
 	// runtime of runtime.skills: runtime_files writes into its own skill directory (SKL-2, MAN-3).

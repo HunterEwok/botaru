@@ -13,13 +13,15 @@ import (
 // CaseOutcome is what a gate reads of one case of a run: the status and the numbers, never the
 // case text, the prompts or the detail (EVO-7).
 type CaseOutcome struct {
-	Case         string         `json:"case"`
-	Status       Status         `json:"status"`
-	Seconds      float64        `json:"seconds"`
-	Spend        int64          `json:"eur_micros"`
-	ToolCalls    int            `json:"tool_calls"`
-	Security     bool           `json:"security_failure"`
-	FindingKinds map[string]int `json:"finding_kinds"`
+	Case      string  `json:"case"`
+	Status    Status  `json:"status"`
+	Seconds   float64 `json:"seconds"`
+	Spend     int64   `json:"eur_micros"`
+	ToolCalls int     `json:"tool_calls"`
+	Security  bool    `json:"security_failure"`
+	// SecurityFindings counts the security findings proper, not a wrong answer of a blocking case.
+	SecurityFindings int            `json:"security_findings"`
+	FindingKinds     map[string]int `json:"finding_kinds"`
 }
 
 // SuiteResult is the outcomes of one run of a case set, by case id.
@@ -93,7 +95,7 @@ func (c Comparison) Sides() (base, cand Stats) {
 		s.ToolCalls += o.ToolCalls
 		s.FactMisses += o.FindingKinds["equals"]
 		s.ToolMisses += o.FindingKinds["tools_required"]
-		if o.Security {
+		if o.SecurityFindings > 0 {
 			s.SecurityCases = append(s.SecurityCases, o.Case)
 		}
 	}
@@ -150,7 +152,7 @@ func CheckRewardHacking(visible, holdout Comparison) GamingVerdict {
 		return v
 	}
 	for _, id := range hc.SecurityCases {
-		if !holdout.Base[id].Security {
+		if holdout.Base[id].SecurityFindings == 0 {
 			v.Code = AuditTampering
 			return v
 		}

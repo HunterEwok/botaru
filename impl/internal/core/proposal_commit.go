@@ -181,7 +181,7 @@ func (c *Core) realizeByCommit(ctx context.Context, tx pgx.Tx, now time.Time, p 
 	if p.State != "realizing" || b.Change.Kind != "manifest_change" || b.Change.ManifestChange == nil || commit == "" {
 		return false, nil
 	}
-	var patch []any
+	var patch, absent []any
 	for _, op := range b.Change.ManifestChange.Ops {
 		doc, applied, err := storedDoc(ctx, tx, op.Target.Kind, p.Tenant, op.Target.Name)
 		if err != nil {
@@ -195,8 +195,12 @@ func (c *Core) realizeByCommit(ctx context.Context, tx pgx.Tx, now time.Time, p 
 		if err != nil {
 			return false, err
 		}
+		tg := map[string]any{"kind": op.Target.Kind, "name": op.Target.Name}
 		if old, ok := pathValue(prev, op.Field); ok && scalar(old) {
-			patch = append(patch, map[string]any{"target": map[string]any{"kind": op.Target.Kind, "name": op.Target.Name}, "field": op.Field, "previous": old})
+			patch = append(patch, map[string]any{"target": tg, "field": op.Field, "previous": old})
+		} else if !ok && prev != nil {
+			// The change added the field: its revert takes it out (EVO-10).
+			absent = append(absent, map[string]any{"target": tg, "field": op.Field})
 		}
 	}
 	r := mmapAny(p.Rec["realization"])
@@ -206,6 +210,9 @@ func (c *Core) realizeByCommit(ctx context.Context, tx pgx.Tx, now time.Time, p 
 	r["commit"], r["link"], r["realized_at"] = commit, link, fmtTime(now)
 	if len(patch) > 0 {
 		r["revert_patch"] = patch
+	}
+	if len(absent) > 0 {
+		r["revert_absent"] = absent
 	}
 	if batch {
 		r["batch"] = commit[:12]
@@ -235,9 +242,20 @@ func scalar(v any) bool {
 // canceled (PRP-20, PRP-22).
 func (c *Core) revertByCommit(ctx context.Context, tx pgx.Tx, now time.Time, p *proposalRow, commit, reason string) error {
 	r := mmapAny(p.Rec["realization"])
-	patch := asList(r["revert_patch"])
-	if p.State != "realized" || len(patch) == 0 {
+	patch, absent := asList(r["revert_patch"]), asList(r["revert_absent"])
+	if p.State != "realized" || len(patch)+len(absent) == 0 {
 		return nil
+	}
+	for _, e := range absent {
+		em := mmapAny(e)
+		tg := mmapAny(em["target"])
+		doc, applied, err := storedDoc(ctx, tx, asString(tg["kind"]), p.Tenant, asString(tg["name"]))
+		if err != nil {
+			return err
+		}
+		if _, ok := pathValue(doc, asString(em["field"])); applied != commit || ok {
+			return nil
+		}
 	}
 	for _, e := range patch {
 		em := mmapAny(e)
@@ -414,9 +432,23 @@ func lockHolders(ctx context.Context, tx pgx.Tx, tenant, except string, keys []s
 	return out, nil
 }
 
-// couplingOnce loads the output coupling graph of the applied set at most once per check.
+// evolutionOn says whether the applied Tenant manifest turns on the learning part of the
+// scaffold evolution (insights.evolution.enabled; EVO-1, EVO-3, EVO-5).
+func evolutionOn(ctx context.Context, tx pgx.Tx, tenant string) (bool, error) {
+	doc, _, err := storedDoc(ctx, tx, "Tenant", tenant, tenant)
+	if err != nil || doc == nil {
+		return false, err
+	}
+	v, _ := pathValue(doc, "spec.insights.evolution.enabled")
+	return v == true, nil
+}
+
+// couplingOnce loads the output coupling graph of the applied set at most once per check, and
+// only for a tenant with the evolution on.
 type couplingOnce struct {
-	g *manifest.Graph
+	g       *manifest.Graph
+	checked bool
+	on      bool
 }
 
 // conflict: two manifest changes conflict when they set the same field or one a section of the
@@ -428,6 +460,16 @@ func (o *couplingOnce) conflict(ctx context.Context, tx pgx.Tx, tenant string, a
 	}
 	if keysOverlap(a, b) {
 		return true, nil
+	}
+	if !o.checked {
+		on, err := evolutionOn(ctx, tx, tenant)
+		if err != nil {
+			return false, err
+		}
+		o.checked, o.on = true, on
+	}
+	if !o.on {
+		return false, nil
 	}
 	if o.g == nil {
 		docs, _, err := loadManifests(ctx, tx)

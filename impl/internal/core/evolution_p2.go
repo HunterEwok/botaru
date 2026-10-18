@@ -195,9 +195,13 @@ func (c *Core) VariantShow(ctx context.Context, op Operator, req VariantShowRequ
 		}
 		chain := []any{}
 		for p, _ := it["parent_variant_id"].(*string); p != nil && len(chain) < 50; {
-			anc, _, err := one(*p)
+			anc, ancCategory, err := one(*p)
 			if err != nil {
 				return err
+			}
+			// The chain stops at an ancestor of a category the person may not decide.
+			if !slices.Contains(cats, ancCategory) {
+				break
 			}
 			chain = append(chain, map[string]any{"variant_id": anc["variant_id"], "trial_outcome": anc["trial_outcome"],
 				"diversity_signature": anc["diversity_signature"], "live": anc["live"]})
@@ -239,8 +243,10 @@ func (c *Core) ReviewRuleList(ctx context.Context, op Operator, req ReviewRuleLi
 			return err
 		}
 		rows, err := tx.Query(ctx, `SELECT id, role, category, target_kind, target_name, problem_code, signature, outcome, reason_code, count,
-			proposal_ids, first_at, last_at FROM review_rules WHERE tenant = $1 AND dropped_at IS NULL AND ($2 = '' OR role = $2)
-			AND category = ANY($3) ORDER BY last_at DESC, id DESC`, tv.Name, req.Role, cats)
+			proposal_ids, first_at, last_at FROM review_rules r WHERE tenant = $1 AND dropped_at IS NULL AND ($2 = '' OR role = $2)
+			AND category = ANY($3) AND NOT EXISTS (SELECT 1 FROM proposals p WHERE r.proposal_ids ? p.id AND (p.state IN ('sampled', 'sample_presented')
+				OR p.state = 'sample_closed' AND coalesce(p.record->'sample_answer'->>'answer', '') <> 'would_accept'))
+			ORDER BY last_at DESC, id DESC`, tv.Name, req.Role, cats)
 		if err != nil {
 			return err
 		}
@@ -285,8 +291,9 @@ func (c *Core) ReviewRuleDrop(ctx context.Context, op Operator, req ReviewRuleDr
 			return err
 		}
 		var category string
-		err = tx.QueryRow(ctx, `SELECT category FROM review_rules WHERE id = $1 AND tenant = $2 AND dropped_at IS NULL FOR UPDATE`, req.Rule, tv.Name).Scan(&category)
-		if errors.Is(err, pgx.ErrNoRows) {
+		var droppedBy *string
+		err = tx.QueryRow(ctx, `SELECT category, dropped_by FROM review_rules WHERE id = $1 AND tenant = $2 FOR UPDATE`, req.Rule, tv.Name).Scan(&category, &droppedBy)
+		if errors.Is(err, pgx.ErrNoRows) || err == nil && droppedBy != nil && *droppedBy != op.Principal {
 			return refuse("not_found", "no such live rule")
 		}
 		if err != nil {
@@ -296,6 +303,11 @@ func (c *Core) ReviewRuleDrop(ctx context.Context, op Operator, req ReviewRuleDr
 			pr := refuse("forbidden", "proposal.decide of the rule's category is needed")
 			pr.Needs = []string{"proposal.decide:" + category}
 			return pr
+		}
+		if droppedBy != nil {
+			// A repeat by the same person gets the same answer (IDM-3).
+			out = map[string]any{"rule": req.Rule, "dropped": true}
+			return nil
 		}
 		if _, err := tx.Exec(ctx, `UPDATE review_rules SET dropped_at = $2, dropped_by = $3 WHERE id = $1`, req.Rule, now, op.Principal); err != nil {
 			return err

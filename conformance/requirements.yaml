@@ -3213,15 +3213,19 @@
   text: >-
     Code builds a directed graph of the references between the manifests of a set, from the callee
     to the caller: a task type feeds the roles that claim, enqueue or analyse it, the schedules and
-    routes that start it and the dispatcher rules that match it; a tool plugin, a skill folder, an
-    action and a catalog that a type's schemas read with `enum_from` feed their callers; a role
-    feeds the bot groups that select it, and a bot group the dispatcher rules that name it. A field
-    under `spec.dispatch.rules` of a tenant belongs to the node of that rule, any other field to its
-    object. The field lock of PRP-9 also holds the direct neighbours of every object the locked
-    change sets: an open `manifest_change` proposal that sets an object which is a direct caller
-    or callee of a locked one goes to `parked(conflict)` and returns when the lock is released. The
-    gate (EVO-9) refuses a change after which a reference within one step of a changed object
-    names nothing, and orders several changes from callee to caller.
+    routes that start it and the dispatcher rules that match it; a tool plugin feeds the roles and
+    actions that use it; a skill folder and an action feed the roles that use them; a catalog feeds
+    every task type whose schemas read it with `enum_from`; a script feeds the schedules that run
+    it; a role feeds the bot groups that select it, and a bot group the dispatcher rules that name
+    it. A field under `spec.dispatch.rules` of a tenant belongs to the node of that rule, any other
+    field to its object. In a tenant with `insights.evolution.enabled` the field lock of PRP-9 also
+    holds the direct neighbours of every object the locked change sets: an open `manifest_change`
+    proposal that sets an object which is a direct caller or callee of a locked one goes to
+    `parked(conflict)` and returns when the lock is released; no two kinds a proposal may set in
+    v0.3 (Schedule, Catalog, Tenant) are direct neighbours, so this parks a change only once a
+    proposable kind gains one. The gate (EVO-9) refuses a change after which a reference within one
+    step of a changed object names nothing, and orders the objects of one change from callee to
+    caller.
   goal: G5
   check: [impl]
   waivable: false
@@ -3240,19 +3244,20 @@
     and refuses the change when it sets more fields than the tenant's `insights.gate.max_fields` (1
     by default), when its unified diff has more lines than `max_diff_lines` (40 by default), when it
     touches more than one file or a binary file (`diff_size_exceeded`); when it touches a path under
-    `ci/`, `spec/`, `conformance/`, `evals/`, `impl/` or `.github/`, a symbolic link or a path under
-    one, a manifest of a protected kind (Governance, Commission, IncidentClass, Group, ModelProfile,
-    Sink, Channel, EvalReports) or a field outside the proposable fields of PRP-3
-    (`forbidden_path_modified`); and when the editor cannot write a field in place or the file read
-    back differs from the base by more than exactly those fields (`diff_unrenderable`). Path checks
-    come before size checks.
+    `ci/`, `spec/`, `conformance/`, `evals/`, `impl/` or `.github/` (whatever characters the path
+    holds), a symbolic link or a path under one, a manifest of a protected kind (Governance,
+    Commission, IncidentClass, Group, ModelProfile, Sink, Channel, EvalReports) or a field outside
+    the proposable fields of PRP-3 (`forbidden_path_modified`); and when the editor cannot write a
+    field in place or the file read back differs from the base by more than exactly those fields
+    (`diff_unrenderable`). The editor never writes through a symbolic link. Path checks come before
+    size checks; the protected kinds are checked when the set is read back.
   goal: G5
   check: [impl]
   waivable: false
   version: v0.3
   profile: insights
   decisions: [D-120]
-  fixtures: [impl:internal/gate/TestGateForbiddenPaths, impl:internal/gate/TestGateDiffSize]
+  fixtures: [impl:internal/gate/TestGateForbiddenPaths, impl:internal/gate/TestGateDiffSize, impl:internal/gate/TestGateQuotedAndLinkedPaths]
   doc: docs/improvements.md
 
 - id: EVO-3
@@ -3268,8 +3273,14 @@
     on the same rule. A later proposal of the role for the same problem and the same target whose
     signature contains every entry of a live rule's signature is refused at creation with
     `rejected(review_rule)`, without a record. A rule stays until a person who may decide its
-    category drops it through P2 `review_rule.drop` (C1). The role's analysis input carries its
-    live rules, at most 20, with the outcome class and without the reason code (GOV-29).
+    category drops it through P2 `review_rule.drop` (C1); a person who lifts the veto of an audit
+    sample item takes that proposal out of the rule its veto taught, and a rule left without a
+    proposal is dropped. The refusal at creation and the rules in the analysis input hold only in a
+    tenant with `insights.evolution.enabled`; the rules are kept for every tenant. The role's
+    analysis input carries its live rules, at most 20, with the target, the problem code, the
+    signature and the count: a rule says that an approach is refused, never who refused it or why
+    (GOV-29). P2 `review_rule.list` leaves out a rule of a proposal whose audit sample card is
+    blind (DIG-6).
   goal: G5
   check: [impl]
   waivable: false
@@ -3291,8 +3302,11 @@
     and of its children with the outcome `better`. The parent is the live variant of the object
     while the object is still what that variant made it; otherwise the variant has no parent and
     starts from the applied commit, as after a person's own commit. The outcome is `pending` while
-    the proposal is open, then the trial outcome, or `rejected_at_gate`, `rejected_by_commission`,
-    `rejected_by_human`, `reverted`, `expired` or `canceled`. A realized variant is live and takes
+    the proposal is open, then the trial outcome, or `rejected_at_gate`, `rejected_by_commission`
+    (any dismissal but the gate's, by the commission or by a code check), `rejected_by_human`,
+    `reverted`, `expired` or `canceled`; an audit sample item keeps the outcome of its dismissal
+    until a person rejects it. A parent counts a child as successful while the child's outcome is
+    `better`. A realized variant is live and takes
     the live flag from the object's previous one; a reverted one is not. Variants of rejected,
     reverted and intermediate changes stay. The identity, the fields and the hashes never change.
   goal: G5
@@ -3311,12 +3325,14 @@
     The diversity signature of a variant is the sorted list of its entries
     `<Kind>.<field>:<direction>`: up or down for a number or a duration, more_often, less_often or
     shifted for a cron expression, set for a field the object did not have, changed otherwise.
-    Code puts the closed block `evolution` (`spec/model/insight-evolution.schema.json`) beside "My
-    outcomes" into every analysis task of a role: up to five variants of the role's targets with
-    different signatures, the live ones first, then by the number of successful children and the
-    newest, so that unchanged, mixed and refused approaches stand beside the current one, each with
-    its outcome class, fields, signature and counts, and the role's live review rules (EVO-3). The
-    block has no reason codes, no gate step codes and no text (GOV-29, EVO-7).
+    In a tenant with `insights.evolution.enabled` code puts the closed block `evolution`
+    (`spec/model/insight-evolution.schema.json`) beside "My outcomes" into every analysis task of a
+    role: up to five variants of the role's targets with different signatures, the live ones first,
+    then by the number of successful children and the newest, so that unchanged, mixed and refused
+    approaches stand beside the current one, each with its fields, signature, counts and the
+    outcome class a bot sees (`declined` for a refusal by people, `dismissed` for one by the
+    commission or the gate), and the role's live review rules (EVO-3). The block has no reason
+    codes, no gate step codes and no text (GOV-29, EVO-7).
   goal: G5
   check: [impl]
   waivable: false
@@ -3356,8 +3372,9 @@
     the gate reads their outcomes. What leaves the gate is the step status, `holdout_passed` and one
     code (`holdout_regression`, `reward_hacking_detected`, `shortcut_gaming_detected`,
     `audit_tampering_detected`); a case id, its text, its prompts or its details never reach the
-    core, a proposal record, a card or a bot. A person sees the code in P2 and in `farmctl`; a bot
-    sees only the outcome class `rejected_at_gate` (GOV-29).
+    core, a proposal record, a card or a bot; the output of a failed run over the hidden set is not
+    shown either. A person sees the code in P2 and in `farmctl`; a bot sees only the outcome class
+    `dismissed` (GOV-29).
   goal: G5
   check: [impl]
   waivable: false
@@ -3374,7 +3391,7 @@
     Code compares the base and the candidate on the cases rated on both sides, first on the visible
     cases of the affected roles and then on the hidden ones, in this order: a new security finding
     of the candidate on a hidden case (a canary, a leak, a forbidden side effect, a tool outside its
-    list) is `audit_tampering_detected`; more skipped required diagnostic tools (`tools_required`)
+    list; not a wrong answer of a blocking case) is `audit_tampering_detected`; more skipped required diagnostic tools (`tools_required`)
     on the hidden cases while the candidate got faster, cheaper or made fewer tool calls is
     `shortcut_gaming_detected`; a visible pass rate not lower while the hidden pass rate is lower or
     more facts are missed is `reward_hacking_detected`; a lower hidden pass rate otherwise is
@@ -3395,24 +3412,28 @@
   status: active
   text: >-
     A person with `proposal.gate:<category>` runs `farmctl proposal gate` on a `manifest_change` in
-    `recommended` or `presented`. Go code checks it in a temporary git worktree of the commit the
+    `recommended`, `presented` or `sample_judged`. Go code checks it in a temporary git worktree of the commit the
     core applied (`os.MkdirTemp("", "botaru-gate-*")`, removed after every run) in a fixed order,
     stopping at the first failure: diff (EVO-2), lint (an `apply` plan of the candidate set, with
     every schema and set check of apply), coupling (EVO-1), regression and holdout (EVO-8) on
     worktrees of the base and of the candidate; a step without what it needs is `not_run`. The
     closed result goes to the core by P2 `proposal.gate`, which records it once per applied commit
-    in the record field `gate`; a failed gate moves the proposal to `dismissed(gate_failed)`,
-    archives the variant as `rejected_at_gate` with the step code and never reaches a person. A
-    tenant with `insights.gate.required` puts a manifest change into a digest and accepts it only
-    while it has a passed gate at the applied commit; after a new apply the gate runs again. A
-    tenant without it keeps the behaviour of 0.3.0. The model takes no part in any step (C2).
+    in the record field `gate` (a passed result run again with other steps replaces it); a failed
+    gate moves a `recommended` or `presented` proposal to `dismissed(gate_failed)` and archives the
+    variant as `rejected_at_gate` with the step code, so a change not yet shown never reaches a
+    person and a shown one leaves its card; a judged audit sample item keeps its state. A tenant
+    with `insights.gate.required` puts a manifest change into a digest and accepts it, by "Accept"
+    or by "Lift veto" of the audit sample, only while it has a passed gate at the applied commit
+    with every step passed: a step that did not run never counts as passed; after a new apply the
+    gate runs again. A tenant without it keeps the behaviour of 0.3.0. The model takes no part in
+    any step (C2).
   goal: G5
   check: [impl]
   waivable: false
   version: v0.3
   profile: insights
   decisions: [D-120]
-  fixtures: [impl:internal/gate/TestGateValidDiff, impl:internal/core/TestProposalGate]
+  fixtures: [impl:internal/gate/TestGateValidDiff, impl:internal/core/TestProposalGate, impl:internal/core/TestAuditSampleGate]
   doc: docs/improvements.md
 
 - id: EVO-10
@@ -3422,7 +3443,8 @@
     `farmctl proposal revert <id> -reason harm_observed|superseded|other` reverts a realized change
     on a person's order: it refuses a checkout with uncommitted changes or without a branch, writes
     the previous values of the reverse edit into a temporary worktree of the branch head with the
-    line editor, refuses when a field no longer holds the accepted value or when the file differs by
+    line editor and takes out the fields the change added (`revert_absent`, with the maps they
+    created), refuses when a field no longer holds the accepted value or when the file differs by
     more than those fields, commits with the line `Botaru-Revert: <id> <reason>`, moves the person's
     branch to that commit only by a fast-forward and applies the set, so the core moves the proposal
     to `reverted`, ends its trial, marks the variant `reverted` and keeps the review rule of a
@@ -3434,7 +3456,7 @@
   version: v0.3
   profile: insights
   decisions: [D-120]
-  fixtures: [impl:internal/gate/TestRevert, impl:internal/core/TestVariantArchiveRevert]
+  fixtures: [impl:internal/gate/TestRevert, impl:internal/gate/TestRevertAddedField, impl:internal/core/TestVariantArchiveRevert]
   doc: docs/improvements.md
 
 - id: FEN-1
@@ -10400,7 +10422,7 @@
     `farmctl apply` itself computes the `privileged` attribute of each group and prints it. A group
     is privileged if it has at least one of: `action.request:<a>` or `action.approve:<a>`; any
     `admin:<area>`; a data class above `internal`; a task type of tier 1 and higher; any decision or
-    control permission (`proposal.decide`, `proposal.override_veto`, `hold.set`, `hold.release`,
+    control permission (`proposal.decide`, `proposal.override_veto`, `proposal.gate`, `hold.set`, `hold.release`,
     `control.apply`, `control.approve`, `script.run`, `incident.manage`, `model_grant.manage`,
     `governance.confirm`, `governance.attribute`, `task.takeover`, `manager.direct`, `audit.read`
     and any other permission that the decision registry (APR-12) names a decision permission).

@@ -5,6 +5,7 @@ package core
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -153,4 +154,85 @@ func (b *bench) catalog(t *testing.T) *Catalog {
 		t.Fatal(err)
 	}
 	return cat
+}
+
+// In a tenant with a required gate, "Lift veto" of a judged manifest change in the audit sample
+// waits for a passed gate at the applied commit like "Accept" does (EVO-9); the lift then takes
+// the proposal out of the review rule its veto taught (EVO-3).
+func TestAuditSampleGate(t *testing.T) {
+	ctx := context.Background()
+	b := newCommissionBench(t, true, sampleEdit, gateEdit, evolutionEdit)
+	alice := Operator{Principal: b.alice, Tenant: "demo"}
+	b.helloDone(t, "1", "", "hi")
+	b.loop(t, "observe")
+	if _, err := b.analysis(t, "1", false, map[string]any{"proposals": []any{changeBody("slow", limitsChange(7))}}); err != nil {
+		t.Fatal(err)
+	}
+	b.loop(t, "proposal")
+	// Every lens reviews; the security lens vetoes.
+	for _, role := range []string{"reviewer-a", "reviewer-b"} {
+		w := b.enroll(t, EnrollRequest{Tenant: "demo", Role: role, Kind: "agent"})
+		for att := b.claim(t, w, "attempt"); att != nil; att = b.claim(t, w, "attempt") {
+			lens := strings.TrimSuffix(strings.TrimPrefix(att.Payload["task"].(map[string]any)["type"].(string), "review."), ".v1")
+			res := map[string]any{"lens": lens, "score": 4, "confidence": "high", "forecast": reviewForecast(lens, 4)}
+			if lens == "security" {
+				res["score"], res["veto"], res["forecast"] = 1, true, reviewForecast(lens, 1)
+			}
+			if _, err := b.c.Complete(ctx, w, header(t, att), CompleteRequest{Result: res}); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	b.loop(t, "proposal")
+	if state, rec := proposalState(t, b); state != "dismissed" || rec["state_reason"] != "veto" {
+		t.Fatalf("state %s %v", state, rec["state_reason"])
+	}
+	b.drain(t)
+	var rules int
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM review_rules WHERE dropped_at IS NULL`).Scan(&rules); err != nil || rules != 1 {
+		t.Fatalf("rules after the veto %d %v", rules, err)
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `DELETE FROM audit_samples`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE proposals SET record = jsonb_set(record, '{verdict,computed_at}',
+		to_jsonb(to_char((date_trunc('month', botaru_now()) - interval '10 days') AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')))`); err != nil {
+		t.Fatal(err)
+	}
+	b.loop(t, "proposal")
+	if state, _ := proposalState(t, b); state != "sample_presented" {
+		t.Fatalf("state %s", state)
+	}
+	// While the card is blind, the review rule of its veto is not listed to people.
+	if l, err := b.c.ReviewRuleList(ctx, alice, ReviewRuleListRequest{}); err != nil || len(asList(l["items"])) != 0 {
+		t.Fatalf("a blind item's rule was listed: %v %v", l, err)
+	}
+	sent := b.drain(t)
+	card := cardOf(t, sent, proposalSampleCard, "direct:1001")
+	id, nonce := b.proposalNonce(t)
+	on := press("telegram:1001", "direct:1001", card.external)
+	if r, err := b.c.Decide(ctx, b.channel, on, DecideRequest{SubjectKind: "proposal", ID: id, Nonce: nonce, Decision: "would_accept"}); err != nil || r.State != "sample_judged" {
+		t.Fatalf("would accept %+v %v", r, err)
+	}
+	b.advance(t, 1)
+	if _, err := b.c.CardDetails(ctx, b.channel, on, CardOp{Op: "card.details", SubjectKind: "proposal", ID: id, Nonce: nonce}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.Decide(ctx, b.channel, on, DecideRequest{SubjectKind: "proposal", ID: id, Nonce: nonce, Decision: "override_veto"}); reasonOf(err) != "forbidden" {
+		t.Fatalf("lift without a gate: %v", err)
+	}
+	read, err := b.c.ProposalGate(ctx, alice, GateRequest{Proposal: id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	base, _ := read["applied_commit"].(string)
+	if res, err := b.c.ProposalGate(ctx, alice, GateRequest{Proposal: id, Result: gateResult(base, "passed", "")}); err != nil || res["state"] != "sample_judged" {
+		t.Fatalf("gate %v %v", res, err)
+	}
+	if r, err := b.c.Decide(ctx, b.channel, on, DecideRequest{SubjectKind: "proposal", ID: id, Nonce: nonce, Decision: "override_veto"}); err != nil || r.State != "realizing" {
+		t.Fatalf("lift %+v %v", r, err)
+	}
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM review_rules WHERE dropped_at IS NULL`).Scan(&rules); err != nil || rules != 0 {
+		t.Fatalf("the rule of a lifted veto stayed: %d %v", rules, err)
+	}
 }

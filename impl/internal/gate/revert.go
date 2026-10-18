@@ -26,6 +26,8 @@ type RevertField struct {
 	Field    string `json:"field"`
 	Accepted any    `json:"accepted"`
 	Previous any    `json:"previous"`
+	// Absent marks a field the change added: the revert takes it out.
+	Absent bool `json:"absent,omitempty"`
 }
 
 // RevertRequest is the revert of one realized proposal.
@@ -96,11 +98,12 @@ func Revert(ctx context.Context, r RevertRequest) (*RevertResult, error) {
 		if !ok || !equal(cur, f.Accepted) {
 			return nil, fmt.Errorf("%s %s %s holds %v, not the accepted %v: the change was edited since; revert it by hand", f.Kind, f.Name, f.Field, cur, f.Accepted)
 		}
-		ops = append(ops, Op{Kind: f.Kind, Name: f.Name, Field: f.Field, Value: f.Previous})
+		ops = append(ops, Op{Kind: f.Kind, Name: f.Name, Field: f.Field, Value: f.Previous, Remove: f.Absent})
 	}
 	if err := write(w.dir, targets, ops); err != nil {
 		return nil, err
 	}
+	// The editor writes no link, and the staged paths are checked again below.
 	changes, err := stagedChanges(ctx, w.dir)
 	if err != nil {
 		return nil, err
@@ -211,9 +214,6 @@ func (e EvalRunner) Suite() Suite {
 		}
 		defer os.RemoveAll(out)
 		args := []string{"-root", root, "-out", out}
-		if e.DSN != "" {
-			args = append(args, "-dsn", e.DSN)
-		}
 		if len(roles) > 0 {
 			args = append(args, "-role", strings.Join(roles, ","))
 		}
@@ -232,14 +232,21 @@ func (e EvalRunner) Suite() Suite {
 		cmd := exec.CommandContext(cctx, e.Bin, args...)
 		cmd.Dir = root
 		cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + os.Getenv("HOME"), "TMPDIR=" + os.TempDir()}
+		if e.DSN != "" {
+			// In the environment, not on the command line another user can read.
+			cmd.Env = append(cmd.Env, "BOTARU_EVAL_DSN="+e.DSN)
+		}
 		var errb bytes.Buffer
 		cmd.Stdout, cmd.Stderr = &errb, &errb
 		runErr := cmd.Run()
 		f, err := os.Open(filepath.Join(out, "results.jsonl"))
 		if err != nil {
-			// No results: the run itself failed.
+			// No results: the run itself failed. The output of a run over the hidden set may
+			// name its cases, so it stays out of the error (EVO-7).
 			msg := strings.TrimSpace(errb.String())
-			if len(msg) > 2000 {
+			if holdout != "" {
+				msg = "the output of a run over the hidden set is not shown"
+			} else if len(msg) > 2000 {
 				msg = msg[len(msg)-2000:]
 			}
 			return nil, fmt.Errorf("botaru-eval: %v: %s", runErr, msg)

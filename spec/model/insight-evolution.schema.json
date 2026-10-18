@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:botaru:schema:insight-evolution:1",
   "title": "Evolution input of an analysis task",
-  "description": "Closed block `evolution` the core puts beside \"My outcomes\" into the input of an analysis task of a role (EVO-3, EVO-5): up to five variants of the scaffold archive with different approaches, the live ones first, and up to twenty live review rules of the role. Only outcome classes: no reason codes of people's decisions or refusals, no gate step codes, no case of the hidden set, no text and no names of people (GOV-29, EVO-7). The form is closed at every level.",
+  "description": "Closed block `evolution` the core puts beside \"My outcomes\" into the input of an analysis task of a role (EVO-3, EVO-5): up to five variants of the scaffold archive with different approaches, the live ones first, and up to twenty live review rules of the role. Only outcome classes, and a review rule without its outcome: no reason codes of people's decisions or refusals, no gate step codes, no case of the hidden set, no text and no names of people (GOV-29, EVO-7). The form is closed at every level.",
   "x-botaru-direction": "output",
   "x-botaru-rules": [
     "EVO-3",
@@ -79,14 +79,13 @@
               "worse",
               "mixed",
               "undetermined",
-              "rejected_at_gate",
-              "rejected_by_commission",
-              "rejected_by_human",
+              "declined",
+              "dismissed",
               "reverted",
               "expired",
               "canceled"
             ],
-            "description": "Outcome class of the variant: pending, the trial outcome, or how it left (EVO-4)."
+            "description": "Outcome class of the variant: pending, the trial outcome, declined (people refused it), dismissed (the commission or the gate refused it), reverted, expired or canceled; never who refused it or why (EVO-4, GOV-29)."
           },
           "current": {
             "type": "boolean",
@@ -116,7 +115,6 @@
           "target_name",
           "problem_code",
           "signature",
-          "outcome",
           "count"
         ],
         "properties": {
@@ -145,15 +143,6 @@
             "maxLength": 1024,
             "pattern": "^[A-Za-z]+\\.spec[a-z0-9_.\\[\\]]*:[a-z_]+(,[A-Za-z]+\\.spec[a-z0-9_.\\[\\]]*:[a-z_]+)*$",
             "description": "Diversity signature: the sorted entries <Kind>.<field>:<direction>, the direction up, down, more_often, less_often, shifted, set or changed (EVO-5)."
-          },
-          "outcome": {
-            "enum": [
-              "rejected_by_commission",
-              "rejected_by_human",
-              "reverted",
-              "worse"
-            ],
-            "description": "Outcome class that taught the rule; the reason code stays with people (GOV-29)."
           },
           "count": {
             "type": "integer",

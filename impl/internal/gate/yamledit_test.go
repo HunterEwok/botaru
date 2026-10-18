@@ -39,3 +39,31 @@ func TestSetField(t *testing.T) {
 		t.Fatalf("a map value: %v", err)
 	}
 }
+
+// removeField undoes an insertion of setField byte for byte (EVO-10).
+func TestRemoveField(t *testing.T) {
+	src := "kind: X\nspec:\n  a: 1   # keep\n  list:\n    - v: 2m\n"
+	for _, field := range []string{"spec.new.leaf", "spec.b"} {
+		set, err := setField([]byte(src), 0, field, "on")
+		if err != nil {
+			t.Fatalf("%s: %v", field, err)
+		}
+		got, err := removeField(set, 0, field)
+		if err != nil {
+			t.Fatalf("%s: %v", field, err)
+		}
+		if string(got) != src {
+			t.Fatalf("%s:\n%s\nwant\n%s", field, got, src)
+		}
+	}
+	// A parent with another key stays.
+	got, err := removeField([]byte("spec:\n  a: 1\n  b: 2\n"), 0, "spec.a")
+	if err != nil || string(got) != "spec:\n  b: 2\n" {
+		t.Fatalf("%q %v", got, err)
+	}
+	for _, field := range []string{"spec.x", "spec.list", "spec"} {
+		if _, err := removeField([]byte(src), 0, field); !errors.Is(err, errUnrenderable) {
+			t.Fatalf("%s: %v", field, err)
+		}
+	}
+}

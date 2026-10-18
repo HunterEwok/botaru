@@ -243,9 +243,21 @@ func createVariants(ctx context.Context, tx pgx.Tx, now time.Time, id, tenant, r
 	return nil
 }
 
-// variantOutcome is the outcome and reason code of a proposal for its variants (EVO-4).
+// variantOutcome is the outcome and reason code of a proposal for its variants (EVO-4). An
+// audit sample item keeps the outcome of its dismissal (an empty outcome) until a person
+// rejects it.
 func variantOutcome(p *proposalRow) (string, string) {
 	switch p.State {
+	case "sampled", "sample_presented", "sample_judged":
+		return "", ""
+	case "sample_closed":
+		if d := mmapAny(p.Rec["decision"]); d["decision"] == "reject" {
+			return variantHuman, asString(d["reason_code"])
+		}
+		if mmapAny(p.Rec["sample_answer"])["answer"] == "would_not_accept" {
+			return variantHuman, ""
+		}
+		return "", ""
 	case "dismissed":
 		if p.reason() == "gate_failed" {
 			return variantGate, asString(mmapAny(p.Rec["gate"])["code"])
@@ -276,6 +288,9 @@ func syncVariants(ctx context.Context, tx pgx.Tx, now time.Time, p *proposalRow)
 		return nil
 	}
 	out, reason := variantOutcome(p)
+	if out == "" {
+		return nil
+	}
 	live := p.State == "realized"
 	var gate []byte
 	if g := mmapAny(p.Rec["gate"]); g != nil {
@@ -317,14 +332,21 @@ func syncVariants(ctx context.Context, tx pgx.Tx, now time.Time, p *proposalRow)
 				return err
 			}
 		}
-		if c.parent != nil && out == "better" && c.old != "better" {
-			if _, err := tx.Exec(ctx, `UPDATE scaffold_variants SET successful_children_count = successful_children_count + 1, updated_at = $2
-				WHERE variant_id = $1`, *c.parent, now); err != nil {
+		// The parent counts a child while its outcome is better: a later revert takes it back.
+		if step := map[bool]int{true: 1}[out == "better"] - map[bool]int{true: 1}[c.old == "better"]; c.parent != nil && step != 0 {
+			if _, err := tx.Exec(ctx, `UPDATE scaffold_variants SET successful_children_count = greatest(successful_children_count + $3, 0),
+				updated_at = $2 WHERE variant_id = $1`, *c.parent, now, step); err != nil {
 				return err
 			}
 		}
 		if c.old == out {
 			continue
+		}
+		// A person who lifted the veto of a sample item overrules the lesson of that veto.
+		if c.old == variantCommittee && (p.State == "realizing" || p.State == "realized") {
+			if err := retractReviewRule(ctx, tx, now, c.tenant, p.ID); err != nil {
+				return err
+			}
 		}
 		lesson := out
 		if out == "worse" {
@@ -366,10 +388,19 @@ func recordReviewRule(ctx context.Context, tx pgx.Tx, now time.Time, p *proposal
 	_, err := tx.Exec(ctx, `INSERT INTO review_rules (tenant, role, category, target_kind, target_name, problem_code, signature, outcome, reason_code,
 		proposal_ids, first_at, last_at) VALUES ($1, $2, $11, $3, $4, $5, $6, $7, $8, $9, $10, $10)
 		ON CONFLICT (tenant, role, target_kind, target_name, problem_code, signature) WHERE dropped_at IS NULL DO UPDATE
-		SET count = review_rules.count + 1, outcome = EXCLUDED.outcome, reason_code = EXCLUDED.reason_code, last_at = EXCLUDED.last_at,
-			proposal_ids = (SELECT coalesce(jsonb_agg(x), '[]') FROM (SELECT x FROM jsonb_array_elements(review_rules.proposal_ids || EXCLUDED.proposal_ids) x
+		SET count = review_rules.count + CASE WHEN review_rules.proposal_ids ? $12 THEN 0 ELSE 1 END, outcome = EXCLUDED.outcome, reason_code = EXCLUDED.reason_code, last_at = EXCLUDED.last_at,
+			proposal_ids = (SELECT coalesce(jsonb_agg(x), '[]') FROM (SELECT DISTINCT x FROM jsonb_array_elements(review_rules.proposal_ids || EXCLUDED.proposal_ids) x
 				ORDER BY 1 DESC LIMIT 10) s)`,
-		tenant, role, kind, name, problem, sig, outcome, reason, ids, now, p.body().Category)
+		tenant, role, kind, name, problem, sig, outcome, reason, ids, now, p.body().Category, p.ID)
+	return err
+}
+
+// retractReviewRule takes a proposal out of the live review rules it fed; a rule left without a
+// proposal is dropped by the core.
+func retractReviewRule(ctx context.Context, tx pgx.Tx, now time.Time, tenant, id string) error {
+	_, err := tx.Exec(ctx, `UPDATE review_rules SET count = greatest(count - 1, 0), proposal_ids = proposal_ids - $2,
+		dropped_at = CASE WHEN count <= 1 THEN $3::timestamptz END, dropped_by = CASE WHEN count <= 1 THEN 'core' END
+		WHERE tenant = $1 AND dropped_at IS NULL AND proposal_ids ? $2`, tenant, id, now)
 	return err
 }
 
@@ -409,6 +440,18 @@ const (
 	evolutionRules    = 20
 )
 
+// botOutcome is the outcome class a bot sees (GOV-29, DIG-7): a person's refusal is declined and
+// a refusal by the commission or the gate is dismissed, so no class names who refused or why.
+func botOutcome(o string) string {
+	switch o {
+	case variantHuman:
+		return "declined"
+	case variantCommittee, variantGate:
+		return "dismissed"
+	}
+	return o
+}
+
 // evolutionInput is the closed block `evolution` of an analysis task of a role (EVO-5): up to
 // five variants of the archive with different approaches, the live ones first, and the live
 // review rules of the role. Only outcome classes: no reason codes of people's decisions and
@@ -446,28 +489,28 @@ func evolutionInput(ctx context.Context, tx pgx.Tx, tenant, role string) (map[st
 		}
 		variants = append(variants, map[string]any{
 			"id": id, "target_kind": kind, "target_name": name, "fields": fields, "signature": sig,
-			"outcome": outcome, "current": live, "children": children, "successful_children": good,
+			"outcome": botOutcome(outcome), "current": live, "children": children, "successful_children": good,
 		})
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	rr, err := tx.Query(ctx, `SELECT target_kind, target_name, problem_code, signature, outcome, count FROM review_rules
+	rr, err := tx.Query(ctx, `SELECT target_kind, target_name, problem_code, signature, count FROM review_rules
 		WHERE tenant = $1 AND role = $2 AND dropped_at IS NULL ORDER BY last_at DESC, id DESC LIMIT $3`, tenant, role, evolutionRules)
 	if err != nil {
 		return nil, err
 	}
 	rules := []any{}
 	for rr.Next() {
-		var kind, name, problem, sig, outcome string
+		var kind, name, problem, sig string
 		var count int
-		if err := rr.Scan(&kind, &name, &problem, &sig, &outcome, &count); err != nil {
+		if err := rr.Scan(&kind, &name, &problem, &sig, &count); err != nil {
 			rr.Close()
 			return nil, err
 		}
 		rules = append(rules, map[string]any{"target_kind": kind, "target_name": name, "problem_code": problem,
-			"signature": sig, "outcome": outcome, "count": count})
+			"signature": sig, "count": count})
 	}
 	rr.Close()
 	if err := rr.Err(); err != nil {

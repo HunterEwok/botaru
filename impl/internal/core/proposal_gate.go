@@ -57,11 +57,17 @@ func gateRequired(tv *TenantView) bool {
 	return tv != nil && tv.Spec.Insights.Gate != nil && tv.Spec.Insights.Gate.Required
 }
 
-// gateCurrent says whether the proposal passed the gate at the applied commit.
+// gateCurrent says whether the proposal passed the gate at the applied commit with every step
+// passed: a step that did not run never counts as passed (EVO-9).
 func gateCurrent(ctx context.Context, tx pgx.Tx, p *proposalRow) (bool, error) {
 	g := mmapAny(p.Rec["gate"])
 	if g == nil || g["state"] != "passed" {
 		return false, nil
+	}
+	for _, s := range asList(g["steps"]) {
+		if mmapAny(s)["status"] != "passed" {
+			return false, nil
+		}
 	}
 	commit, err := appliedCommit(ctx, tx)
 	return err == nil && commit != "" && g["base_sha"] == commit, err
@@ -83,6 +89,18 @@ func gatedOut(ctx context.Context, tx pgx.Tx, tv *TenantView, p *proposalRow) (b
 	}
 	ok, err := gateCurrent(ctx, tx, p)
 	return !ok, err
+}
+
+func sameSteps(recorded []any, steps []GateStep) bool {
+	if len(recorded) != len(steps) {
+		return false
+	}
+	for i, s := range steps {
+		if m := mmapAny(recorded[i]); m["step"] != s.Step || m["status"] != s.Status {
+			return false
+		}
+	}
+	return true
 }
 
 func checkGateResult(r *GateResult) error {
@@ -130,9 +148,10 @@ func checkGateResult(r *GateResult) error {
 
 // ProposalGate is P2 proposal.gate (EVO-9). The person needs proposal.gate:<category>. A read
 // returns the change, the applied commit and the tenant's limits; a result is recorded for a
-// recommended or presented manifest change at the applied commit, once per commit: a passed
-// gate lets the digest show it, a failed one dismisses it with the reason gate_failed, so it never
-// reaches a person. Both go into the audit.
+// recommended, presented or judged sample manifest change at the applied commit, once per
+// commit: a passed gate lets the digest show it and "Accept" take it, a failed one dismisses a
+// recommended or presented change with the reason gate_failed, so it never reaches a person, and
+// keeps a judged sample item from "Accept" and "Lift veto". Both go into the audit.
 func (c *Core) ProposalGate(ctx context.Context, op Operator, req GateRequest) (map[string]any, error) {
 	tv, cat, err := c.requireTenant(ctx, op.Tenant)
 	if err != nil {
@@ -188,14 +207,17 @@ func (c *Core) ProposalGate(ctx context.Context, op Operator, req GateRequest) (
 			return refuse("conflict", "the gate ran on %s, the applied commit is %s; run it again", r.BaseSHA, commit)
 		}
 		if g := mmapAny(p.Rec["gate"]); g != nil && g["base_sha"] == r.BaseSHA {
-			// One verdict per commit: a repeat of it is the same answer.
-			if g["state"] == r.Verdict {
+			// One verdict per commit: a repeat of it is the same answer. A passed gate run again
+			// with other steps, for example with the evals that did not run before, replaces it.
+			if g["state"] != r.Verdict {
+				return refuse("conflict", "the gate at this commit is already recorded as %v", g["state"])
+			}
+			if r.Verdict == "failed" || sameSteps(asList(g["steps"]), r.Steps) {
 				out = map[string]any{"proposal": p.ID, "state": p.State, "gate": g}
 				return nil
 			}
-			return refuse("conflict", "the gate at this commit is already recorded as %v", g["state"])
 		}
-		if p.State != "recommended" && p.State != "presented" {
+		if p.State != "recommended" && p.State != "presented" && p.State != "sample_judged" {
 			return refuse("already_decided", "the proposal is %s", p.State)
 		}
 		steps := make([]any, len(r.Steps))
@@ -210,7 +232,15 @@ func (c *Core) ProposalGate(ctx context.Context, op Operator, req GateRequest) (
 			"holdout_passed": r.HoldoutPassed, "regression_pass_rate": r.RegressionPassRate, "fields": r.Fields,
 			"diff_lines": r.DiffLines, "by": op.Principal, "at": fmtTime(now)}
 		p.Rec["gate"] = g
-		if r.Verdict == "failed" {
+		if r.Verdict == "failed" && p.State != "sample_judged" {
+			// A judged sample item keeps its state: the failed gate only refuses "Accept" and
+			// "Lift veto", and the person closes it with "Reject" or decide_ttl.
+			if p.State == "presented" {
+				if _, err := tx.Exec(ctx, `UPDATE proposals SET presented_at = NULL WHERE id = $1`, p.ID); err != nil {
+					return err
+				}
+				p.PresentedAt = nil
+			}
 			if err := c.moveProposal(ctx, tx, now, p, "dismissed", "gate_failed"); err != nil {
 				return err
 			}

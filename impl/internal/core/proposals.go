@@ -296,10 +296,17 @@ func (c *Core) createProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat
 	}
 	// A lesson people or the commission gave the role about this approach to this problem stays
 	// until a person drops it (EVO-3).
-	if hit, err := reviewRuleHit(ctx, tx, now, a.Tenant, a.Role, b); err != nil {
+	// Only for a tenant with the evolution on (insights.evolution.enabled).
+	on, err := evolutionOn(ctx, tx, a.Tenant)
+	if err != nil {
 		return fp, err
-	} else if hit {
-		return fp, rejection("review_rule")
+	}
+	if on {
+		if hit, err := reviewRuleHit(ctx, tx, now, a.Tenant, a.Role, b); err != nil {
+			return fp, err
+		} else if hit {
+			return fp, rejection("review_rule")
+		}
 	}
 	// An open duplicate counts the arrival and takes the new evidence (PRP-5).
 	var dupID string

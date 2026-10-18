@@ -81,28 +81,27 @@ func stagedChanges(ctx context.Context, dir string) ([]fileChange, error) {
 	if _, err := git(ctx, dir, "add", "-A"); err != nil {
 		return nil, err
 	}
-	num, err := git(ctx, dir, "diff", "--cached", "--no-renames", "--numstat")
+	// -z: the paths come unquoted, whatever characters they hold.
+	num, err := git(ctx, dir, "diff", "--cached", "--no-renames", "--numstat", "-z")
 	if err != nil {
 		return nil, err
 	}
-	raw, err := git(ctx, dir, "diff", "--cached", "--no-renames", "--raw")
+	raw, err := git(ctx, dir, "diff", "--cached", "--no-renames", "--raw", "-z")
 	if err != nil {
 		return nil, err
 	}
 	links := map[string]bool{}
-	for _, l := range strings.Split(raw, "\n") {
-		// :<old mode> <new mode> <old sha> <new sha> <status>\t<path>
-		meta, path, ok := strings.Cut(l, "\t")
-		if !ok {
-			continue
-		}
-		f := strings.Fields(meta)
+	// :<old mode> <new mode> <old sha> <new sha> <status> NUL <path> NUL
+	rf := strings.Split(raw, "\x00")
+	for i := 0; i+1 < len(rf); i += 2 {
+		f := strings.Fields(rf[i])
 		if len(f) >= 2 && (strings.TrimPrefix(f[0], ":") == "120000" || f[1] == "120000") {
-			links[path] = true
+			links[rf[i+1]] = true
 		}
 	}
 	var out []fileChange
-	for _, l := range strings.Split(num, "\n") {
+	// <added> TAB <deleted> TAB <path> NUL
+	for _, l := range strings.Split(num, "\x00") {
 		f := strings.SplitN(l, "\t", 3)
 		if len(f) != 3 {
 			continue

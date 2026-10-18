@@ -35,7 +35,15 @@ func variant(c *client, args []string) error {
 		target := fs.String("target", "", "only the variants of one object, KIND:NAME")
 		limit := fs.Int("limit", 0, "at most this many")
 		_ = fs.Parse(args[1:])
-		return c.print("variant.list", map[string]any{"target": *target, "limit": *limit})
+		// Only the flags given: the request schema has no empty target and no zero limit.
+		body := map[string]any{}
+		if *target != "" {
+			body["target"] = *target
+		}
+		if *limit > 0 {
+			body["limit"] = *limit
+		}
+		return c.print("variant.list", body)
 	case len(args) == 2 && args[0] == "show":
 		return c.print("variant.show", map[string]any{"variant": args[1]})
 	case len(args) >= 2 && args[0] == "checkout":
@@ -117,7 +125,11 @@ func reviewRule(c *client, args []string) error {
 		fs := flag.NewFlagSet("review-rule list", flag.ExitOnError)
 		role := fs.String("role", "", "only the rules of one role")
 		_ = fs.Parse(args[1:])
-		return c.print("review_rule.list", map[string]any{"role": *role})
+		body := map[string]any{}
+		if *role != "" {
+			body["role"] = *role
+		}
+		return c.print("review_rule.list", body)
 	case len(args) == 2 && args[0] == "drop":
 		n, err := strconv.ParseInt(args[1], 10, 64)
 		if err != nil {
@@ -182,7 +194,7 @@ func proposalGate(c *client, args []string) error {
 	real := fs.Bool("real", false, "run the eval cases against a real provider (needs -key-file and -max-eur)")
 	keyFile := fs.String("key-file", "", "the provider key file, with -real")
 	maxEUR := fs.Float64("max-eur", 0, "the spend cap of each eval run in EUR, with -real")
-	pending := fs.Bool("pending", false, "gate every recommended or presented manifest change without a gate at the applied commit")
+	pending := fs.Bool("pending", false, "gate every recommended, presented or judged sample manifest change without a gate at the applied commit (lists them with proposal.list, so it also needs proposal.decide)")
 	noPost := fs.Bool("no-post", false, "print the report only, record nothing")
 	_ = fs.Parse(reorderBool(args, "-pending", "-no-post", "-real"))
 	ids := fs.Args()
@@ -192,7 +204,7 @@ func proposalGate(c *client, args []string) error {
 				ID string `json:"id"`
 			} `json:"items"`
 		}
-		if err := c.call("proposal.list", map[string]any{"state": []string{"recommended", "presented"}}, &l); err != nil {
+		if err := c.call("proposal.list", map[string]any{"state": []string{"recommended", "presented", "sample_judged"}}, &l); err != nil {
 			return err
 		}
 		for _, it := range l.Items {
@@ -207,6 +219,16 @@ func proposalGate(c *client, args []string) error {
 	}
 	if *dsn == "" {
 		*dsn = os.Getenv("BOTARU_EVAL_DSN")
+	}
+	// botaru-eval runs in the worktree: a relative path would name another file there.
+	for _, p := range []*string{holdout, evalBin, keyFile} {
+		if *p != "" && strings.ContainsRune(*p, filepath.Separator) {
+			abs, err := filepath.Abs(*p)
+			if err != nil {
+				return err
+			}
+			*p = abs
+		}
 	}
 	failed := 0
 	for _, id := range ids {
@@ -230,7 +252,7 @@ func proposalGate(c *client, args []string) error {
 		if read.Applied == nil {
 			return errors.New("the core has applied no commit yet")
 		}
-		if *pending && (read.Gate != nil && read.Gate["base_sha"] == *read.Applied || read.State != "recommended" && read.State != "presented") {
+		if *pending && (read.Gate != nil && read.Gate["base_sha"] == *read.Applied || read.State != "recommended" && read.State != "presented" && read.State != "sample_judged") {
 			continue
 		}
 		ch := gate.Change{Proposal: id, Tenant: read.Tenant}
@@ -252,6 +274,12 @@ func proposalGate(c *client, args []string) error {
 		}
 		rep, err := gate.Run(context.Background(), cfg, ch)
 		if err != nil {
+			if *pending {
+				// One proposal the gate cannot run stops none of the others.
+				fmt.Fprintf(os.Stderr, "%s: %v\n", id, err)
+				failed++
+				continue
+			}
 			return fmt.Errorf("%s: %w", id, err)
 		}
 		printGate(rep)
@@ -279,6 +307,11 @@ func proposalGate(c *client, args []string) error {
 			State string `json:"state"`
 		}
 		if err := c.call("proposal.gate", map[string]any{"proposal": id, "result": res}, &out); err != nil {
+			if *pending {
+				fmt.Fprintf(os.Stderr, "%s: %v\n", id, err)
+				failed++
+				continue
+			}
 			return fmt.Errorf("%s: %w", id, err)
 		}
 		fmt.Printf("  recorded: the proposal is %s\n", out.State)
@@ -412,6 +445,12 @@ func proposalRevert(c *client, args []string) error {
 	}
 	real, _ := rec["realization"].(map[string]any)
 	patch, _ := real["revert_patch"].([]any)
+	absent, _ := real["revert_absent"].([]any)
+	for _, e := range absent {
+		if em, ok := e.(map[string]any); ok {
+			patch = append(patch, map[string]any{"target": em["target"], "field": em["field"], "absent": true})
+		}
+	}
 	if len(patch) == 0 {
 		return fmt.Errorf("%s has no reverse edit", ch.Proposal)
 	}
@@ -423,7 +462,7 @@ func proposalRevert(c *client, args []string) error {
 	for _, e := range patch {
 		em, _ := e.(map[string]any)
 		tg, _ := em["target"].(map[string]any)
-		f := gate.RevertField{Field: fmt.Sprint(em["field"]), Previous: em["previous"]}
+		f := gate.RevertField{Field: fmt.Sprint(em["field"]), Previous: em["previous"], Absent: em["absent"] == true}
 		f.Kind, _ = tg["kind"].(string)
 		f.Name, _ = tg["name"].(string)
 		f.Accepted = accepted[f.Kind+"/"+f.Name+"/"+f.Field]
@@ -464,7 +503,7 @@ func reorderBool(args []string, bools ...string) []string {
 		flags = append(flags, a)
 		isBool := strings.Contains(a, "=")
 		for _, b := range bools {
-			if a == b {
+			if a == b || a == "-"+b {
 				isBool = true
 			}
 		}
