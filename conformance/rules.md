@@ -1215,7 +1215,7 @@ Checked by: `impl:internal/core/TestP2VariantViews`
 
 serves [G5](../docs/goals.md) · since v0.3 · non-waivable · profile insights · check: impl · decisions: D-120
 
-The holdout cases have the format of `evals/cases/` and live in a folder outside the farm repository, outside every worktree and outside the reach of every bot; `botaru-eval -holdout- dir` refuses a folder inside its root and never writes the cases to an EvalReports index. Only the gate reads their outcomes. What leaves the gate is the step status, `holdout_passed` and one code (`holdout_regression`, `reward_hacking_detected`, `shortcut_gaming_detected`, `audit_tampering_detected`); a case id, its text, its prompts or its details never reach the core, a proposal record, a card or a bot; the output of a failed run over the hidden set is not shown either. A person sees the code in P2 and in `farmctl`; a bot sees only the outcome class `dismissed` (GOV-29).
+The holdout cases have the format of `evals/cases/` and live in a folder outside the farm repository, outside every worktree and outside the reach of every bot; `botaru-eval -holdout-dir` refuses a folder inside its root and never writes the cases to an EvalReports index. Only the gate reads their outcomes. What leaves the gate is the step status, `holdout_passed` and one code (`holdout_regression`, `reward_hacking_detected`, `shortcut_gaming_detected`, `audit_tampering_detected`); a case id, its text, its prompts or its details never reach the core, a proposal record, a card or a bot; the output of a failed run over the hidden set is not shown either. A person sees the code in P2 and in `farmctl`; a bot sees only the outcome class `dismissed` (GOV-29).
 
 Checked by: `impl:internal/gate/TestGateRewardHacking`
 
