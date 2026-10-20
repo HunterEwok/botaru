@@ -3,6 +3,7 @@
 package core
 
 import (
+	"encoding/json"
 	"strings"
 
 	"github.com/HunterEwok/botaru/impl/internal/manifest"
@@ -19,7 +20,12 @@ func (c *Core) coreResultSchema(tt manifest.TaskType, record map[string]any) map
 		return c.inlineSchema("urn:botaru:schema:insight-result:1")
 	case "review":
 		if record["lens"] == necessityLens {
-			return necessitySchema
+			// A copy: the payload must not share the map the core validates with.
+			var out map[string]any
+			if b, err := json.Marshal(necessitySchema); err == nil && json.Unmarshal(b, &out) == nil {
+				return out
+			}
+			return nil
 		}
 		return c.inlineSchema(reviewResultSchema(record))
 	}
