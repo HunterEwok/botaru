@@ -17,7 +17,6 @@ import (
 
 	"github.com/HunterEwok/botaru/impl/internal/ids"
 	"github.com/HunterEwok/botaru/impl/internal/manifest"
-	"github.com/HunterEwok/botaru/impl/internal/pgtest"
 	"github.com/HunterEwok/botaru/impl/internal/spec"
 	"github.com/HunterEwok/botaru/impl/internal/store"
 	"github.com/HunterEwok/botaru/impl/internal/testbench"
@@ -173,7 +172,7 @@ func runLintFixtures(t *testing.T) []string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	st, err := store.Open(ctx, pgtest.DSN(t))
+	st, err := store.Open(ctx, testbench.MigratedDSN(t))
 	if err != nil {
 		t.Fatal(err)
 	}

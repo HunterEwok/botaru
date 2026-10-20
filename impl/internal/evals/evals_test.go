@@ -15,8 +15,8 @@ import (
 
 	"github.com/HunterEwok/botaru/impl/internal/conform"
 	"github.com/HunterEwok/botaru/impl/internal/mockprovider"
-	"github.com/HunterEwok/botaru/impl/internal/pgtest"
 	"github.com/HunterEwok/botaru/impl/internal/spec"
+	"github.com/HunterEwok/botaru/impl/internal/testbench"
 )
 
 var fullClaim = conform.Claim{Version: "v0.3", Profiles: []string{"core", "messaging", "campaign", "insights", "manager", "governance", "monitor", "knowledge", "ingress"}}
@@ -216,7 +216,7 @@ func TestBenchRuns(t *testing.T) {
 	}
 
 	t.Run("mock", func(t *testing.T) {
-		b, err := StartBench(t.Context(), BenchConfig{Root: root, DSN: pgtest.DSN(t), WorkDir: t.TempDir(), Plugin: testPlugin, Cases: cases})
+		b, err := StartBench(t.Context(), BenchConfig{Root: root, DSN: testbench.MigratedDSN(t), WorkDir: t.TempDir(), Plugin: testPlugin, Cases: cases})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -245,7 +245,7 @@ func TestBenchRuns(t *testing.T) {
 		mp := mockprovider.New(&mockprovider.Scenario{})
 		srv := httptest.NewServer(mp)
 		defer srv.Close()
-		b, err := StartBench(t.Context(), BenchConfig{Root: root, DSN: pgtest.DSN(t), WorkDir: t.TempDir(), Plugin: testPlugin, Cases: cases,
+		b, err := StartBench(t.Context(), BenchConfig{Root: root, DSN: testbench.MigratedDSN(t), WorkDir: t.TempDir(), Plugin: testPlugin, Cases: cases,
 			Model: ModelConfig{Real: true, BaseURL: srv.URL, Key: "test-key"}})
 		if err != nil {
 			t.Fatal(err)

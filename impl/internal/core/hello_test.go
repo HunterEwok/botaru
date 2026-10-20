@@ -35,7 +35,7 @@ func newBench(t *testing.T) *bench { t.Helper(); return newBenchWith(t, nil) }
 func newBenchWith(t *testing.T, edit func(root string, ms []map[string]any) []map[string]any) *bench {
 	t.Helper()
 	ctx := context.Background()
-	st, err := store.Open(ctx, pgtest.DSN(t))
+	st, err := store.Open(ctx, testbench.MigratedDSN(t))
 	if err != nil {
 		t.Fatal(err)
 	}

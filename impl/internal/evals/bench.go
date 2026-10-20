@@ -57,7 +57,8 @@ type ModelConfig struct {
 // BenchConfig is what a bench is built from.
 type BenchConfig struct {
 	Root string
-	// DSN is an empty database; the bench creates the store in it as a test bench store.
+	// DSN is an empty or a migrated database; the bench migrates it and creates the store in it as
+	// a test bench store.
 	DSN string
 	// WorkDir holds the generated data, the plugin files and the dummy units.
 	WorkDir string

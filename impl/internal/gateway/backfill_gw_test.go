@@ -16,7 +16,6 @@ import (
 	"github.com/HunterEwok/botaru/impl/internal/core"
 	"github.com/HunterEwok/botaru/impl/internal/ids"
 	"github.com/HunterEwok/botaru/impl/internal/manifest"
-	"github.com/HunterEwok/botaru/impl/internal/pgtest"
 	"github.com/HunterEwok/botaru/impl/internal/spec"
 	"github.com/HunterEwok/botaru/impl/internal/store"
 	"github.com/HunterEwok/botaru/impl/internal/testbench"
@@ -79,7 +78,7 @@ type p4Bench struct {
 func newP4Bench(t *testing.T, edit func(ms []map[string]any), answer func(w http.ResponseWriter, n int)) *p4Bench {
 	t.Helper()
 	ctx := context.Background()
-	st, err := store.Open(ctx, pgtest.DSN(t))
+	st, err := store.Open(ctx, testbench.MigratedDSN(t))
 	if err != nil {
 		t.Fatal(err)
 	}

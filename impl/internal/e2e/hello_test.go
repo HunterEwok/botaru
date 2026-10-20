@@ -110,7 +110,7 @@ func hashHex(s string) string {
 func newRig(t *testing.T) *rig {
 	t.Helper()
 	ctx := context.Background()
-	st, err := store.Open(ctx, pgtest.DSN(t))
+	st, err := store.Open(ctx, testbench.MigratedDSN(t))
 	if err != nil {
 		t.Fatal(err)
 	}

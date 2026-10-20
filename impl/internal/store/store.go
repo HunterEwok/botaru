@@ -7,7 +7,9 @@ package store
 
 import (
 	"context"
+	"crypto/sha256"
 	"embed"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -70,17 +72,31 @@ func (s *Store) Migrate(ctx context.Context) error {
 	if _, err := conn.Exec(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT clock_timestamp())`); err != nil {
 		return err
 	}
-	names, err := fs.Glob(migrations, "migrations/*.sql")
+	names, err := migrationNames()
 	if err != nil {
 		return err
 	}
-	sort.Strings(names)
-	for _, n := range names {
-		var done bool
-		if err := conn.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM schema_migrations WHERE name = $1)`, n).Scan(&done); err != nil {
+	// One query for the applied names: on a store that is up to date Migrate reads and changes
+	// nothing else.
+	applied := map[string]bool{}
+	rows, err := conn.Query(ctx, `SELECT name FROM schema_migrations`)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var n string
+		if err := rows.Scan(&n); err != nil {
+			rows.Close()
 			return err
 		}
-		if done {
+		applied[n] = true
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, n := range names {
+		if applied[n] {
 			continue
 		}
 		sql, err := migrations.ReadFile(n)
@@ -104,6 +120,35 @@ func (s *Store) Migrate(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+func migrationNames() ([]string, error) {
+	names, err := fs.Glob(migrations, "migrations/*.sql")
+	if err != nil {
+		return nil, err
+	}
+	sort.Strings(names)
+	return names, nil
+}
+
+// MigrationsKey is a hash of the names and contents of the embedded migrations, in hex: tests
+// name a database template migrated once by it, so that a changed migration set never reuses
+// an old template.
+func MigrationsKey() string {
+	h := sha256.New()
+	names, err := migrationNames()
+	if err != nil {
+		panic(err)
+	}
+	for _, n := range names {
+		b, err := migrations.ReadFile(n)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Fprintf(h, "%s\x00%d\x00", n, len(b))
+		h.Write(b)
+	}
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 // Meta is the farm_meta row.

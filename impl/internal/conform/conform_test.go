@@ -51,7 +51,7 @@ func sha(s string) string {
 }
 
 func (b *inProcess) Fresh(ctx context.Context) (*Endpoints, func(), error) {
-	st, err := store.Open(ctx, pgtest.DSN(b.t))
+	st, err := store.Open(ctx, testbench.MigratedDSN(b.t))
 	if err != nil {
 		return nil, nil, err
 	}
