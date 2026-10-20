@@ -15,6 +15,7 @@ import (
 
 	"github.com/HunterEwok/botaru/impl/internal/mcp"
 	"github.com/HunterEwok/botaru/impl/internal/spec"
+	"github.com/HunterEwok/botaru/impl/internal/testbench"
 )
 
 // INJ-8: the farm downloads no URL from a person's message: the link stays text in the goal,
@@ -74,7 +75,7 @@ func TestBackfillModelChangesNoConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sp, err := spec.Load(root)
+	sp, err := testbench.SharedSpec(root)
 	if err != nil {
 		t.Fatal(err)
 	}

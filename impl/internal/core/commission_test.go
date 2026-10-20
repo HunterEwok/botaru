@@ -53,7 +53,7 @@ func newCommissionBenchWith(t *testing.T, decide bool, more []map[string]any, ed
 	for _, d := range docs {
 		extra = append(extra, d.Value)
 	}
-	sp, err := spec.Load(root)
+	sp, err := testbench.SharedSpec(root)
 	if err != nil {
 		t.Fatal(err)
 	}

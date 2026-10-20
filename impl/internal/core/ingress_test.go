@@ -15,6 +15,7 @@ import (
 	"github.com/HunterEwok/botaru/impl/internal/ids"
 	"github.com/HunterEwok/botaru/impl/internal/manifest"
 	"github.com/HunterEwok/botaru/impl/internal/spec"
+	"github.com/HunterEwok/botaru/impl/internal/testbench"
 )
 
 // withoutProfile makes the build claim every profile of spec.Profiles but the given one for the
@@ -191,7 +192,7 @@ func TestIngressClaimSeam(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sp, err := spec.Load(root)
+	sp, err := testbench.SharedSpec(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -591,9 +592,11 @@ func TestEventRouteJobEvent(t *testing.T) {
 	}
 	// Without the messaging claim a job event starts no route, the ingress claim
 	// notwithstanding (MAN-11).
-	prev := spec.SetProfileOverride("core", "ingress")
-	emit("r4", "web1-logs", "failed")
-	spec.SetProfileOverride(prev...)
+	func() {
+		prev := spec.SetProfileOverride("core", "ingress")
+		defer spec.SetProfileOverride(prev...)
+		emit("r4", "web1-logs", "failed")
+	}()
 	if n := len(routeTasks(t, b.bench, "done")); n != 1 {
 		t.Fatalf("a route ran without the claim: %d", n)
 	}

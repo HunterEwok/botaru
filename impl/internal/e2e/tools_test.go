@@ -25,9 +25,7 @@ import (
 	"github.com/HunterEwok/botaru/impl/internal/mockprovider"
 	"github.com/HunterEwok/botaru/impl/internal/p1client"
 	"github.com/HunterEwok/botaru/impl/internal/plugins"
-	"github.com/HunterEwok/botaru/impl/internal/spec"
 	"github.com/HunterEwok/botaru/impl/internal/testbench"
-	"github.com/HunterEwok/botaru/impl/internal/texts"
 	"github.com/HunterEwok/botaru/impl/internal/toolhost"
 	"github.com/HunterEwok/botaru/impl/internal/toolspec"
 )
@@ -94,7 +92,7 @@ func fakePlugin(mode string) int {
 // checks, and the hello role holding checks/latest.
 func toolManifests(t *testing.T, root string) []map[string]any {
 	t.Helper()
-	ms, err := testbench.HelloBotManifests(root)
+	ms, err := testbench.SharedHelloBotManifests(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +113,7 @@ func toolManifests(t *testing.T, root string) []map[string]any {
 			m["spec"].(map[string]any)["tools"] = []any{"checks/latest"}
 		}
 	}
-	sp, err := spec.Load(root)
+	sp, err := testbench.SharedSpec(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -188,7 +186,7 @@ func newToolRig(t *testing.T, mode string, killAfter time.Duration) *toolRig {
 	}
 	// The task: a /hello from alice through the channel worker's P1 submit.
 	ch := &p1client.Client{BaseURL: r.p1.URL, Token: chanEnroll.Token}
-	tx, _ := texts.Load(r.root, "")
+	tx, _ := testbench.SharedTexts(r.root)
 	if err := telegram.New(telegram.Config{Core: ch, Channel: "telegram", BotAPI: r.botURL, BotToken: "TEST:TOKEN", Texts: tx}).Hello(ctx); err != nil {
 		t.Fatal(err)
 	}

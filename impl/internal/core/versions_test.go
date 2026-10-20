@@ -21,7 +21,7 @@ func helloSet(t *testing.T) ([]map[string]any, map[string]int) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ms, err := testbench.HelloBotManifests(root)
+	ms, err := testbench.SharedHelloBotManifests(root)
 	if err != nil {
 		t.Fatal(err)
 	}

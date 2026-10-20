@@ -13,7 +13,6 @@ import (
 
 	"github.com/HunterEwok/botaru/impl/internal/manifest"
 	"github.com/HunterEwok/botaru/impl/internal/mcp"
-	"github.com/HunterEwok/botaru/impl/internal/spec"
 	"github.com/HunterEwok/botaru/impl/internal/testbench"
 )
 
@@ -52,7 +51,7 @@ func newToolBenchWith(t *testing.T, keep *[]map[string]any, edit func(ms []map[s
 				s["tools"] = []any{"checks/latest", "logs/tail", "cmd/run"}
 			}
 		}
-		sp, err := spec.Load(root)
+		sp, err := testbench.SharedSpec(root)
 		if err != nil {
 			t.Fatal(err)
 		}

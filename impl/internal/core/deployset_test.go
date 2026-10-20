@@ -82,7 +82,7 @@ func TestDeployManagerOn(t *testing.T) {
 			}
 			ms = append(ms, d.Value)
 		}
-		sp, err := spec.Load(root)
+		sp, err := testbench.SharedSpec(root)
 		if err != nil {
 			t.Fatal(err)
 		}

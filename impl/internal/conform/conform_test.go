@@ -24,6 +24,7 @@ import (
 	"github.com/HunterEwok/botaru/impl/internal/pgtest"
 	"github.com/HunterEwok/botaru/impl/internal/spec"
 	"github.com/HunterEwok/botaru/impl/internal/store"
+	"github.com/HunterEwok/botaru/impl/internal/testbench"
 	"github.com/HunterEwok/botaru/impl/internal/texts"
 )
 
@@ -93,11 +94,11 @@ func TestConformance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sp, err := spec.Load(root)
+	sp, err := testbench.SharedSpec(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	tx, err := texts.Load(root, "")
+	tx, err := testbench.SharedTexts(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,11 +171,11 @@ func TestTestControlPort(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sp, err := spec.Load(root)
+	sp, err := testbench.SharedSpec(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	tx, err := texts.Load(root, "")
+	tx, err := testbench.SharedTexts(root)
 	if err != nil {
 		t.Fatal(err)
 	}

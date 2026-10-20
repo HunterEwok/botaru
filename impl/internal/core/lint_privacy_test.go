@@ -151,7 +151,7 @@ func TestPrivacyChangeNotice(t *testing.T) {
 		t.Fatal(err)
 	}
 	set := func(version int, recipients []any) []map[string]any {
-		ms, err := testbench.HelloBotManifests(root)
+		ms, err := testbench.SharedHelloBotManifests(root)
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -15,7 +15,6 @@ import (
 	"github.com/HunterEwok/botaru/impl/internal/spec"
 	"github.com/HunterEwok/botaru/impl/internal/store"
 	"github.com/HunterEwok/botaru/impl/internal/testbench"
-	"github.com/HunterEwok/botaru/impl/internal/texts"
 )
 
 func TestMain(m *testing.M) { pgtest.Main(m) }
@@ -48,11 +47,11 @@ func newBenchWith(t *testing.T, edit func(root string, ms []map[string]any) []ma
 	if err != nil {
 		t.Fatal(err)
 	}
-	sp, err := spec.Load(root)
+	sp, err := testbench.SharedSpec(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	tx, err := texts.Load(root, "")
+	tx, err := testbench.SharedTexts(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +59,7 @@ func newBenchWith(t *testing.T, edit func(root string, ms []map[string]any) []ma
 	if err != nil {
 		t.Fatal(err)
 	}
-	ms, err := testbench.HelloBotManifests(root)
+	ms, err := testbench.SharedHelloBotManifests(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +67,7 @@ func newBenchWith(t *testing.T, edit func(root string, ms []map[string]any) []ma
 		ms = edit(root, ms)
 	}
 	op := Operator{Principal: ids.PrincipalID(), Tenant: "demo"}
-	personas, err := testbench.Personas(root)
+	personas, err := testbench.SharedPersonas(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -315,7 +314,7 @@ func TestOnFixWaitsForApply(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ms, err := testbench.HelloBotManifests(root)
+	ms, err := testbench.SharedHelloBotManifests(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -596,7 +595,7 @@ func TestApplyRefusesPrivilegeRaise(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ms, err := testbench.HelloBotManifests(root)
+	ms, err := testbench.SharedHelloBotManifests(root)
 	if err != nil {
 		t.Fatal(err)
 	}

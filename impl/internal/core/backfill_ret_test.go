@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/HunterEwok/botaru/impl/internal/spec"
+	"github.com/HunterEwok/botaru/impl/internal/testbench"
 )
 
 // RET-1: every stored object schema (x-botaru-direction: record) names exactly one class of
@@ -19,7 +20,7 @@ func TestBackfillRetentionClasses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sp, err := spec.Load(root)
+	sp, err := testbench.SharedSpec(root)
 	if err != nil {
 		t.Fatal(err)
 	}

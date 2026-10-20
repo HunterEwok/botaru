@@ -16,7 +16,7 @@ import (
 	"github.com/HunterEwok/botaru/impl/internal/pgtest"
 	"github.com/HunterEwok/botaru/impl/internal/spec"
 	"github.com/HunterEwok/botaru/impl/internal/store"
-	"github.com/HunterEwok/botaru/impl/internal/texts"
+	"github.com/HunterEwok/botaru/impl/internal/testbench"
 )
 
 // Tests of the quality gate on a static fingerprint change (PRV-3).
@@ -29,11 +29,11 @@ func newProductionCore(t *testing.T) *Core {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sp, err := spec.Load(root)
+	sp, err := testbench.SharedSpec(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	tx, err := texts.Load(root, "")
+	tx, err := testbench.SharedTexts(root)
 	if err != nil {
 		t.Fatal(err)
 	}

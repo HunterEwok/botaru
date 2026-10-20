@@ -18,7 +18,6 @@ import (
 	"github.com/HunterEwok/botaru/impl/internal/spec"
 	"github.com/HunterEwok/botaru/impl/internal/store"
 	"github.com/HunterEwok/botaru/impl/internal/testbench"
-	"github.com/HunterEwok/botaru/impl/internal/texts"
 	"github.com/HunterEwok/botaru/impl/internal/yamlx"
 )
 
@@ -39,11 +38,11 @@ func newFxRunner(t *testing.T) *fxRunner {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sp, err := spec.Load(root)
+	sp, err := testbench.SharedSpec(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	tx, err := texts.Load(root, "")
+	tx, err := testbench.SharedTexts(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +59,7 @@ func newFxRunner(t *testing.T) *fxRunner {
 		t.Fatal(err)
 	}
 	r := &fxRunner{c: c, root: root, examples: exampleManifests(t, root, sp), base: map[string]bool{}}
-	if r.personas, err = testbench.Personas(root); err != nil {
+	if r.personas, err = testbench.SharedPersonas(root); err != nil {
 		t.Fatal(err)
 	}
 	if res, err := c.Apply(ctx, Operator{Principal: ids.PrincipalID(), Tenant: "farm"}, ApplyRequest{Commit: strings.Repeat("0", 40), Manifests: r.examples, DryRun: true, Personas: r.personas}); err == nil {

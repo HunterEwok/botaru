@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/HunterEwok/botaru/impl/internal/spec"
-	"github.com/HunterEwok/botaru/impl/internal/texts"
+	"github.com/HunterEwok/botaru/impl/internal/testbench"
 )
 
 func parse(t *testing.T, s string) update {
@@ -80,7 +80,7 @@ func TestRenderDigest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tx, err := texts.Load(root, "")
+	tx, err := testbench.SharedTexts(root)
 	if err != nil {
 		t.Fatal(err)
 	}
