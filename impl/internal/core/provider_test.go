@@ -42,6 +42,7 @@ func taskReason(t *testing.T, b *bench, id string) string {
 // probe opens the circuit for twice the pause, a good one closes it (GW-11, D18,
 // blackbox:gateway/outage-30m).
 func TestProviderCircuit(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	g := helloGrant(t, b)
@@ -90,6 +91,7 @@ func TestProviderCircuit(t *testing.T) {
 // reason provider_quota (GW-10, D19); a configuration error closes the pair until an apply and
 // raises an alarm (GW-13).
 func TestProviderRateAndConfig(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	g := helloGrant(t, b)
@@ -145,6 +147,7 @@ func TestProviderRateAndConfig(t *testing.T) {
 // waiting reason type_quota and no attempt spent; when one ends, it is handed out (DSP-7,
 // fx-dsp-05).
 func TestTypeQuota(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBenchWith(t, func(root string, ms []map[string]any) []map[string]any {
 		for _, m := range ms {
@@ -181,6 +184,7 @@ func TestTypeQuota(t *testing.T) {
 // 80% of a limit gives one budget.threshold event per period (BUD-4,
 // fixture:budget/waiting-reserve-not-threshold).
 func TestBudgetThresholdAndWaitingReserve(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	task := b.hello(t, "1")

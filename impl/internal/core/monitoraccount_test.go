@@ -20,6 +20,7 @@ import (
 // sees a demo2 node or a farm node, a node no catalog of demo links, a script on core1; the farm
 // account sees the farm nodes but no tenant node.
 func TestAccountWider(t *testing.T) {
+	t.Parallel()
 	hosts := func(nodes ...string) map[string]any {
 		var hs []any
 		for i, n := range nodes {
@@ -70,6 +71,7 @@ func TestAccountWider(t *testing.T) {
 // by class and names no node of the farm or of another tenant, and the event log holds no host
 // list. A revoked worker's report goes with it.
 func TestDoctorAccountScope(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	mon := b.monitorOn(t)

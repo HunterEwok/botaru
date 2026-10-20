@@ -16,6 +16,7 @@ import (
 // person out of every group, and the bound chat where they were seen named in principal_left;
 // the notice repeats once a day for at most 7 days, and binding the chat again clears it.
 func TestOffboardLeftovers(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newGroupBench(t)
 	bind := ChatBindRequest{Op: "chat.bind", Tenant: "demo", Channel: "telegram", Chat: Chat{Kind: "group", ExternalID: "-500"}, Ceiling: "summary", Name: "lab"}

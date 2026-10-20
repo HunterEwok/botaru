@@ -15,6 +15,7 @@ import (
 // with aggregates only through a tool of numbers and enum values (PRV-4). The lint refuses the
 // none case at apply, so the catalog in memory is changed after it to reach the call check.
 func TestModelExposureCall(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newToolBenchWith(t, nil, func(ms []map[string]any) []map[string]any {
 		for _, m := range ms {

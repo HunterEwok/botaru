@@ -187,6 +187,7 @@ func routeTasks(t *testing.T, b *bench, route string) []string {
 // A source channel and its ingress block are of the ingress profile: without the claim apply
 // refuses them as later (MAN-11); with it the source passes, and a source without ingress fails
 // apply (ING-1).
+// Not parallel: it sets the profile override of the whole test process (spec.SetProfileOverride).
 func TestIngressClaimSeam(t *testing.T) {
 	root, err := spec.FindRoot("")
 	if err != nil {
@@ -217,6 +218,7 @@ func TestIngressClaimSeam(t *testing.T) {
 // system-ops does not list (PRM-10); a route to an alarm type from an event an agent type
 // declares (INJ-7).
 func TestIngressLint(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newIngressBench(t)
 	codes := func(change func(ms []map[string]any) []map[string]any) map[string]bool {
@@ -294,6 +296,7 @@ func deepCopyList(ms []map[string]any) []map[string]any {
 // job gets no body; its answer goes to the route's deliver_to (ING-1, ING-2, ING-3, ING-4,
 // PRM-10, MSG-16, INJ-7, IDM-2, DLV-6, fixture:ingress/annotation-instruction).
 func TestIngressDelivery(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newIngressBench(t)
 	src := b.source(t, "pipeline")
@@ -466,6 +469,7 @@ func TestIngressDelivery(t *testing.T) {
 // lists itself; an event whose route chain is long enough starts no route (ING-1, ING-4,
 // PRM-10, MSG-16).
 func TestIngressRouteGuards(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newIngressBench(t)
 	tok := b.source(t, "tokens")
@@ -540,6 +544,7 @@ func fileState(t *testing.T, b *bench, ref string) string {
 // enqueues one task of system per event with the key system:event:<route>:<source>:<id>, a
 // repeat of the event key gives none, an event outside the filter gives none, and the route task
 // carries one more route step (MSG-16, IDM-2, IDM-4).
+// Not parallel: it sets the profile override of the whole test process (spec.SetProfileOverride).
 func TestEventRouteJobEvent(t *testing.T) {
 	ctx := context.Background()
 	b := newIngressBench(t)
@@ -616,6 +621,7 @@ func TestEventRouteJobEvent(t *testing.T) {
 // above tier 0, an ext.* route outside system-ops or to action.* (ING-1, ING-3, ING-4, PRM-10,
 // manifests/v02-lints, manifests/v02-security-lints, manifests/ingress-routes).
 func TestIngressLintFixtures(t *testing.T) {
+	t.Parallel()
 	got := map[string]bool{}
 	for _, id := range runLintFixtures(t) {
 		got[id] = true
@@ -632,6 +638,7 @@ func TestIngressLintFixtures(t *testing.T) {
 // task publishes run.finished.v1, and the route on it to a tier 1 type is stopped and audited,
 // while the route on it to a tier 0 type runs and carries the mark one hop on (ING-1, MSG-16).
 func TestIngressTokenChain(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newIngressBench(t)
 	tok := b.source(t, "tokens")
@@ -682,6 +689,7 @@ func TestIngressTokenChain(t *testing.T) {
 // Each family of routes on events runs with the claim of its profile: ext.* of a source with
 // ingress, ext.monitor.* with monitor, job events with messaging; without it nothing is enqueued
 // (MAN-11, MSG-16, MON-5, ING-4).
+// Not parallel: it sets the profile override of the whole test process (spec.SetProfileOverride).
 func TestEventRoutesClaims(t *testing.T) {
 	ctx := context.Background()
 	b := newIngressBench(t)
@@ -729,6 +737,7 @@ func TestEventRoutesClaims(t *testing.T) {
 // Only a body this delivery put is dropped: a file older than the put window, or one a task
 // already names, stays (ING-3).
 func TestIngressDropOnlyOwnBody(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newIngressBench(t)
 	src := b.source(t, "pipeline")
@@ -762,6 +771,7 @@ func TestIngressDropOnlyOwnBody(t *testing.T) {
 // tenant, or with uploads_personal, it is declared personal_seen, and a route task reading it
 // inherits the flag (ART-6, AUD-5).
 func TestIngressBodyPersonal(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newIngressBench(t)
 	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE manifests SET doc = jsonb_set(doc, '{spec,kind}', '"production"') WHERE kind = 'Tenant' AND name = 'demo'`); err != nil {
@@ -798,6 +808,7 @@ func TestIngressBodyPersonal(t *testing.T) {
 // The delivery keys are kept a day against repeats: the retention loop deletes older ones, and
 // tenant offboarding deletes the rest of the tenant (ING-3, RET-9).
 func TestIngressDeliveriesPurge(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newIngressBench(t)
 	src := b.source(t, "pipeline")

@@ -58,6 +58,7 @@ func reporterManifests(ms []map[string]any) []map[string]any {
 // code builds: the table from the snapshot and the paragraph as a separate model part, to the
 // origin only (REP-2, REP-3, REP-7, REP-8, REP-9).
 func TestReporterDigest(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newReporterBench(t)
 	reporter := b.enroll(t, EnrollRequest{Tenant: "demo", Role: "reporter", Kind: "agent"})
@@ -134,6 +135,7 @@ func TestReporterDigest(t *testing.T) {
 // Code lets through only a plain paragraph: no link, mention, markup, command or object id, at
 // most 800 characters (REP-2).
 func TestDigestParagraph(t *testing.T) {
+	t.Parallel()
 	for text, ok := range map[string]bool{
 		"All went well.":                     true,
 		"See https://example.org":            false,
@@ -153,6 +155,7 @@ func TestDigestParagraph(t *testing.T) {
 // text that they are not registered, at most once per period; the audit keeps only
 // activity.ignored(not_subject) (MSG-17).
 func TestActivityNotSubject(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	send := func(update string) *ActivityResult {
@@ -184,6 +187,7 @@ func TestActivityNotSubject(t *testing.T) {
 // A view with no principal to read for shows nothing, a task without an audience reads for its
 // initiator, and the since_last window is the tenant's own (REP-3, REP-7, PRM-9).
 func TestViewFilterAudience(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newReporterBench(t)
 	cat, err := b.c.Catalog(ctx)
@@ -226,6 +230,7 @@ func TestViewFilterAudience(t *testing.T) {
 // The paragraph is read by tokens: a token with a digit passes only as a name of the table or the
 // catalog or as the snapshot time or a window bound, and a number word never passes (REP-4).
 func TestParagraphNumbers(t *testing.T) {
+	t.Parallel()
 	at := time.Date(2026, 10, 16, 9, 30, 0, 0, time.UTC)
 	n := numberCheck{names: map[string]bool{"web1": true, "hello.greet.v1": true, "42": true}, exact: map[string]bool{"db7": true},
 		times: []time.Time{at, at.Add(-24 * time.Hour)}, loc: time.UTC}
@@ -254,6 +259,7 @@ func TestParagraphNumbers(t *testing.T) {
 // A paragraph with a number is not sent: the digest goes with its code table only, and the core
 // writes digest.text_dropped.v1 with counts only (REP-4).
 func TestDigestNumbersDropped(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newReporterBench(t)
 	reporter := b.enroll(t, EnrollRequest{Tenant: "demo", Role: "reporter", Kind: "agent"})

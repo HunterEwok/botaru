@@ -14,6 +14,7 @@ import (
 // as a chain's child whose outcome a continuation reports; a file of another tree, or one whose
 // producer another principal started (even an ancestor), is not handed out (ART-5).
 func TestEarlierChainFile(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBenchWith(t, func(root string, ms []map[string]any) []map[string]any {
 		for _, m := range ms {

@@ -12,6 +12,7 @@ import (
 
 // A channel's last successful poll and P4's provider pair state show in doctor (OBS-10).
 func TestDoctorUpstream(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	at := b.now(t).Add(-time.Minute).UTC().Format(time.RFC3339Nano)

@@ -58,6 +58,7 @@ func variantOf(t *testing.T, b *bench, proposal string) variantRow {
 // approach to the same problem at creation; the role's analysis input carries the variants and
 // the rule as outcome classes only (EVO-3, EVO-4, EVO-5, GOV-29).
 func TestVariantArchiveRevert(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newCommissionBench(t, true, presentEdit, evolutionEdit)
 	id, other := acceptLimits(t, b)
@@ -138,6 +139,7 @@ func TestVariantArchiveRevert(t *testing.T) {
 // A variant of an object a live variant made has that variant as its parent; a better child
 // counts as a success of the parent and takes the live flag (EVO-4).
 func TestVariantLineage(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newCommissionBench(t, true, presentEdit)
 	id, _ := acceptLimits(t, b)
@@ -187,6 +189,7 @@ func TestVariantLineage(t *testing.T) {
 
 // The diversity signature of an approach and its containment (EVO-5).
 func TestDiversitySignature(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 10, 18, 12, 0, 0, 0, time.UTC)
 	doc := map[string]any{"spec": map[string]any{"cron": "0 */2 * * *", "limits": map[string]any{"max_queued": 10.0},
 		"dispatch": map[string]any{"rules": []any{map[string]any{"timeouts": map[string]any{"attempt": "5m"}}}}}}
@@ -222,6 +225,7 @@ func TestDiversitySignature(t *testing.T) {
 // People read the archive and the review rules in P2 and drop a rule; every read is audited
 // (EVO-3, EVO-6).
 func TestP2VariantViews(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newCommissionBench(t, true, presentEdit)
 	alice := Operator{Principal: b.alice, Tenant: "demo"}

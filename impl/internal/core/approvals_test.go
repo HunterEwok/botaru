@@ -179,6 +179,7 @@ func press(identity, chat, message string) *OnBehalf {
 // decides from the chat of the card, the approval executes once through one write call, and
 // the outcome closes the action task and the approval.
 func TestActionApprovalFlow(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newActionBench(t, nil)
 	att, h := b.attemptTools(t, "1", false)
@@ -312,6 +313,7 @@ func TestActionApprovalFlow(t *testing.T) {
 // A write call whose toolhost lease expires ends as exec_unknown and is not retried; the task
 // fails with exec_unknown and no unclaimed alarm (APR-7, CNT-7).
 func TestActionExecUnknown(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newActionBench(t, nil)
 	att, h := b.attemptTools(t, "1", false)
@@ -350,6 +352,7 @@ func TestActionExecUnknown(t *testing.T) {
 // half of the deadline the approvers get one reminder, after it the approval expires and a
 // press gets expired (APR-19, APR-12).
 func TestApprovalExpiryAndReminder(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newActionBench(t, nil)
 	att, h := b.attemptTools(t, "1", false)
@@ -389,6 +392,7 @@ func TestApprovalExpiryAndReminder(t *testing.T) {
 // refuses new requests and cancels pending approvals (HLD-3); the initiator reminds the
 // approvers at most once in 5 minutes (APR-19).
 func TestApprovalLimitsAndHolds(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newActionBench(t, func(ms []map[string]any) []map[string]any {
 		for _, m := range ms {
@@ -456,6 +460,7 @@ func TestApprovalLimitsAndHolds(t *testing.T) {
 // The initiator does not approve their own request, and losing action.request cancels a
 // pending approval (APR-6, APR-9); a person without the right gets forbidden.
 func TestApprovalSelfAndRights(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newActionBench(t, nil)
 	att, h := b.attemptTools(t, "1", false)
@@ -472,6 +477,7 @@ func TestApprovalSelfAndRights(t *testing.T) {
 // A service initiator that lost action.request before the decision gets no release either:
 // the approval ends with rights_revoked (APR-6, APR-18).
 func TestApprovalServiceInitiatorRights(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newActionBench(t, nil)
 	att, h := b.attemptTools(t, "1", false)

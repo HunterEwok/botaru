@@ -21,6 +21,7 @@ import (
 // (MAN-11, MGR-20: the example tenant has the farm manager off, since the set holds no farm
 // charter with a seat profile).
 func TestDeployApplySet(t *testing.T) {
+	t.Parallel()
 	root, err := spec.FindRoot("")
 	if err != nil {
 		t.Fatal(err)
@@ -60,6 +61,7 @@ func TestDeployApplySet(t *testing.T) {
 // the seat model profile and the seat roles beside the first-bot set, with the manager on in the
 // example tenant, apply (MGR-20).
 func TestDeployManagerOn(t *testing.T) {
+	t.Parallel()
 	more := []string{"examples/tenants/farm/tenant.yaml", "examples/tenants/farm/governance.yaml",
 		"examples/model-profiles/manager-std.yaml", "examples/roles/farm-manager/role.yaml", "examples/roles/farm-manager-reader/role.yaml"}
 	newBenchWith(t, func(root string, ms []map[string]any) []map[string]any {
@@ -96,6 +98,7 @@ func TestDeployManagerOn(t *testing.T) {
 // D-114: only a built-in tool of a deferred rule is refused as deferred; a catalog plugin tool
 // whose model name is the same (plugin link, tool hint) is a plugin tool and goes the plugin way.
 func TestDeferredToolNotPlugin(t *testing.T) {
+	t.Parallel()
 	cat := &Catalog{Plugins: map[string]toolspec.Plugin{"link": {Name: "link", Tools: []toolspec.Tool{{Name: "hint"}}}}}
 	if !pluginToolName(cat, "link_hint") {
 		t.Fatal("link_hint of the plugin link is not a plugin tool")
@@ -110,6 +113,7 @@ func TestDeferredToolNotPlugin(t *testing.T) {
 // MON-5, D-88: the routes on a problem of the monitoring system run exactly when P2 status
 // claims the profile monitor, that is only with the monitoring system configured.
 func TestRoutesFollowTheClaim(t *testing.T) {
+	t.Parallel()
 	c := lintCore(t)
 	for _, on := range []bool{false, true} {
 		c.cfg.Monitor.Enabled = on

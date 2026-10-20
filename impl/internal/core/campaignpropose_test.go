@@ -11,6 +11,7 @@ import (
 // same key and plan is the same campaign, another plan under the key is idempotency_conflict;
 // the deferred rollout waves (ORC-15) are refused on P1 and P3; without a live lease the call is fenced.
 func TestP1CampaignPropose(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newCampaignReadBench(t)
 	att, th := b.attemptTools(t, "1", false)
@@ -54,6 +55,7 @@ func TestP1CampaignPropose(t *testing.T) {
 // the parent's tree, a repeat is the same child, a type outside may_enqueue and request fields
 // a child takes from its parent are refused.
 func TestLeaseEnqueue(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newCampaignReadBench(t)
 	att, _ := b.attemptTools(t, "1", false)

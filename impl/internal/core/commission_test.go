@@ -18,9 +18,6 @@ import (
 	"github.com/HunterEwok/botaru/impl/internal/testbench"
 )
 
-// appliedSets keeps the manifest set a commission bench applied, for a later apply.
-var appliedSets = map[*bench][]map[string]any{}
-
 // newCommissionBench is the analysis bench with the demo commission: the charter seats with
 // the fallback reviewers reviewer-a and reviewer-b, the lens review types and the commission
 // thresholds; decide names whether alice may decide on reliability proposals; edits change the
@@ -78,7 +75,7 @@ func newCommissionBenchWith(t *testing.T, decide bool, more []map[string]any, ed
 		}
 		return ms
 	})
-	appliedSets[b] = kept
+	b.applied = kept
 	if decide {
 		// proposal.decide is privileged; the grant flow with a code comes later, so the bench
 		// writes the membership.
@@ -120,6 +117,7 @@ func (b *bench) review(t *testing.T, w *Worker, result map[string]any) error {
 // each review only to its executor, and the code verdict recommends it (COM-2, COM-4, COM-7,
 // COM-14).
 func TestCommissionReview(t *testing.T) {
+	t.Parallel()
 	b := newCommissionBench(t, true)
 	b.helloDone(t, "1", "", "hi")
 	b.loop(t, "observe")
@@ -159,6 +157,7 @@ func TestCommissionReview(t *testing.T) {
 
 // Without a person who may decide, a proposal is dismissed before any review (COM-5).
 func TestCommissionNoDecider(t *testing.T) {
+	t.Parallel()
 	b := newCommissionBench(t, false)
 	b.helloDone(t, "1", "", "hi")
 	b.loop(t, "observe")
@@ -173,6 +172,7 @@ func TestCommissionNoDecider(t *testing.T) {
 
 // A veto from the security lens dismisses the proposal (COM-4).
 func TestCommissionVeto(t *testing.T) {
+	t.Parallel()
 	b := newCommissionBench(t, true)
 	b.helloDone(t, "1", "", "hi")
 	b.loop(t, "observe")
@@ -196,6 +196,7 @@ func TestCommissionVeto(t *testing.T) {
 
 // A review that hands in another lens's result is refused and does not count (COM-3).
 func TestCommissionWrongLens(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newCommissionBench(t, true)
 	b.helloDone(t, "1", "", "hi")
@@ -236,6 +237,7 @@ func proposeNone(t *testing.T, b *bench) {
 
 // Without seats a veto lens goes to a reviewer role that claims its type (COM-8).
 func TestCommissionNoSeats(t *testing.T) {
+	t.Parallel()
 	b := newCommissionBench(t, true, func(ms []map[string]any) {
 		specOf(ms, "Governance", "demo")["commission"].(map[string]any)["seats"] = []any{}
 	})
@@ -256,6 +258,7 @@ func TestCommissionNoSeats(t *testing.T) {
 // an executor (COM-4, COM-7, PRP-6). The lint keeps such a charter out of apply, so the test
 // narrows a copy of the catalog.
 func TestCommissionVetoLensMissing(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newCommissionBench(t, true)
 	b.helloDone(t, "1", "", "hi")
@@ -297,6 +300,7 @@ func TestCommissionVetoLensMissing(t *testing.T) {
 // A refusal other than money keeps the proposal waiting in screened with its code, parks it
 // after review_wait_max, and park_ttl ends it (COM-6, PRP-6).
 func TestCommissionWaitsForCap(t *testing.T) {
+	t.Parallel()
 	b := newCommissionBench(t, true, func(ms []map[string]any) {
 		s := specOf(ms, "Group", "system-ops")
 		s["caps"] = slices.DeleteFunc(slices.Clone(s["caps"].([]any)), func(c any) bool { return strings.HasPrefix(c.(string), "task:review.") })
@@ -322,6 +326,7 @@ func TestCommissionWaitsForCap(t *testing.T) {
 // A veto lens review that never comes parks the proposal; it is reviewed again at most
 // maxReviewRounds times, then stays parked until park_ttl (COM-4, COM-7, PRP-6).
 func TestCommissionVetoReviewMissing(t *testing.T) {
+	t.Parallel()
 	b := newCommissionBench(t, true)
 	proposeNone(t, b)
 	rb := b.enroll(t, EnrollRequest{Tenant: "demo", Role: "reviewer-b", Kind: "agent"})
@@ -339,6 +344,7 @@ func TestCommissionVetoReviewMissing(t *testing.T) {
 
 // A review handed in on time counts even when the loop reads it after the deadline (COM-4).
 func TestCommissionLateRead(t *testing.T) {
+	t.Parallel()
 	b := newCommissionBench(t, true)
 	// Start on a Tuesday noon, so the 49 hours below never reach the weekly digest (Monday 09:00,
 	// late by up to a day), which would reread the evidence and park the proposal.
@@ -386,6 +392,7 @@ func reviewOf(t *testing.T, b *bench, rec map[string]any, lens string) (map[stri
 // A review reserves its type's tree budget, the sum the review line was checked for, even
 // when the history of the type is cheaper (COM-6, BUD-14).
 func TestCommissionReviewReserve(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newCommissionBench(t, true)
 	proposeNone(t, b)
@@ -418,6 +425,7 @@ func TestCommissionReviewReserve(t *testing.T) {
 // A seat whose holder is the author's own bot does not review the proposal: the lens goes to
 // its fallback role (COM-2, GOV-17).
 func TestCommissionSeatNotAuthor(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newCommissionBench(t, true, func(ms []map[string]any) {
 		specOf(ms, "Governance", "demo")["commission"].(map[string]any)["seat_role"] = "reviewer-a"
@@ -445,6 +453,7 @@ func TestCommissionSeatNotAuthor(t *testing.T) {
 // A held seat reviews its lens even when the lens has no fallback executor: the seated lens
 // counts for the veto cover and the review money (COM-6, COM-7).
 func TestCommissionSeatWithoutFallback(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newCommissionBench(t, true, func(ms []map[string]any) {
 		specOf(ms, "Governance", "demo")["commission"].(map[string]any)["seat_role"] = "reviewer-b"

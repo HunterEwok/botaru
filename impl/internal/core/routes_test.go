@@ -75,6 +75,7 @@ func wakeTasks(t *testing.T, b *bench) []string {
 // and the core key; the tenant's daily number of wake-ups skips the next one with wake.skipped
 // (MSG-11, MSG-12, MSG-16).
 func TestRouteWake(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newRouteBench(t)
 	// The number of wake-ups counts a local day: the test runs at noon in the tenant's zone, so
@@ -161,6 +162,7 @@ func TestRouteWake(t *testing.T) {
 // A route on message tells people only of an entry the code wrote and nobody distrusts, by the
 // route's code text (MSG-16, INJ-7).
 func TestRouteNotify(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newRouteBench(t)
 	notices := func() int {
@@ -196,6 +198,7 @@ func TestRouteNotify(t *testing.T) {
 // apply refuses a message graph that cannot deliver: a pair without a receiving role, a route
 // whose mode does not fit its source (MSG-5, MSG-16).
 func TestRouteLint(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newRouteBench(t)
 	route := map[string]any{"apiVersion": "botaru/v1alpha1", "kind": "Route", "metadata": map[string]any{"name": "bad", "tenant": "demo"},
@@ -216,6 +219,7 @@ func TestRouteLint(t *testing.T) {
 // A route's auto-report is refused, as message.rejected, when system has no msg.send for its
 // type; the task ends anyway (MSG-5, MSG-16).
 func TestRouteReportNeedsSystemCap(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newRouteBenchWith(t, false)
 	lead := b.enroll(t, EnrollRequest{Tenant: "demo", Role: "lead", Kind: "job", Labels: map[string]string{"zone": "a"}})
@@ -240,6 +244,7 @@ func TestRouteReportNeedsSystemCap(t *testing.T) {
 // The wake-ups a person's entries caused count in that person's day limit, though they run as
 // system (MSG-11, BUD-1).
 func TestWakeShare(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newRouteBench(t)
 	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO tasks (id, tenant, type, state, initiator, priority_class, idempotency_key, body_hash, body, record, deadline_at, created_at, updated_at)
@@ -311,6 +316,7 @@ func (b *bench) atNoon(t *testing.T, zone string) {
 // entries narrow it as co-initiators: an entry from a person who may not enqueue the type wakes
 // nothing, and the refusal is not tried again in the same window (HLD-3, MSG-7, MSG-11).
 func TestRouteWakeGuards(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	rootTask := func(b *bench) {
 		if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO tasks (id, tenant, type, state, initiator, priority_class, idempotency_key, body_hash, body, record, deadline_at, created_at, updated_at)
@@ -371,6 +377,7 @@ func TestRouteWakeGuards(t *testing.T) {
 // A child or a call in a wake-up's subtree draws on the day limit of the people its entries came
 // from while it runs, not only at the wake-up's admission (MSG-11, BUD-2).
 func TestWakeLimits(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newRouteBench(t)
 	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO tasks (id, tenant, type, state, initiator, priority_class, idempotency_key, body_hash, body, record, deadline_at, created_at, updated_at)

@@ -53,6 +53,7 @@ func (b *actionBench) pendingCards(t *testing.T, update string) (*approvalRow, [
 // registry say which decisions need it, and the check refuses such a decision with
 // details_not_opened until the person opened "Details" of the subject's card.
 func TestDetailsRequired(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	for _, x := range []struct {
@@ -95,6 +96,7 @@ func TestDetailsRequired(t *testing.T) {
 // shows on the card, a repeat changes nothing, the initiator is never an approver, the second
 // different person executes it with one write call; one "Reject" closes another request.
 func TestTwoApprovers(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newActionBench(t, func(ms []map[string]any) []map[string]any {
 		for _, m := range ms {
@@ -169,6 +171,7 @@ func TestTwoApprovers(t *testing.T) {
 // request a high risk action with one approval is refused; with approvals: 2 the set passes,
 // and doctor warns while fewer than two people other than the initiator may approve.
 func TestTwoApproversLintDoctor(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newActionBench(t, func(ms []map[string]any) []map[string]any {
 		for _, m := range ms {
@@ -249,6 +252,7 @@ func TestTwoApproversLintDoctor(t *testing.T) {
 // paused and the card gets the new deadline. no_action wins over pause_action, and a pause
 // without until lets an approval wait at most 7 days.
 func TestPauseActionByPerson(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newActionBench(t, func(ms []map[string]any) []map[string]any {
 		return append(ms, map[string]any{
@@ -318,6 +322,7 @@ func TestPauseActionByPerson(t *testing.T) {
 // the hold the approval-expiry loop expires it (HLD-8, D-108); a new request under the hold
 // is refused (HLD-3).
 func TestPauseActionAtMostSevenDays(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newActionBench(t, nil)
 	a, _ := b.pendingCards(t, "1")
@@ -347,6 +352,7 @@ func TestPauseActionAtMostSevenDays(t *testing.T) {
 // planned until the next day, counted as excess without names; the card that went out counts
 // its deadline from its first delivery; the next day the waiting cards go in order of expiry.
 func TestCardLimitPerDay(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBenchWith(t, func(root string, ms []map[string]any) []map[string]any {
 		for _, m := range ms {
@@ -412,6 +418,7 @@ func TestCardLimitPerDay(t *testing.T) {
 // A person's quiet hours and daily digest defer only deliveries of a deferrable kind; an admin
 // without admin:people cannot set another person's (DLV-10).
 func TestPrefsQuietHours(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newActionBench(t, nil)
 	b.drain(t)
@@ -447,6 +454,7 @@ func TestPrefsQuietHours(t *testing.T) {
 // The language of a delivery and the reply_locale of an attempt follow the order of DLV-18:
 // the recipient's own locale with a catalog, then the tenant's, then en.
 func TestLocaleOrder(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBenchWith(t, func(root string, ms []map[string]any) []map[string]any {
 		for _, m := range ms {
@@ -494,6 +502,7 @@ func TestLocaleOrder(t *testing.T) {
 // default; one over the ceiling waits for the next free slot, and a newer one replaces the
 // waiting one (REP-10).
 func TestDigestPace(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	ins := func(id string, handed, runAt any, state string) {
@@ -571,6 +580,7 @@ func TestDigestPace(t *testing.T) {
 // Within a class the next task comes from the fairness key with the fewest running attempts
 // per weight; a key of weight 0 waits while another key has work (DSP-6).
 func TestFairnessWeights(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBenchWith(t, func(root string, ms []map[string]any) []map[string]any {
 		for _, m := range ms {
@@ -616,6 +626,7 @@ func TestFairnessWeights(t *testing.T) {
 // period deleted answers gone; three slots of a schedule in a row out of attempts stop the
 // schedule with a hold, and the next slot is skipped as held (CAP-4).
 func TestDeadGroupsScheduleAutoStop(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newScheduleBench(t, "30 2 * * *", nil)
 	t1, t2 := b.hello(t, "g1"), b.hello(t, "g2")
@@ -660,6 +671,7 @@ func TestDeadGroupsScheduleAutoStop(t *testing.T) {
 // the transitions of the zone within a year, and a backup schedule that would lose a slot is
 // rejected(schedule_time_invalid) (TIM-5).
 func TestScheduleChangeTimes(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newScheduleBench(t, "0 4 * * *", nil)
 	cat, err := b.c.Catalog(ctx)
@@ -705,6 +717,7 @@ func TestScheduleChangeTimes(t *testing.T) {
 // A campaign approval is one press, so an action with approvals: 2 is not run as a campaign
 // (APR-16).
 func TestTwoApproversNoCampaign(t *testing.T) {
+	t.Parallel()
 	b := newActionBench(t, func(ms []map[string]any) []map[string]any {
 		campaignHosts(ms)
 		for _, m := range ms {
@@ -732,6 +745,7 @@ func TestTwoApproversNoCampaign(t *testing.T) {
 
 // A pause_action hold on a bot group of the worker that asked pauses its approvals (HLD-8).
 func TestPauseActionBotGroup(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newActionBench(t, func(ms []map[string]any) []map[string]any {
 		return append(ms, map[string]any{"apiVersion": "botaru/v1alpha1", "kind": "BotGroup", "metadata": map[string]any{"name": "pool", "tenant": "demo"},
@@ -762,6 +776,7 @@ func b0Role(ms []map[string]any) string {
 // their card (APR-15): the presentation (and the case's expiry with it) moves once, and
 // self_measured_card, a later card on a presented proposal, has a mark of its own.
 func TestFirstDeliveryGovernance(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	t0 := time.Date(2026, 1, 5, 10, 0, 0, 0, time.UTC)
@@ -812,6 +827,7 @@ func TestFirstDeliveryGovernance(t *testing.T) {
 // limit is claimed first and waits for the next day, the other's goes now, and that person
 // opens "Details" and confirms today: the first delivery sets the presentation to its time.
 func TestCaseDeferredRecipient(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b, _, _ := realizedBench(t)
 	bob := ids.PrincipalID()

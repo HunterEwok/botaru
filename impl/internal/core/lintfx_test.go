@@ -119,6 +119,7 @@ func objKey(m map[string]any) string {
 // that stopped passing is a regression, one that started to pass is recorded with
 // -update-lint.
 func TestLintFixtures(t *testing.T) {
+	t.Parallel()
 	passing := runLintFixtures(t)
 	path := filepath.Join("testdata", "lint-passing.txt")
 	if *updateLint {

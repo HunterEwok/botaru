@@ -23,6 +23,7 @@ func (b *controlBench) implicate(t *testing.T, key, id string) {
 // MGR-11: preempt moves the attempt to preempted without spending it and the task goes back
 // to the queue; the third preemption of a task cancels it with preempt_limit.
 func TestBackfillPreempt(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newControlBench(t)
 	task := b.hello(t, "p1")
@@ -61,6 +62,7 @@ func TestBackfillPreempt(t *testing.T) {
 // MGR-22: in distrust mode a cancellation goes only through a control card, and at most one
 // quarantine per incident is applied by the seat; the next goes to a person.
 func TestBackfillDistrustMode(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newControlBench(t, func(ms []map[string]any) {
 		for _, m := range ms {
@@ -101,6 +103,7 @@ func TestBackfillDistrustMode(t *testing.T) {
 // under seat holds becomes a control card, also when the limit is 0, and the conversion is not
 // a refusal for the safeguard.
 func TestBackfillShareHeld(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newControlBench(t)
 	b.implicate(t, "worker", b.agent.ID)
@@ -130,6 +133,7 @@ func TestBackfillShareHeld(t *testing.T) {
 // MGR-24: a seat attempt acts on objects of its own tenant only: an incident of another tenant
 // is no live incident of the attempt's tenant, and nothing is applied there.
 func TestBackfillSeatOneTenant(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newControlBench(t)
 	other := ids.New(ids.Incident)
@@ -152,6 +156,7 @@ func TestBackfillSeatOneTenant(t *testing.T) {
 // as the subject of the incident; another such file is not_found, a file without the flag
 // opens like any task file, and the read log shows each opened file with its basis.
 func TestBackfillReaderPersonalFile(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	// The reading runs as system: its group sees what the files are marked.
 	systemOps := map[string]any{"apiVersion": "botaru/v1alpha1", "kind": "Group", "metadata": map[string]any{"name": "system-ops", "tenant": "demo"},

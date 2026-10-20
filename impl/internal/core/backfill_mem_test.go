@@ -11,6 +11,7 @@ import (
 // with reason bot_retired and the identity as its scope at the end of seal_ttl (30 days), not
 // before, and only once.
 func TestBackfillSealEndsInErasure(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	old := b.botOf(t, b.agent.ID)

@@ -57,6 +57,7 @@ func listIDs(out map[string]any) []string {
 // the initiator's only (a refusal of another person is audited) and proposes a new campaign
 // of the unfinished items with a new card, the same one on a repeat.
 func TestP2Campaigns(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newCampaignReadBench(t)
 	att, h := b.attemptTools(t, "1", false)
@@ -178,6 +179,7 @@ func TestP2Campaigns(t *testing.T) {
 // no_executor and releases nothing more; the initiator's "Continue" resumes it with a new
 // start_by window, so the next pass does not pause it again at once (ORC-1, ORC-4).
 func TestCampaignNoExecutor(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newCampaignReadBench(t)
 	att, h := b.attemptTools(t, "1", false)
@@ -242,6 +244,7 @@ func TestCampaignNoExecutor(t *testing.T) {
 // transaction with its waiting approval (canceled(admin)), a repeat answers the same; the
 // initiator's cancel of a proposed run rejects it with the reason declined, as its card's button.
 func TestP2Scripts(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newScriptRunBenchWith(t, []map[string]any{
 		{"apiVersion": "botaru/v1alpha1", "kind": "Group", "metadata": map[string]any{"name": "admins", "tenant": "demo"},
@@ -338,6 +341,7 @@ func TestP2Scripts(t *testing.T) {
 // reviews or verdict; a proposal above the person's ceiling is neither listed nor shown; a person without proposal.decide is
 // forbidden, and another tenant gets nothing.
 func TestP2Proposals(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newCommissionBench(t, true, presentEdit)
 	proposeNone(t, b)
@@ -435,6 +439,7 @@ func TestP2Proposals(t *testing.T) {
 // source task is gone; a credential without a person, farm and another tenant see nothing, and
 // naming the tenant from elsewhere is forbidden.
 func TestP2Escalations(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	nec := seatType(necessityType)
 	asMap(nec["spec"])["purpose"] = "review"
@@ -509,6 +514,7 @@ func TestP2Escalations(t *testing.T) {
 // "Cancel" of a proposed campaign rejects it; the same cancel again answers the same, while a
 // cancel by another person of the ended campaign is already_terminal (ORC-1, IDM-3).
 func TestP2CampaignCancelProposed(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newCampaignReadBench(t, map[string]any{"confirm_read_over": map[string]any{"items": 2}})
 	att, h := b.attemptTools(t, "1", false)

@@ -52,6 +52,7 @@ func (b *bench) proposalNonce(t *testing.T) (string, string) {
 // "Postpone" returns it to the next digest with a new card, and "Accept" of kind none notes it
 // (DIG-1, DIG-2, DIG-3, PRP-6).
 func TestProposalDigestDecide(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newCommissionBench(t, true, presentEdit)
 	proposeNone(t, b)
@@ -114,6 +115,7 @@ func TestProposalDigestDecide(t *testing.T) {
 // and the trial record with the values before; without the change by realize_by the
 // realization fails with the trial canceled (PRP-18, PRP-21).
 func TestProposalRealizeTimeout(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newCommissionBench(t, true, presentEdit)
 	b.helloDone(t, "1", "", "hi")
@@ -153,6 +155,7 @@ func TestProposalRealizeTimeout(t *testing.T) {
 
 // A digest that reaches nobody presents nothing: the item stays recommended (DIG-2).
 func TestProposalDigestNoTarget(t *testing.T) {
+	t.Parallel()
 	b := newCommissionBench(t, true, presentEdit, func(ms []map[string]any) {
 		specOf(ms, "Tenant", "demo")["insights"].(map[string]any)["present_to"] = "chat:nowhere"
 	})
@@ -170,6 +173,7 @@ func TestProposalDigestNoTarget(t *testing.T) {
 
 // A member of a group that inherits another is among that group's people (PRM-2).
 func TestGroupMembersInherited(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	// alice is a member of deciders, which inherits system-ops.
 	b := newCommissionBench(t, true, func(ms []map[string]any) {

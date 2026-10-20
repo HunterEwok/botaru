@@ -11,6 +11,7 @@ import (
 // after; the store keeps only hashes; a revoked worker is not rotated, a foreign one is
 // not_found.
 func TestWorkerRotate(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	r, err := b.c.Enroll(ctx, b.op, EnrollRequest{Tenant: "demo", Role: "hello", Kind: "agent"})
@@ -60,6 +61,7 @@ func TestWorkerRotate(t *testing.T) {
 // goes back to enrolled, and its next hello is checked again from the start: the same mismatch
 // blocks it again, a matching hello makes it active. A worker that is not blocked is left as it is.
 func TestWorkerUnblock(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	r, err := b.c.Enroll(ctx, b.op, EnrollRequest{Tenant: "demo", Role: "hello", Kind: "agent", Labels: map[string]string{"zone": "a"}})
@@ -105,6 +107,7 @@ func TestWorkerUnblock(t *testing.T) {
 // approval; a person without the capability gets forbidden with needs; a verb outside the
 // service's control is refused; a service principal does not give the command.
 func TestServiceControlP2(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newServiceBench(t)
 	alice := Operator{Principal: b.alice, Tenant: "demo"}

@@ -58,6 +58,7 @@ func lintCodes(t *testing.T, c *Core, docs string) []string {
 // A machine, a monitoring node and a (machine, service) pair belong to one tenant, and a farm
 // node is in no catalog (DEP-11, TEN-4, D-75).
 func TestLintHostsOneTenant(t *testing.T) {
+	t.Parallel()
 	c := lintCore(t, "core1", "backup1")
 	cat := func(tenant, host string) string {
 		return `apiVersion: botaru/v1alpha1
@@ -86,6 +87,7 @@ spec:
 // A plugin reaches only machines of a tenant catalog; the monitor plugin also reaches the
 // monitoring API of the deployment (INJ-6).
 func TestLintEgress(t *testing.T) {
+	t.Parallel()
 	c := lintCore(t)
 	set := func(name, egress string) string {
 		return `apiVersion: botaru/v1alpha1
@@ -122,6 +124,7 @@ spec:
 // The tenant dispatch policy only narrows (DSP-3, FEN-3): the cases of fx-dsp-10 that the
 // schema does not already refuse.
 func TestLintDispatch(t *testing.T) {
+	t.Parallel()
 	c := lintCore(t)
 	base := `apiVersion: botaru/v1alpha1
 kind: TaskType
@@ -185,6 +188,7 @@ spec:
 // A model profile of a tenant is checked as the runtime catalog resolves it: the tenant's own
 // profile first, not one of another tenant with the same name.
 func TestLintProfileOfTenant(t *testing.T) {
+	t.Parallel()
 	c := lintCore(t)
 	prof := func(tenant, training string) string {
 		return `apiVersion: botaru/v1alpha1
@@ -213,6 +217,7 @@ spec:
 // A role that names a whole plugin gets each of its tools checked: a write tool among them is
 // refused as when it is named alone.
 func TestLintWholePlugin(t *testing.T) {
+	t.Parallel()
 	c := lintCore(t)
 	set := func(access, ref string) string {
 		return `apiVersion: botaru/v1alpha1
@@ -268,6 +273,7 @@ spec:
 // of the charter, else lens_unknown; the weight of farm_manager is set by rule, so before v0.2
 // the lens is unknown and from v0.2 its weight is lens_weight_fixed.
 func TestLintLensNames(t *testing.T) {
+	t.Parallel()
 	c := lintCore(t)
 	com := func(weights string) string {
 		return "apiVersion: botaru/v1alpha1\nkind: Commission\nmetadata: {name: default, tenant: demo}\nspec:\n  weights: " + weights + "\n---\n"
@@ -302,6 +308,7 @@ spec:
 // APR-17: a pipeline without a card changes nothing on work machines, so run.approval none
 // with tier 3 fails apply.
 func TestLintRunApprovalTier(t *testing.T) {
+	t.Parallel()
 	c := lintCore(t)
 	typ := func(tier string) string {
 		return `apiVersion: botaru/v1alpha1
@@ -321,6 +328,7 @@ spec: {worker_kind: job, purpose: work, tier: ` + tier + `, data_class: internal
 
 // PRM-5: pii is reserved in types, tools and the catalog, and secret is never an output class.
 func TestLintReservedClasses(t *testing.T) {
+	t.Parallel()
 	c := lintCore(t)
 	set := func(typeClass, outClass, resClass string) string {
 		return `apiVersion: botaru/v1alpha1
@@ -385,6 +393,7 @@ spec:
 // PRM-13 (authz-16 of PRM-7): apply rejects a set in which an ordinary group became privileged,
 // with members or without; a group new in the set is not a raise.
 func TestLintPrivilegeRaised(t *testing.T) {
+	t.Parallel()
 	c := lintCore(t)
 	tenant := "apiVersion: botaru/v1alpha1\nkind: Tenant\nmetadata: {name: demo}\nspec: {kind: test}\n---\n"
 	typ := "apiVersion: botaru/v1alpha1\nkind: TaskType\nmetadata: {name: ops.investigate.v1}\nspec: {worker_kind: agent, purpose: work, tier: 1, data_class: internal}\n---\n" +
@@ -444,6 +453,7 @@ func TestLintPrivilegeRaised(t *testing.T) {
 // leave out: seats without an id are not a seat declared twice, and decide_within of the farm
 // charter is not linted at all, since a v0.3 core does not use incident_stop.
 func TestLintCharterBounds(t *testing.T) {
+	t.Parallel()
 	c := lintCore(t)
 	charter := func(tenant, spec string) string {
 		return "apiVersion: botaru/v1alpha1\nkind: Governance\nmetadata: {name: " + tenant + ", tenant: " + tenant + "}\nspec: " + spec + "\n---\n"

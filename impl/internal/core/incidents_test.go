@@ -86,6 +86,7 @@ func incidentsOf(t *testing.T, b *bench, class string) []*incidentRow {
 // number when the alarm comes back within an hour, and closes it only after resolved (MGR-7,
 // MGR-8).
 func TestIncidentLifecycle(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newIncidentBench(t)
 	b.diskAlarm(t, true, 3)
@@ -184,6 +185,7 @@ func TestIncidentLifecycle(t *testing.T) {
 // Only a person declares an incident false, with a reason code and the Details text; the text
 // stays in the record for people and in no event (MGR-8).
 func TestIncidentDismiss(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newIncidentBench(t)
 	b.diskAlarm(t, true, 1)
@@ -227,6 +229,7 @@ func TestIncidentDismiss(t *testing.T) {
 // The store class of the initial catalog opens from the core's own store alarm with the
 // subject farm in the service tenant (MGR-38).
 func TestIncidentStoreLow(t *testing.T) {
+	t.Parallel()
 	b := newBenchWith(t, func(root string, ms []map[string]any) []map[string]any {
 		docs, err := manifest.ReadFiles([]string{filepath.Join(root, "examples/incidents/store-low.yaml")})
 		if err != nil {
@@ -252,6 +255,7 @@ func TestIncidentStoreLow(t *testing.T) {
 
 // The lint keeps an incident class to the closed lists (MGR-7).
 func TestIncidentClassLint(t *testing.T) {
+	t.Parallel()
 	c := lintCore(t)
 	codes := lintCodes(t, c, `apiVersion: botaru/v1alpha1
 kind: IncidentClass
@@ -288,6 +292,7 @@ spec:
 // A tenant-subject class joins the alarms of several resources into one incident that resolves
 // only when none of them fires, and every involvement function runs (MGR-7, MGR-8).
 func TestIncidentTenantSubject(t *testing.T) {
+	t.Parallel()
 	b := newBenchWith(t, func(_ string, ms []map[string]any) []map[string]any {
 		cl := diskClass()
 		spec := cl["spec"].(map[string]any)
@@ -353,6 +358,7 @@ func TestIncidentTenantSubject(t *testing.T) {
 // numbers: values that stop holding before it reset the count, and values that start holding
 // later start it (MGR-8).
 func TestIncidentDetectFor(t *testing.T) {
+	t.Parallel()
 	b := newIncidentBench(t)
 	b.diskAlarm(t, true, 3)
 	b.loop(t, "incident")
@@ -380,6 +386,7 @@ func TestIncidentDetectFor(t *testing.T) {
 
 // A break in the conditions between two loop passes still restarts detect.for (MGR-8).
 func TestIncidentDetectBreakBetweenPasses(t *testing.T) {
+	t.Parallel()
 	b := newIncidentBench(t)
 	b.diskAlarm(t, true, 3)
 	b.loop(t, "incident")
@@ -401,6 +408,7 @@ func TestIncidentDetectBreakBetweenPasses(t *testing.T) {
 
 // incident.list pages newest first by its cursor.
 func TestIncidentListPages(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newIncidentBench(t)
 	for _, id := range []string{"db1", "db2"} {
@@ -426,6 +434,7 @@ func TestIncidentListPages(t *testing.T) {
 // The number log keeps a run of matching numbers as long as the longest detect.for, however
 // often the numbers change (MGR-8).
 func TestIncidentDetectLongRun(t *testing.T) {
+	t.Parallel()
 	b := newIncidentBench(t)
 	for i := range 8 {
 		b.diskAlarm(t, true, float64(1+i%3))
@@ -442,6 +451,7 @@ func TestIncidentDetectLongRun(t *testing.T) {
 
 // A repeat without numbers breaks conditions on the missing field (MGR-8).
 func TestIncidentRepeatWithoutValues(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newIncidentBench(t)
 	b.diskAlarm(t, true, 3)

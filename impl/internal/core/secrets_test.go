@@ -19,6 +19,7 @@ import (
 // process without a tenant holds every tenant, and uses only in tenants the credential does not
 // reach are forbidden (SEC-6, DEP-10).
 func TestSecretRevokeByDescription(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	holds := func(where string) int {
@@ -95,6 +96,7 @@ func TestSecretRevokeByDescription(t *testing.T) {
 // window, the worker scope and the scopes the settings list for a deployment secret get a hold
 // without expiry with reason compromised, and only the operator releases it.
 func TestSecretRevokeCompromised(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	r, err := b.c.Enroll(ctx, b.op, EnrollRequest{Tenant: "demo", Role: "hello", Kind: "agent"})

@@ -97,6 +97,7 @@ func (b *bench) itemStates(t *testing.T, id string) string {
 // for "Continue", a failure over the threshold stops the campaign, and only the initiator
 // retries the failed items as a new campaign with a new card.
 func TestCampaignActionFlow(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newCampaignActionBench(t)
 	att, h := b.attemptTools(t, "1", false)
@@ -238,6 +239,7 @@ func TestCampaignActionFlow(t *testing.T) {
 // resource_busy and goes once the machine is free (ORC-12); a hold pauses a running campaign
 // in its transaction, and its release does not resume it (ORC-11).
 func TestCampaignExclusiveAndHold(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newCampaignActionBench(t)
 	att, h := b.attemptTools(t, "1", false)
@@ -305,6 +307,7 @@ func TestCampaignExclusiveAndHold(t *testing.T) {
 // Under distrust a campaign is short and explicit: a selector or more than 3 action items are
 // refused (ORC-14); an initiator without the right gets no tool (ORC-6).
 func TestCampaignDistrust(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newActionBench(t, func(ms []map[string]any) []map[string]any {
 		campaignHosts(ms)
@@ -401,6 +404,7 @@ func newCampaignReadBench(t *testing.T, tenant ...map[string]any) *bench {
 // the end; a failure over the threshold stops it, and the continuation reads the results only
 // through campaign_results inside the untrusted wrapper (ORC-2, ORC-7, ORC-8, ORC-9).
 func TestCampaignReadFlow(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newCampaignReadBench(t)
 	att, h := b.attemptTools(t, "1", false)
@@ -489,6 +493,7 @@ func TestCampaignReadFlow(t *testing.T) {
 // A campaign that started without a card stops at its manual gate after the canary; the
 // initiator's Continue on the progress card resumes it (ORC-2).
 func TestCampaignCardlessGate(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newCampaignReadBench(t)
 	att, h := b.attemptTools(t, "1", false)
@@ -527,6 +532,7 @@ func TestCampaignCardlessGate(t *testing.T) {
 // decides, not the initiator (ORC-2); the tree limit counts the items and the continuation
 // (ORC-8, PRM-6).
 func TestCampaignReadCard(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newCampaignReadBench(t, map[string]any{"confirm_read_over": map[string]any{"items": 2}, "max_tree_tasks": 5})
 	bob := ids.PrincipalID()
@@ -574,6 +580,7 @@ func (b *bench) finish(t *testing.T, att *WorkItem) {
 // released after it, its continuation is never enqueued, no summary goes out, and no live task
 // of the person is left (RET-10, SEC-11, ORC-9).
 func TestCampaignErasedPerson(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newCampaignReadBench(t)
 	att, h := b.attemptTools(t, "1", false)

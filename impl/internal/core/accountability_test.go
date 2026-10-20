@@ -39,7 +39,7 @@ func v03Bench(t *testing.T) *bench {
 // charter applies the bench set again with edit on the commission block of the demo charter.
 func (b *bench) charter(t *testing.T, n int, edit func(com map[string]any)) *ApplyResult {
 	t.Helper()
-	ms := cloneSet(t, appliedSets[b])
+	ms := cloneSet(t, b.applied)
 	if edit != nil {
 		edit(specOf(ms, "Governance", "demo")["commission"].(map[string]any))
 	}
@@ -55,6 +55,7 @@ func (b *bench) charter(t *testing.T, n int, edit func(com map[string]any)) *App
 // The Brier score, the checks of a forecast and the tie (COM-16, COM-17); the alarm series of
 // the author's share (GOV-38).
 func TestForecastRules(t *testing.T) {
+	t.Parallel()
 	f := map[string]float64{"bad": 0.2, "ok": 0.8}
 	if b := brierOf(lensClasses("security", true), f, "bad"); math.Abs(b-1.28) > 1e-9 {
 		t.Fatalf("brier %v", b)
@@ -90,6 +91,7 @@ func TestForecastRules(t *testing.T) {
 // From v0.3 a persona of the farm manager names its goal in the purpose paragraph, and no persona
 // speaks of accuracy or parking (GOV-45, GOV-46).
 func TestPersonaV03(t *testing.T) {
+	t.Parallel()
 	u := unawareTerms{}
 	if got := personaFindingsV03("You check the farm.", "farm_manager", u); !slices.Contains(got, "persona_purpose") {
 		t.Fatalf("no purpose: %v", got)
@@ -106,6 +108,7 @@ func TestPersonaV03(t *testing.T) {
 // Only seats whose lens assesses proposals write forecasts, so a necessity seat does not hold
 // accountability: on back (GOV-36, COM-13).
 func TestProposalSeatsV03(t *testing.T) {
+	t.Parallel()
 	b := newBench(t)
 	got := b.c.proposalSeats(map[string]string{"commission:1": "security", "commission:2": "necessity"})
 	if len(got) != 1 || got["commission:1"] != "security" {
@@ -117,6 +120,7 @@ func TestProposalSeatsV03(t *testing.T) {
 // reason incident of an earlier core is still on the seat: people replacing the holder retire
 // it as replaced_by_human (IDN-15, IDN-16).
 func TestLeaveReasonV03(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newManagerBench(t)
 	if _, err := b.c.SeatAssign(ctx, b.farmOp(), SeatRequest{Seat: managerSeatID}); err != nil {
@@ -138,6 +142,7 @@ func TestLeaveReasonV03(t *testing.T) {
 // (COM-15, COM-16, GOV-36, GOV-46). A resubmission of a dismissed fingerprint before 30 days is
 // rejected, after them it is marked (PRP-24).
 func TestAccountabilityReview(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := v03Bench(t)
 	if n := b.count(t, `SELECT count(*) FROM audit WHERE record->>'command' = 'governance.v03_enabled'`); n != 1 {
@@ -248,6 +253,7 @@ func (b *bench) seatScores(t *testing.T, seat, lens, holder string, n int, brier
 // parked with the seat epoch + 1, the other waits for the pace (GOV-42, IDN-16), and a parked bot
 // retires as parked_expired after 180 days (IDN-15).
 func TestAccountabilityOn(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := v03Bench(t)
 	if res := b.charter(t, 2, func(com map[string]any) { com["accountability"] = "on" }); res == nil || res.Applied ||
@@ -430,6 +436,7 @@ func TestAccountabilityOn(t *testing.T) {
 
 // From v0.3 a trial also watches the farm guards of the tenant (PRP-26).
 func TestTrialFarmGuards(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newCommissionBench(t, true, presentEdit)
 	id, _ := acceptLimits(t, b)

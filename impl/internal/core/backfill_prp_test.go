@@ -40,6 +40,7 @@ func rejectedWith(t *testing.T, err error) string {
 // proposable: false; a manifest change of any target outside the allowlist, such as a task
 // type, is rejected with forbidden_change.
 func TestBackfillProposable(t *testing.T) {
+	t.Parallel()
 	no := false
 	for _, tc := range []struct {
 		tt   manifest.TaskType
@@ -101,6 +102,7 @@ func TestBackfillProposable(t *testing.T) {
 // change-paths.yaml for that kind, a direction and a value of the path's kind; the registry
 // holds no target the allowlist forbids.
 func TestBackfillHumanChange(t *testing.T) {
+	t.Parallel()
 	b := newToolBench(t)
 	cat, err := b.c.Catalog(context.Background())
 	if err != nil {
@@ -146,6 +148,7 @@ func TestBackfillHumanChange(t *testing.T) {
 // PRP-23: a trial with outcome worse at the end of the window gives the executor the "Revert"
 // card; the farm itself reverts nothing: the realized value stays in the store.
 func TestBackfillTrialRevertCard(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newCommissionBench(t, true, presentEdit)
 	id, _ := acceptLimits(t, b)

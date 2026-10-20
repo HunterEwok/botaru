@@ -202,6 +202,7 @@ func (b *bench) claimTool(t *testing.T, w *Worker) *WorkItem {
 // The catalog holds only the role's read tools within the task's tier and mark, with the
 // catalog values as enums; the agent's P4 tools must match it by hash (P3, GW-1, TEN-7).
 func TestP3Catalog(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newToolBench(t)
 	att, h := b.attemptTools(t, "1", false)
@@ -270,6 +271,7 @@ func toStrings(v any) []string {
 // A call waits for a toolhost of its target; the toolhost gets the limits of the manifest and
 // the core checks the output against output_schema (P3, TEN-3a, DLV-16, INJ-4).
 func TestP3CallFlow(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newToolBench(t)
 	_, h := b.attemptTools(t, "1", false)
@@ -335,6 +337,7 @@ func TestP3CallFlow(t *testing.T) {
 // Untrusted output reaches the model in a mark, with secrets masked again by the core, and sets
 // untrusted_seen on the task (INJ-4, INJ-13, SEC-1).
 func TestP3Untrusted(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newToolBench(t)
 	att, h := b.attemptTools(t, "1", true)
@@ -392,6 +395,7 @@ func TestP3Untrusted(t *testing.T) {
 // A no_tool hold denies the call with the short answer; a call nobody takes before start_by
 // ends with no_executor; a call whose attempt lost its lease is abandoned (HLD-1, DLV-16, FEN-4).
 func TestP3HoldsAndDeadlines(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newToolBench(t)
 	att, h := b.attemptTools(t, "1", false)
@@ -466,6 +470,7 @@ func waitQueued(t *testing.T, b *bench) {
 // the enroll record, is blocked (DEP-2, INJ-2); an enroll on a machine outside the catalog is
 // refused (TEN-4).
 func TestToolhostHello(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newToolBench(t)
 	if _, err := b.c.Enroll(ctx, b.op, EnrollRequest{Tenant: "demo", Kind: "toolhost", Plugins: []string{"checks"}, Placement: "host", Host: "nowhere"}); err == nil {
@@ -495,6 +500,7 @@ func TestToolhostHello(t *testing.T) {
 // A no_tool hold on the target machine denies a call at P3, and a hold set after the call was
 // queued denies it at the handout (HLD-1, HLD-3).
 func TestP3HostHold(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newToolBench(t)
 	_, h := b.attemptTools(t, "1", false)
@@ -529,6 +535,7 @@ func TestP3HostHold(t *testing.T) {
 // After an apply changes a plugin manifest, a toolhost that said hello with the old one takes
 // no calls and does not count as live until it says hello again (INJ-2).
 func TestToolhostAfterApply(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	var ms []map[string]any
 	b := newToolBenchKeep(t, &ms)
@@ -588,6 +595,7 @@ func TestToolhostAfterApply(t *testing.T) {
 // A call whose attempt lease is past lease_until is not handed out, even before the reaper
 // ends the lease (FEN-1, FEN-4).
 func TestToolcallExpiredAttempt(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newToolBench(t)
 	att, h := b.attemptTools(t, "1", false)
@@ -611,6 +619,7 @@ func TestToolcallExpiredAttempt(t *testing.T) {
 // deployment puts in its own container; a toolhost that would run it beside other plugins is
 // not enrolled (DEP-7).
 func TestToolhostContainerPlugin(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newToolBenchWith(t, nil, func(ms []map[string]any) []map[string]any {
 		for _, m := range ms {
@@ -635,6 +644,7 @@ func TestToolhostContainerPlugin(t *testing.T) {
 // a call queued when the report comes ends at once too; after a hello with ok the call passes
 // (OBS-10, blackbox:core/plugin-unavailable).
 func TestPluginDown(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newToolBench(t)
 	_, h := b.attemptTools(t, "1", false)
@@ -693,6 +703,7 @@ func TestPluginDown(t *testing.T) {
 
 // catalog.monitor_triggers resolves to the trigger ids of the catalog (MON-6).
 func TestEnumMonitorTriggers(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newToolBenchWith(t, nil, func(ms []map[string]any) []map[string]any {
 		for _, m := range ms {

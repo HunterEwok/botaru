@@ -80,6 +80,7 @@ func (b *bench) activity(t *testing.T, update string) *ActivityResult {
 // A hold with no_enqueue rejects a new task with held before the permission formula; its
 // release gives an event and an audit record, and the next task passes (HLD-1, HLD-3).
 func TestHoldNoEnqueue(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	set, err := b.c.HoldSet(ctx, OperatorActor(b.op), HoldSetRequest{
@@ -117,6 +118,7 @@ func TestHoldNoEnqueue(t *testing.T) {
 // spending it, and claim does not hand the task out while the hold acts; the hold ends by its
 // until through the hold loop, never earlier (HLD-1, HLD-3, FEN-4).
 func TestHoldCancelRunning(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	res := b.activity(t, "1")
@@ -184,6 +186,7 @@ func TestHoldCancelRunning(t *testing.T) {
 
 // A worker quarantine gives that worker no work (HLD-3).
 func TestHoldWorkerQuarantine(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	b.activity(t, "1")
@@ -203,6 +206,7 @@ func TestHoldWorkerQuarantine(t *testing.T) {
 
 // A hold with no_delivery on a channel withholds its deliveries (HLD-3).
 func TestHoldNoDelivery(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	b.activity(t, "1")
@@ -222,6 +226,7 @@ func TestHoldNoDelivery(t *testing.T) {
 
 // Who sets and releases a hold (HLD-2, PRM-14, TEN-2).
 func TestHoldWhoSetsAndReleases(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	bob := b.withAdmins(t)

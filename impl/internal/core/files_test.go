@@ -27,6 +27,7 @@ func newFileBench(t *testing.T) *bench {
 // the task's mark and provenance from the records; handout follows the lease and the rights;
 // a result with provenance is refused (ART-1, ART-2, ART-3, ART-6, PRV-2).
 func TestFiles(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newFileBench(t)
 	alice := &OnBehalf{Identity: "telegram:1001", Chat: Chat{Kind: "direct", ExternalID: "1001"}}
@@ -126,6 +127,7 @@ func TestFiles(t *testing.T) {
 // (AUD-5); an ingest job's file is ingested (ART-6); a lost data class revokes a task by the
 // mark it took, not only its type's class (PRM-8); an expired file is purged (RET-2).
 func TestFileCeilingAndMarks(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBenchWith(t, func(root string, ms []map[string]any) []map[string]any {
 		var extra []map[string]any
@@ -219,6 +221,7 @@ func TestFileCeilingAndMarks(t *testing.T) {
 // refused with file_too_large and leave no record; the storage ceiling still gives over_capacity
 // (ART-4, CAP-1).
 func TestFileSizeLimits(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBenchWith(t, func(root string, ms []map[string]any) []map[string]any {
 		for _, m := range ms {
@@ -271,6 +274,7 @@ func TestFileSizeLimits(t *testing.T) {
 // HTML file named .png is not handed out, a CSV is text/plain unless its name refines it, and
 // the lint refuses an active type and a PDF of an agent type (ART-5).
 func TestResultMediaTypes(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBenchWith(t, func(root string, ms []map[string]any) []map[string]any {
 		for _, m := range ms {

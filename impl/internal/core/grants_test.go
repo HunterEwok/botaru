@@ -83,6 +83,7 @@ func callTool(t *testing.T, b *bench, handle, name string, args map[string]any) 
 // runs on the granted slot, a call over the rest of cap_eur does not start and consumes the
 // grant without spending the attempt, and an unanswered request expires (MGR-18, GW-7).
 func TestModelGrant(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := managerV02Bench(t, []string{grantsType}, nil)
 	att, h := b.attemptTools(t, "u1", false)
@@ -193,6 +194,7 @@ func mustCall(t *testing.T, b *bench, handle, name string) *mcp.CallResult {
 // the running attempt on the granted slot with grant_revoked without spending; an operator
 // without the right is refused (MGR-18).
 func TestModelGrantP2(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := managerV02Bench(t, nil, nil)
 	if _, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: strings.Repeat("1", 40), Manifests: []map[string]any{{"apiVersion": "botaru/v1alpha1", "kind": "Group",
@@ -238,6 +240,7 @@ func TestModelGrantP2(t *testing.T) {
 // approved. The seat's daily grant ceiling is on without seat_grants_eur_day, per UTC calendar
 // day (MGR-18, GW-7).
 func TestGrantBoundToRole(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := managerV02Bench(t, nil, nil)
 	task := b.hello(t, "u1")

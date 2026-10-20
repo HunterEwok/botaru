@@ -76,6 +76,7 @@ func escalationStates(t *testing.T, b *bench) map[string]string {
 // the key system:escalation:<attempt> (MGR-6, COM-13). Without money on the review line it is
 // parked.
 func TestEscalations(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := escalationBench(t, 5)
 	self := map[string]any{"kind": "self"}

@@ -60,6 +60,7 @@ func p7dTenant(kind, privacy string, extra ...string) string {
 // explicit none is allowed for dpia_ref), and any tenant whose providers_allowed names a
 // provider that is not a subprocessor.
 func TestPrivacyBlockRequired(t *testing.T) {
+	t.Parallel()
 	c := lintCore(t)
 	full := "purposes: [{purpose: operations}], " + p7dControl + ", recipients: [messenger, monitoring], notice_ref: privacy/demo, notice_version: 1, dpia_ref: none, ropa_ref: ropa/demo"
 	if got := lintFound(t, c, p7dTenant("production", full), ""); len(got) != 0 {
@@ -96,6 +97,7 @@ func TestPrivacyBlockRequired(t *testing.T) {
 // SEC-13: a change of controller, purposes, subprocessors or recipients without a higher
 // notice_version fails apply; another field may change without it.
 func TestNoticeVersionMustGrow(t *testing.T) {
+	t.Parallel()
 	c := lintCore(t)
 	block := func(recipients string, version int, ropa string) string {
 		return p7dTenant("test", "recipients: ["+recipients+"], notice_version: "+string(rune('0'+version))+", ropa_ref: "+ropa)
@@ -122,6 +124,7 @@ func TestNoticeVersionMustGrow(t *testing.T) {
 // GW-14: a profile whose provider binding does not list the subprocessor region fails apply for
 // the tenant; a provider without a binding note (the test providers) has no table.
 func TestRegionFromBindingTable(t *testing.T) {
+	t.Parallel()
 	c := lintCore(t)
 	set := func(provider, region string) string {
 		return p7dTenant("test", "recipients: [monitoring], subprocessors: [{provider: "+provider+", agreement_ref: contracts/x, region: "+region+", retention: {mode: zero}}]",
@@ -143,6 +146,7 @@ func TestRegionFromBindingTable(t *testing.T) {
 // names of the changed fields and a code notice to each admin (admin:people); an apply that
 // keeps the block gives neither.
 func TestPrivacyChangeNotice(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	bob := b.withAdmins(t)

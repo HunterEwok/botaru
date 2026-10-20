@@ -20,6 +20,7 @@ spec:
 // The lint keeps the built-in tools of the seat profiles to their list (MGR-10) and the
 // operation targets and the forbidden list of proposals clear of MGR-16's targets.
 func TestSeatProfileLint(t *testing.T) {
+	t.Parallel()
 	c := lintCore(t)
 	codes := lintCodes(t, c, seatRoleYAML)
 	if slices.Contains(codes, "role_profile_forbidden") || slices.Contains(codes, "manager_self_change") {
@@ -47,6 +48,7 @@ func TestSeatProfileLint(t *testing.T) {
 // v0.3 claim, which does not use the field and only warns of it (MGR-38, MGR-55,
 // fx-mgr-store-low).
 func TestStoreLowLint(t *testing.T) {
+	t.Parallel()
 	c := lintCore(t)
 	disk := `apiVersion: botaru/v1alpha1
 kind: IncidentClass

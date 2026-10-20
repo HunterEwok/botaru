@@ -96,6 +96,7 @@ func (b *actionBench) say(t *testing.T, update, identity, chat, text string) *Ac
 // attempt that saw untrusted text proposes nothing and marks the session, and a marked
 // session marks the next task of the conversation.
 func TestSessionAndMemory(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b, _ := newMemoryBench(t)
 	b.hello(t, "1")
@@ -181,6 +182,7 @@ func TestSessionAndMemory(t *testing.T) {
 // /forget erases the person's memory and sessions for real through an erasure request with a
 // result per store (MEM-4, RET-7, mem-fx-03).
 func TestForget(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b, _ := newMemoryBench(t)
 	b.hello(t, "1")
@@ -225,6 +227,7 @@ func TestForget(t *testing.T) {
 // gets an erasure work item, and the person gets the result per store (SEC-11, RET-4, RET-7,
 // blackbox:core/erasure-v01-ports, blackbox:core/erase-personal-subjects).
 func TestSubjectErasure(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b, _ := newMemoryBench(t)
 	sink := b.enroll(t, EnrollRequest{Tenant: "demo", Kind: "sink", Target: "archive"})
@@ -306,6 +309,7 @@ func TestSubjectErasure(t *testing.T) {
 // A request an offboarding recorded before erasure steps existed gets its steps at the next
 // tick and erases the stores; it is never closed with nothing erased.
 func TestErasureWithoutSteps(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b, _ := newMemoryBench(t)
 	task := b.hello(t, "1")
@@ -337,6 +341,7 @@ func TestErasureWithoutSteps(t *testing.T) {
 // erasure.match finds the exact string, records only ids, and needs a second person; an open
 // request past its deadline raises its alarm (SEC-11, RET-7).
 func TestEraseMatch(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b, _ := newMemoryBench(t)
 	b.hello(t, "1")
@@ -393,6 +398,7 @@ func TestEraseMatch(t *testing.T) {
 // its answer; the needles are gone then, and the sink erases by the ids its match found
 // (SEC-11, RET-4).
 func TestEraseMatchEdge(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b, _ := newMemoryBench(t)
 	sink := b.enroll(t, EnrollRequest{Tenant: "demo", Kind: "sink", Target: "archive"})
@@ -461,6 +467,7 @@ func TestEraseMatchEdge(t *testing.T) {
 // A sink that found ids and was revoked before the approval still gets its erasure step: the
 // request stays open for its ids instead of finishing without it (SEC-11).
 func TestEraseMatchEdgeRevoked(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b, _ := newMemoryBench(t)
 	sink := b.enroll(t, EnrollRequest{Tenant: "demo", Kind: "sink", Target: "archive"})
@@ -499,6 +506,7 @@ func TestEraseMatchEdgeRevoked(t *testing.T) {
 // A sink that matches more ids than the request keeps fails its match as a whole instead of
 // keeping a part of them (SEC-11).
 func TestEraseMatchEdgeOverflow(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b, _ := newMemoryBench(t)
 	sink := b.enroll(t, EnrollRequest{Tenant: "demo", Kind: "sink", Target: "archive"})
@@ -545,6 +553,7 @@ func TestEraseMatchEdgeOverflow(t *testing.T) {
 
 // Two stores whose names sanitise to one key keep their own keys (RET-7).
 func TestStoreKey(t *testing.T) {
+	t.Parallel()
 	if a, b := storeKey("sink", "foo-bar"), storeKey("sink", "foo.bar"); a == b || len(a) > 32 || len(b) > 32 {
 		t.Fatalf("keys %s %s", a, b)
 	}
@@ -560,6 +569,7 @@ func TestStoreKey(t *testing.T) {
 // A manual erasure.request about a person carries the person's needles to the edge stores
 // (RET-4).
 func TestErasureRequestNeedles(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b, _ := newMemoryBench(t)
 	d, err := b.c.ErasureRequest(ctx, b.op, ErasureRequestInput{Scope: ErasureScope{Tenant: "demo", Subject: b.alice}, Reason: "manual"})
@@ -576,6 +586,7 @@ func TestErasureRequestNeedles(t *testing.T) {
 // admin, whose approval counts as the second person; the tenant's own author still does not
 // decide (SEC-11, D-86 (8)).
 func TestSubjectFarmFallback(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBenchWith(t, func(root string, ms []map[string]any) []map[string]any {
 		var extra []map[string]any
@@ -678,6 +689,7 @@ func TestSubjectFarmFallback(t *testing.T) {
 // MEM-2: while the personal assistant is deferred (DSP-10), apply at the v0.3 claim refuses a
 // role with memory: person (person_memory_deferred), and a role without person memory passes it.
 func TestPersonMemoryDeferred(t *testing.T) {
+	t.Parallel()
 	c := lintCore(t)
 	role := func(mem string) string {
 		return "apiVersion: botaru/v1alpha1\nkind: Role\nmetadata: {name: assistant}\nspec: {worker_kind: agent, memory: " + mem + ", models: {base: base-std}}\n"
@@ -697,6 +709,7 @@ func TestPersonMemoryDeferred(t *testing.T) {
 // the core's claim spec.Version, outside tests, is the major and minor of spec/VERSION that
 // ci/check_manifests.py reads.
 func TestPersonMemoryVersionSource(t *testing.T) {
+	t.Parallel()
 	root, err := spec.FindRoot("")
 	if err != nil {
 		t.Fatal(err)

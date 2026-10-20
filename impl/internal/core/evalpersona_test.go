@@ -14,6 +14,7 @@ import (
 // personas of the charter's seats, so a changed lens persona changes its fingerprint; a role
 // that holds no seat, or a seat role of another profile, keeps the persona of its position.
 func TestSeatHolderPersona(t *testing.T) {
+	t.Parallel()
 	lens := func(sha string) map[string]any {
 		return map[string]any{"persona": map[string]any{"ref": "personas/lens-security.md", "sha256": sha}}
 	}

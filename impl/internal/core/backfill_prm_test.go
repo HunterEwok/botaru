@@ -25,6 +25,7 @@ func setTaskRights(t *testing.T, b *bench, task string, tier int, mark string) {
 // a disabled initiator cancels its queued task with person_inactive;
 // neither spends an attempt.
 func TestBackfillRevokedRightsCancel(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	task := b.hello(t, "1")
@@ -65,6 +66,7 @@ func TestBackfillRevokedRightsCancel(t *testing.T) {
 // PRM-4: a tool is offered and callable only if it is in the role's tools, within the task's
 // tier and with an output class not above the task's mark; each condition alone takes it away.
 func TestBackfillToolConditions(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newToolBenchWith(t, nil, func(ms []map[string]any) []map[string]any {
 		for _, m := range ms {
@@ -120,6 +122,7 @@ func completeHello(t *testing.T, b *bench, w *WorkItem) {
 // holds in its catalog is refused (the attempt is fenced, since its catalog no longer
 // matches); no decision of an earlier call is reused.
 func TestBackfillCheckedAtEveryCall(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newToolBench(t)
 	att, h := b.attemptTools(t, "1", true)
@@ -143,6 +146,7 @@ func TestBackfillCheckedAtEveryCall(t *testing.T) {
 // LCY-7: a worker outside the P1 version window gets version_unsupported at hello, before any
 // work; one that offers the current major among others is accepted.
 func TestBackfillHelloVersionWindow(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	r, err := b.c.Enroll(ctx, b.op, EnrollRequest{Tenant: "demo", Role: "hello", Kind: "agent"})
@@ -169,6 +173,7 @@ func TestBackfillHelloVersionWindow(t *testing.T) {
 // neither the tenant nor the task's own trace, and the plugin call gets no baggage. The agent
 // attempt carries no external chat id or address of the person.
 func TestBackfillWorkItemMinimum(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newToolBench(t)
 	att, h := b.attemptTools(t, "1", false)
@@ -220,6 +225,7 @@ func TestBackfillWorkItemMinimum(t *testing.T) {
 // canceled in the same transaction tells the origin chat by the code text
 // task.canceled.rights_revoked.
 func TestBackfillRevokedChildContinuation(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newChainBench(t, 1)
 	b.hello(t, "1")

@@ -20,6 +20,7 @@ import (
 // id nor by name, a selector the text does not name, and one wider than
 // scripts.unnamed_targets_max.
 func TestScriptUnnamedTargets(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newScriptRunBench(t)
 	att, h := b.attemptTools(t, "1", false)
@@ -65,6 +66,7 @@ func TestScriptUnnamedTargets(t *testing.T) {
 // read-only draft is accepted and runs; a dismissed incident disputes its link but lifts
 // nothing; a tenant admin with hold.release lifts the hold.
 func TestScriptLinkRoleHold(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newScriptRunBenchWith(t, []map[string]any{{
 		"apiVersion": "botaru/v1alpha1", "kind": "Group", "metadata": map[string]any{"name": "governors", "tenant": "demo"},
@@ -258,6 +260,7 @@ func TestScriptLinkRoleHold(t *testing.T) {
 // the resource is linked to the run; with the tenant catalog's role_incident_hold of one link
 // the first confirmed link sets the role hold. A looser catalog value never applies.
 func TestScriptLinkHopAndStricterHold(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBenchWith(t, func(_ string, ms []map[string]any) []map[string]any {
 		return append(ms, map[string]any{

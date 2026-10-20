@@ -18,6 +18,7 @@ import (
 // every people operation on the principal, and the identity free for a new principal without
 // the old groups.
 func TestPrincipalOffboardFinal(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	ms, _ := helloSet(t)
@@ -132,6 +133,7 @@ func TestPrincipalOffboardFinal(t *testing.T) {
 // With no admin with admin:people reachable, the departure still goes through; the audit
 // record of the command shows that no notice was planned (IDN-13).
 func TestPrincipalLeftWithoutAdmin(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	done, err := b.c.Principal(ctx, b.op, PrincipalRequest{Op: "principal.offboard", Subject: b.alice})
@@ -183,6 +185,7 @@ func deliveriesTo(t *testing.T, b *bench, principal, state string) int {
 // withheld in the same transaction, code notices included, because the chat id they carry
 // may later belong to a new principal of the freed identity (DLV-6, LCY-8).
 func TestOffboardWithholdsDeliveries(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	firstContact(t, b)
@@ -207,6 +210,7 @@ func TestOffboardWithholdsDeliveries(t *testing.T) {
 // TestHandoffChecksRecipient: a code notice without a data mark is not handed to a channel
 // once its recipient is disabled; it ends withheld (DLV-6).
 func TestHandoffChecksRecipient(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	firstContact(t, b)

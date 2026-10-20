@@ -44,6 +44,7 @@ func partialGate(base string) *GateResult {
 // applied commit, accepts it only while that result is current, and a failed gate dismisses it
 // with gate_failed and archives its variant as rejected_at_gate with the step code (EVO-9).
 func TestProposalGate(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newCommissionBench(t, true, presentEdit, gateEdit)
 	alice := Operator{Principal: b.alice, Tenant: "demo"}
@@ -127,7 +128,7 @@ func TestProposalGate(t *testing.T) {
 	}
 	// A new applied commit makes the gate stale: "Accept" is refused.
 	newBase := "a0000000000000000000000000000000000000f1"
-	if r, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: newBase, Manifests: cloneSet(t, appliedSets[b])}); err != nil || !r.Applied {
+	if r, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: newBase, Manifests: cloneSet(t, b.applied)}); err != nil || !r.Applied {
 		t.Fatalf("apply %+v %v", r, err)
 	}
 	if _, err := b.c.Decide(ctx, b.channel, press("telegram:1001", "direct:1001", card.external), DecideRequest{SubjectKind: "proposal", ID: id, Nonce: nonce, Decision: "accept"}); reasonOf(err) != "forbidden" {

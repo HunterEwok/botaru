@@ -15,6 +15,7 @@ import (
 // closed list, a run_if or on_failure outside theirs, a field of code or a loop, and then
 // inside fanout do not pass; a draft has no more steps than the tenant ceiling.
 func TestBackfillScriptClosedSchema(t *testing.T) {
+	t.Parallel()
 	b := newScriptRunBench(t)
 	draft := func(steps ...map[string]any) map[string]any {
 		list := make([]any, len(steps))
@@ -63,6 +64,7 @@ func TestBackfillScriptClosedSchema(t *testing.T) {
 // SCR-4: in a draft the goal of an agent step is a template of the type or the assignment;
 // a free goal text, or the goals of a git script, is refused.
 func TestBackfillScriptNoFreeGoal(t *testing.T) {
+	t.Parallel()
 	b := newScriptRunBench(t)
 	_, h := b.attemptTools(t, "1", false)
 	free := deepCopy(checkStep)
@@ -100,6 +102,7 @@ func proposeScriptWith(t *testing.T, b *bench, h string, script map[string]any) 
 // into the run. (The fanout and selector limits need an action with a campaign, which this
 // bench's fix_web lacks; they are not exercised here.)
 func TestBackfillScriptUntrustedLimit(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newScriptRunBench(t)
 	att, h := b.attemptTools(t, "1", false)
@@ -124,6 +127,7 @@ func TestBackfillScriptUntrustedLimit(t *testing.T) {
 // SCR-9: the flag of a step is the run flag or that of the earlier steps whose fields it reads;
 // an action step whose condition read a flagged check shows the source on its approval.
 func TestBackfillScriptStepFlag(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newScriptRunBench(t)
 	att, h := b.attemptTools(t, "1", false)

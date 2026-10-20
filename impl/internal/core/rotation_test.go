@@ -11,6 +11,7 @@ import (
 // verifies the lease tokens it signed and finds the worker tokens it hashed; a worker token is
 // rehashed under the new key at its first use, so it outlives the window (SEC-5).
 func TestKeyRotation(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	r, err := b.c.Enroll(ctx, b.op, EnrollRequest{Tenant: "demo", Role: "hello", Kind: "agent"})

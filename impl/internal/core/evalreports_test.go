@@ -35,6 +35,7 @@ spec: {profile: translator, worker_kind: agent, claims: [fx.translate.v1], model
 // apply refuses only what it enables or moves, and a stale role is a doctor warning (TRN-6,
 // PRV-3).
 func TestTranslatorEvalGate(t *testing.T) {
+	t.Parallel()
 	c := lintCore(t)
 	base := fmt.Sprintf(trnSet, "production")
 	ds, err := manifest.ParseYAML(strings.NewReader(base), "test")
@@ -167,6 +168,7 @@ func (b *bench) setStoredDoc(t *testing.T, kind, tenant, name, doc string) {
 // fingerprint (model, parameters and manager persona), and the farm
 // operators get seat_eval_missing_notice once; with the entry the task is handed out (MGR-23).
 func TestSeatEvalGate(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newManagerBench(t)
 	w := b.enroll(t, EnrollRequest{Tenant: "demo", Kind: "agent", Role: "farm-manager"})
@@ -222,6 +224,7 @@ func TestSeatEvalGate(t *testing.T) {
 // tasks of a production tenant wait with seat_eval_missing until a new mgr-inj report (GOV-45,
 // MGR-23).
 func TestManagerPersonaEvalV03(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newManagerBench(t)
 	w := b.enroll(t, EnrollRequest{Tenant: "demo", Kind: "agent", Role: "farm-manager"})

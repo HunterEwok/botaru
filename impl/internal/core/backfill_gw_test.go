@@ -39,6 +39,7 @@ spec: {provider: provider-a, model: model-a-small-2026-09, family: family-a, ran
 // model that requires retention under zero retention, review by the provider's people above
 // what the terms allow, training on requests, a subprocessor outside the tenant's list (GW-15).
 func TestBackfillProviderTerms(t *testing.T) {
+	t.Parallel()
 	c := lintCore(t)
 	const ok = `provider_training: {value: false, checked: '2026-10-01'}, provider_retention_days: {value: 30, checked: '2026-10-01'}`
 	for _, tc := range []struct {
@@ -121,6 +122,7 @@ func TestBackfillProviderTerms(t *testing.T) {
 // allowed profile calls a provider in a region outside the EU passes apply only with a transfer
 // basis of its own for the provider or the region (GW-14).
 func TestBackfillProviderRegion(t *testing.T) {
+	t.Parallel()
 	tv := &TenantView{Name: "demo"}
 	tv.Spec.Privacy.Subprocessors = []manifest.Subprocessor{{Provider: "provider-b"}}
 	p := manifest.ModelProfile{Provider: "provider-a"}
@@ -158,6 +160,7 @@ func TestBackfillProviderRegion(t *testing.T) {
 // A person sets the prices with a check date: a price older than 120 days fails apply, one
 // older than 60 days only warns in doctor, and doctor shows the stale one as an error (GW-17).
 func TestBackfillPriceAge(t *testing.T) {
+	t.Parallel()
 	c := lintCore(t)
 	profile := func(days int) string {
 		return `apiVersion: botaru/v1alpha1

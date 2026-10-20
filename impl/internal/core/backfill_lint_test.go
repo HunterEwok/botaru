@@ -144,6 +144,7 @@ type fxCase struct {
 // TestBackfillLintCases runs the manifest fixtures that check rules of the apply lint and
 // asserts the code each rule gives; every row names its rule.
 func TestBackfillLintCases(t *testing.T) {
+	t.Parallel()
 	r := newFxRunner(t)
 	for _, tc := range []fxCase{
 		// INJ-1: a free string on a production machine does not pass the closed schema, nor

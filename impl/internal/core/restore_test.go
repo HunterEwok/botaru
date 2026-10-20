@@ -18,6 +18,7 @@ import (
 // with spend_pending becomes ready with alarm.spend.unreconciled and halved daily limits, which
 // a reconciliation of the gap removes.
 func TestRestore(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newActionBench(t, nil)
 	att, h := b.attemptTools(t, "1", false)
@@ -138,6 +139,7 @@ func (b *bench) gapOpen(t *testing.T) bool {
 // alarm.backup.restore_check_overdue at once; a fresh good backup resolves the first; an erasure
 // log backup older than the store backup fails doctor.
 func TestBackupReport(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	b.c.cfg.Backup = BackupConfig{Locations: []string{"offsite-1"}, ErasureLogLocation: "offsite-1-erasure"}

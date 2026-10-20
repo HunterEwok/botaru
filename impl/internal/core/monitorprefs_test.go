@@ -18,6 +18,7 @@ import (
 // hours of the core do not cover alarms. Without the profile the admin's alarm_notice goes in
 // quiet hours too, undeferred.
 func TestMonitorAlarmPath(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	for _, monitor := range []bool{false, true} {
 		b := newBench(t)

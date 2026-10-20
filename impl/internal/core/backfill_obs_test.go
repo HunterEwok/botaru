@@ -35,6 +35,7 @@ func (l *lockedBuffer) String() string {
 // refused and in an accepted model answer does not appear in it, through the whole path to the
 // delivery and the loops.
 func TestBackfillLogWithoutContent(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	var out lockedBuffer

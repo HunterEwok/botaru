@@ -12,6 +12,7 @@ import (
 // confirmation, which cancels the tree and its waiting approval with the reason initiator,
 // /help, /me, /lang and /team.
 func TestPersonCommands(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newServiceBench(t)
 	if res := b.say(t, "1001", "30", "/tasks"); !strings.Contains(res.Text, "no tasks") {

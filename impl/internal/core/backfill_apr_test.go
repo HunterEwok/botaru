@@ -31,6 +31,7 @@ func backfillAction(name string, fields map[string]any) map[string]any {
 // without these fields or with two approvals; the routine fields belong to routine only
 // (APR-10).
 func TestBackfillActionRisk(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	routine := map[string]any{"risk": "routine", "idempotent": true, "writes_only": []any{"res:web1:tmp"}, "runs_per_hour": 2, "runs_per_day": 10}

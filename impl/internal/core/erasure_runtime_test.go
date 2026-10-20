@@ -14,6 +14,7 @@ import (
 // A runtime that keeps sessions itself gets match work for a person's erase_match, by its
 // worker id, with the needles and the request (RT-5, RET-11).
 func TestRuntimeInternalMatch(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	b.exec(t, `UPDATE workers SET hello = jsonb_set(hello, '{runtime}', '{"session": "runtime_internal", "erasure": ["erase", "match"]}') WHERE id = $1`, b.agent.ID)
@@ -35,6 +36,7 @@ func TestRuntimeInternalMatch(t *testing.T) {
 // at the person's confirmation, as a channel does: unmatched is not "not found" (RT-5,
 // SEC-11).
 func TestRuntimeInternalUnmatchedFails(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b, _ := newMemoryBench(t)
 	b.exec(t, `UPDATE workers SET hello = jsonb_set(hello, '{runtime}', '{"session": "runtime_internal", "erasure": ["erase", "match"]}') WHERE id = $1`, b.agent.ID)
@@ -74,6 +76,7 @@ func TestRuntimeInternalUnmatchedFails(t *testing.T) {
 // step is the E4 purge of that runtime; the runtime claims it and closes the request, and the
 // sealed identity stays sealed until its own request at the end of seal_ttl.
 func TestRetireRuntimeInternalPurge(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE workers SET hello = jsonb_set(coalesce(hello, '{}'), '{runtime}', '{"session": "runtime_internal", "memory": "core"}') WHERE id = $1`, b.agent.ID); err != nil {
@@ -147,6 +150,7 @@ func TestRetireRuntimeInternalPurge(t *testing.T) {
 // separate erasure log keeps it a purge of the runtime only: the replay has the worker, its one
 // step is the runtime's, and closing it leaves the sealed identity and its facts alone.
 func TestRestoreKeepsRuntimePurge(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE workers SET hello = jsonb_set(coalesce(hello, '{}'), '{runtime}', '{"session": "runtime_internal", "memory": "core"}') WHERE id = $1`, b.agent.ID); err != nil {
@@ -208,6 +212,7 @@ func TestRestoreKeepsRuntimePurge(t *testing.T) {
 // request with the worker as its scope and the reason worker_revoke; the runtime never ran an
 // attempt here, so its step closes not_applicable (LCY-4).
 func TestWorkerRevokeRuntimePurge(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	r, err := b.c.Enroll(ctx, b.op, EnrollRequest{Tenant: "demo", Role: "hello", Kind: "agent"})

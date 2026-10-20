@@ -74,6 +74,7 @@ func deliveryStates(t *testing.T, b *bench, task string) map[string]string {
 // third-party store without one, none for a store of the tenant, and internal for a driver the
 // block does not list (SEC-9).
 func TestChannelCeilingOf(t *testing.T) {
+	t.Parallel()
 	tv := &TenantView{Channels: map[string]manifest.Channel{"telegram": {Driver: "telegram"}, "mail": {Driver: "email"}, "own": {Driver: "matrix"}}}
 	tv.Spec.Privacy.Channels = []manifest.PrivacyChannel{{Driver: "telegram", ThirdPartyStorage: true}, {Driver: "matrix"}}
 	for ch, want := range map[string]string{"telegram": "internal", "mail": "internal", "own": ""} {
@@ -97,6 +98,7 @@ func TestChannelCeilingOf(t *testing.T) {
 // An answer above the channel ceiling is withheld and the person gets the code text in its
 // place (SEC-9); an answer within it goes.
 func TestChannelCeilingWithholds(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	// The group of alice may read internal data, the chat may receive summaries only.
@@ -160,6 +162,7 @@ func TestChannelCeilingWithholds(t *testing.T) {
 // case of one role within an hour stops the deliveries of the role until a person lifts the
 // hold (HLD-6).
 func TestSecretInOutbound(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	secret := "use password=hunter22 to log in"
@@ -207,6 +210,7 @@ func TestSecretInOutbound(t *testing.T) {
 // A forwarded or quoted body makes the task untrusted and marks personal data seen (INJ-13,
 // AUD-5).
 func TestForwardQuoteFlags(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	cat, err := b.c.Catalog(ctx)
@@ -247,6 +251,7 @@ func TestForwardQuoteFlags(t *testing.T) {
 // An address the toolhost masked marks personal data seen on the task once, and the completion
 // audit carries the source without content (AUD-5).
 func TestMaskingMarksPersonalSeen(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newToolBench(t)
 	att, h := b.attemptTools(t, "1", true)
@@ -281,6 +286,7 @@ func TestMaskingMarksPersonalSeen(t *testing.T) {
 // The authors of forwarded or quoted text known in the tenant go into personal_subjects, the
 // sender and unknown authors do not (AUD-5).
 func TestForwardQuoteSubjects(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	bob := ids.PrincipalID()
@@ -332,6 +338,7 @@ func TestForwardQuoteSubjects(t *testing.T) {
 // A result refused by the full check still writes the personal data marker of the task into
 // its completion audit, since no later completion may come (AUD-5).
 func TestRejectedResultAuditMarker(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	cat, err := b.c.Catalog(ctx)

@@ -13,6 +13,7 @@ import (
 // lease is live it gets no second attempt, so the profile's handle and usage belong to that
 // lease (RT-3).
 func TestPerProfileOneLease(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	r, err := b.c.Enroll(ctx, b.op, EnrollRequest{Tenant: "demo", Role: "hello", Kind: "agent"})
@@ -42,6 +43,7 @@ func TestPerProfileOneLease(t *testing.T) {
 // DLV-11: progress is only a stage from the closed list of the type's stages: a heartbeat with
 // another stage is refused, one from the list extends the lease.
 func TestHeartbeatStageFromList(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBenchWith(t, func(_ string, ms []map[string]any) []map[string]any {
 		for _, m := range ms {

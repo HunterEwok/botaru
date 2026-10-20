@@ -165,6 +165,7 @@ func hasID(objs []map[string]any, id string) bool {
 // sessions of private chats and objects seen through a connection. Each line names its schema
 // and the file is encrypted for the one recipient.
 func TestExportLines(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b, keys := newExportBench(t)
 	own := b.hello(t, "41")
@@ -277,6 +278,7 @@ func TestExportLines(t *testing.T) {
 // approval queues one principal export to the tenant's export sink with recipient_ref self,
 // encrypted with the person's key; an admin cannot ask for another person's copy.
 func TestMydataExport(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b, _ := newExportBench(t)
 	if _, err := b.c.PrincipalDataRequest(ctx, b.op, DataRequest{Kind: "export", Subject: b.alice}); !hasReason(err, "export_recipient_not_subject") {
@@ -339,6 +341,7 @@ func TestMydataExport(t *testing.T) {
 // passes the suspension like an export does; a sink hold stops an export; an offboarding tenant
 // enrolls only its export sinks; the export window is at least a day.
 func TestExportHolds(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b, keys := newExportBench(t)
 	if _, err := b.c.TenantLifecycle(ctx, b.op, TenantLifecycleRequest{Op: "tenant.offboard", Tenant: "demo", ExportWindow: "1h"}); !hasReason(err, "input_schema_invalid") {

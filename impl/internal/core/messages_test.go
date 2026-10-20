@@ -180,6 +180,7 @@ func claimFor(t *testing.T, b *bench, w *Worker, task string) *WorkItem {
 // per worker of the role, and an attempt sends at most three (MSG-1, MSG-3, MSG-4, MSG-5, MSG-6,
 // MSG-9, MSG-13, MSG-14, MSG-15, BGR-1).
 func TestMessageSendPublish(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newMsgBench(t)
 	leadA := b.enroll(t, EnrollRequest{Tenant: "demo", Role: "lead", Kind: "job", Labels: map[string]string{"zone": "a"}})
@@ -292,6 +293,7 @@ func countEventsType(t *testing.T, b *bench, typ string) int {
 // initiators of what it read, and a bot group is a selector, not a permission (MSG-6, MSG-7,
 // MSG-9, MSG-11, BGR-1, BGR-2).
 func TestMessageReadAck(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newMsgBench(t)
 	lead := b.enroll(t, EnrollRequest{Tenant: "demo", Role: "lead", Kind: "job", Labels: map[string]string{"zone": "a"}})
@@ -393,6 +395,7 @@ func TestMessageReadAck(t *testing.T) {
 // An entry returned three times is dead; an entry past its expiry is expired, no longer handed
 // out and loses its note (MSG-9, MSG-12).
 func TestMessageDeadExpired(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newMsgBench(t)
 	lead := b.enroll(t, EnrollRequest{Tenant: "demo", Role: "lead", Kind: "job"})
@@ -443,6 +446,7 @@ func TestMessageDeadExpired(t *testing.T) {
 // no_message, the type's rate, the sender's share of an inbox and a full inbox (MSG-6, MSG-11,
 // MSG-15, HLD-3).
 func TestMessageLimits(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newMsgBench(t)
 	lead := b.enroll(t, EnrollRequest{Tenant: "demo", Role: "lead", Kind: "job"})
@@ -523,6 +527,7 @@ func TestMessageLimits(t *testing.T) {
 // after stale_after; a job attempt cannot send state, code reads current values without a lease
 // (STA-1, MSG-12, MSG-14).
 func TestStateValues(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newMsgBench(t)
 	lead := b.enroll(t, EnrollRequest{Tenant: "demo", Role: "lead", Kind: "job"})
@@ -581,6 +586,7 @@ func TestStateValues(t *testing.T) {
 
 // An entry above the reader's mark is not handed out and counts in hidden (MSG-6).
 func TestMessageHidden(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newMsgBench(t)
 	lead := b.enroll(t, EnrollRequest{Tenant: "demo", Role: "lead", Kind: "job"})
@@ -609,6 +615,7 @@ func TestMessageHidden(t *testing.T) {
 // entry leaves the store with its fields after the tenant's content period (90 days in the
 // example tenant) (MSG-12, RET-2, RET-9).
 func TestMessageGoneRetention(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newMsgBench(t)
 	coreSend(t, b, "role:lead")

@@ -67,6 +67,7 @@ func greet(goal string) map[string]any { return map[string]any{"type": "hello.gr
 // is idempotency_conflict, a foreign ref is ref_invalid and takes no key, the estimate is
 // reserved, action types and the deferred dry run are refused.
 func TestProgramEnqueue(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newPeopleBench(t, nil)
 	// TEN-2: a body or request with a tenant is refused by the schema.
@@ -152,6 +153,7 @@ func TestProgramEnqueue(t *testing.T) {
 // until its expiry, a value above the git limit or without a future expiry is refused, and the
 // operation is audited (BUD-1, PRM-14).
 func TestProgramEnqueuePressure(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newPeopleBench(t, func(ms []map[string]any) {
 		for _, m := range ms {

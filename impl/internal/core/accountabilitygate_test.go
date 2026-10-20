@@ -17,6 +17,7 @@ import (
 // for that fingerprint before a production tenant enables it; other roles and a core before v0.3
 // do not ask for it.
 func TestCommissionUnawareGate(t *testing.T) {
+	t.Parallel()
 	doc := func(kind, tenant, name string, spec map[string]any) manifest.Doc {
 		return manifest.Doc{Kind: kind, Tenant: tenant, Name: name, Value: map[string]any{"apiVersion": "botaru/v1alpha1", "kind": kind,
 			"metadata": map[string]any{"name": name}, "spec": spec}}

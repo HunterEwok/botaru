@@ -26,6 +26,7 @@ func reviewAttempt(t *testing.T, b *bench) *WorkItem {
 // value-path mark, and a lens review gets the reviewer persona with its lens addendum; both are
 // in the run fingerprint (GOV-4, COM-19, PRV-1).
 func TestPersonaInInstruction(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newCommissionBench(t, true)
 	_, att := b.helloAttempt(t, "9")
@@ -57,6 +58,7 @@ func TestPersonaInInstruction(t *testing.T) {
 // A model call above the ceiling of the acting position is refused with rank_exceeded: the
 // charter lowers the commission ceiling below the rank of the reviewers' profile (GOV-3).
 func TestRankCeilingAtCall(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newCommissionBench(t, true, func(ms []map[string]any) {
 		pos := specOf(ms, "Governance", "demo")["positions"].(map[string]any)
@@ -78,6 +80,7 @@ func TestRankCeilingAtCall(t *testing.T) {
 // accountability; unawareness of type instructions; no bot reference to governance (GOV-4,
 // GOV-6, GOV-29, GOV-45).
 func TestPersonaLint(t *testing.T) {
+	t.Parallel()
 	u := unawareTerms{"act": {"review", "score"}, "outcome": {"seat", "queue"}, "soul": {"voting", "stop"}}
 	good := "You do the work.\n\n" + valuePathMark + "\nA stronger model goes to a reviewed change that got a seat."
 	if got := personaFindingsV03(good, "functional", u); len(got) != 0 {

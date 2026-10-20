@@ -115,6 +115,7 @@ func (b *actionBench) scheduled(t *testing.T) []string {
 // local time that does not exist, skips a slot while the previous task waits, and delivers the
 // result to its addresses (TIM-2, TIM-3, DLV-6, PRM-10).
 func TestSchedule(t *testing.T) {
+	t.Parallel()
 	b := newScheduleBench(t, "30 2 * * *", nil)
 	b.enroll(t, EnrollRequest{Tenant: "demo", Kind: "sink", Target: "archive"})
 	b.at(t, "2027-03-27T12:00:00Z")
@@ -162,6 +163,7 @@ func TestSchedule(t *testing.T) {
 // A paused schedule skips each slot with schedule.skipped(paused) and enqueues nothing; the
 // slot is not caught up (TIM-5).
 func TestSchedulePaused(t *testing.T) {
+	t.Parallel()
 	b := newScheduleBenchSpec(t, "0 * * * *", nil, "Europe/Berlin", map[string]any{"paused": true})
 	b.at(t, "2027-04-01T10:30:00Z")
 	b.tick(t, "schedule")
@@ -188,6 +190,7 @@ func TestSchedulePaused(t *testing.T) {
 // With skip_if_waiting: false the slot is enqueued while the previous task waits; a hold skips
 // the slot; a change of the zone does not run a slot twice nor lose the next one (TIM-3).
 func TestScheduleNoSkip(t *testing.T) {
+	t.Parallel()
 	no := false
 	b := newScheduleBench(t, "0 * * * *", &no)
 	b.at(t, "2027-04-01T10:30:00Z")
@@ -255,6 +258,7 @@ func TestScheduleNoSkip(t *testing.T) {
 // tenant's apply: a later edit of another field of the schedule does not skip a due slot
 // (TIM-3).
 func TestScheduleTenantZoneChange(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newScheduleBenchZone(t, "0 * * * *", nil, "")
 	b.at(t, "2027-04-01T10:30:00Z")
@@ -278,6 +282,7 @@ func TestScheduleTenantZoneChange(t *testing.T) {
 // With skip_if_waiting a slot whose model slot has an open provider circuit is skipped with
 // waiting (TIM-3).
 func TestScheduleSkipsOpenCircuit(t *testing.T) {
+	t.Parallel()
 	b := newScheduleBench(t, "0 * * * *", nil)
 	ctx := context.Background()
 	b.at(t, "2027-04-01T10:30:00Z")

@@ -42,6 +42,7 @@ func viewOf(t *testing.T, b *bench, att *WorkItem, name string) map[string]any {
 // holds the core observation only; a campaign shows its kind, state and item counts, one above
 // the mark only counts in hidden.
 func TestStatusWorkersCampaigns(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBenchWith(t, func(root string, ms []map[string]any) []map[string]any {
 		ms = reporterManifests(ms)
@@ -128,6 +129,7 @@ func TestStatusWorkersCampaigns(t *testing.T) {
 
 // The mismatch table in its order (STA-3): the first condition that holds gives the code.
 func TestMismatchCodes(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	ago := func(s int) *time.Time { x := now.Add(-time.Duration(s) * time.Second); return &x }
 	rep := func(phase string, at int, plugins []string) *selfReport {
@@ -161,6 +163,7 @@ func TestMismatchCodes(t *testing.T) {
 // saw untrusted text, marked labeled with its sources after the table; one bound summary_only
 // gets the table only (REP-2, DLV-15).
 func TestDigestLabeledGroup(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newReporterBench(t)
 	reporter := b.enroll(t, EnrollRequest{Tenant: "demo", Role: "reporter", Kind: "agent"})

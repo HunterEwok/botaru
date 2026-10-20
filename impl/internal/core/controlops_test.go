@@ -73,6 +73,7 @@ func (b *controlBench) call(t *testing.T, op, kind, id string) string {
 // the seat as its author within hold_ttl_max, the operation is recorded and
 // handles the incident; a person reverts the seat's holds on the incident (MGR-9, MGR-14, MGR-15).
 func TestControlOpsSeat(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newControlBench(t)
 	if code := b.call(t, "hold", "resource", "db1"); code != "applied" {
@@ -114,6 +115,7 @@ func TestControlOpsSeat(t *testing.T) {
 // Three seat refusals in a row trip the safeguard: no_control stops the seat and
 // alarm.manager.breaker pages people (MGR-14).
 func TestControlOpsBreaker(t *testing.T) {
+	t.Parallel()
 	b := newControlBench(t)
 	for range 3 {
 		if code := b.call(t, "hold", "resource", "db2"); code != "target_not_implicated" {
@@ -146,6 +148,7 @@ func TestControlOpsBreaker(t *testing.T) {
 // not consent to is not offered (cancel is not in the bench's farm-manager-ops); release takes
 // only a hold of the current epoch (MGR-3, MGR-9, MGR-14).
 func TestControlOpsLimits(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newControlBench(t)
 	args := map[string]any{"op": "hold", "target": map[string]any{"kind": "resource", "id": "db1"}, "basis": map[string]any{"incident": b.incident},
@@ -189,6 +192,7 @@ func TestControlOpsLimits(t *testing.T) {
 // draining; a hello keeps it there while the hold lasts and returns it to active after the
 // release (MGR-9, spec/lifecycles/worker.md).
 func TestControlOpsDrain(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newControlBench(t)
 	w := b.enroll(t, EnrollRequest{Tenant: "demo", Kind: "agent", Role: "hello"})
@@ -227,6 +231,7 @@ func TestControlOpsDrain(t *testing.T) {
 // the safeguard; a person's seat hold with only no_control is a kill switch, not the safeguard
 // (MGR-14, MGR-15).
 func TestControlOpsPersonHolds(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newControlBench(t)
 	set := func(scope HoldScope) string {
@@ -260,6 +265,7 @@ func TestControlOpsPersonHolds(t *testing.T) {
 
 // The seat applies for an incident only the operations its class lists in responses (MGR-9).
 func TestControlOpsClassResponses(t *testing.T) {
+	t.Parallel()
 	b := newControlBench(t, func(ms []map[string]any) {
 		for _, m := range ms {
 			if m["kind"] == "IncidentClass" && m["metadata"].(map[string]any)["name"] == "disk_full" {
@@ -274,6 +280,7 @@ func TestControlOpsClassResponses(t *testing.T) {
 
 // Types and roles any incident class names are protected targets (MGR-32).
 func TestClassNamedProtected(t *testing.T) {
+	t.Parallel()
 	cat := newCatalog()
 	cat.RawGlobals[manifest.Key{Kind: "IncidentClass", Name: "slow"}] = map[string]any{"spec": map[string]any{
 		"responses": map[string]any{"pin_types": []any{"ops.pin.v1"}}, "implicate": []any{map[string]any{"fn": "role_failing", "args": map[string]any{"role": "pinner"}}}}}
@@ -291,6 +298,7 @@ func TestClassNamedProtected(t *testing.T) {
 // The types that publish the alarm of a class with manager_accountable, and the roles that
 // claim them, are out of reach of seat operations (GOV-48, MGR-9).
 func TestStopWriters(t *testing.T) {
+	t.Parallel()
 	cat := newCatalog()
 	cat.RawGlobals[manifest.Key{Kind: "IncidentClass", Name: "disk_full"}] = map[string]any{"spec": map[string]any{"manager_accountable": true,
 		"detect": map[string]any{"alarm": "alarm.disk.free.low.v1"}}}
@@ -308,6 +316,7 @@ func TestStopWriters(t *testing.T) {
 
 // A task type among the incident's involved parties is a valid target (MGR-9).
 func TestImplicatedTaskType(t *testing.T) {
+	t.Parallel()
 	inc := &incidentRow{SubjectKind: "resource", SubjectID: "db1", Record: map[string]any{"implicated": []any{implicated{TaskType: "ops.summary.v1"}.view()}}}
 	if !implicatedTarget(inc, ControlTarget{Kind: "tasktype", ID: "ops.summary.v1"}) {
 		t.Fatal("the involved task type is not a target")
@@ -320,6 +329,7 @@ func TestImplicatedTaskType(t *testing.T) {
 // A person of the tenant applies an operation by the same code path, without a basis incident;
 // a person may not release a hold the seat did not set by control.apply (MGR-9).
 func TestControlOpsPerson(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newControlBench(t)
 	d, err := b.c.ControlApply(ctx, b.op, ControlRequest{Op: "hold", Target: ControlTarget{Kind: "role", ID: "hello"}, Effects: []string{"no_claim"}, TTL: "30m"})

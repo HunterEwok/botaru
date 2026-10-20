@@ -53,6 +53,7 @@ func changeOps(res *ApplyResult) map[string]string {
 // the plan without writing, and an object missing from the set stays, reported as orphaned,
 // until an explicit delete.
 func TestBackfillApplyIdempotent(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	commit := "1111111111111111111111111111111111111111"
@@ -106,6 +107,7 @@ func TestBackfillApplyIdempotent(t *testing.T) {
 // refuses the whole set and all three objects keep their previous state; the answer lists the
 // errors of the rejected set.
 func TestBackfillApplyAtomic(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	role, typ, group := storedHash(t, b, "Role", "", "hello"), storedHash(t, b, "TaskType", "", "hello.greet.v1"), storedHash(t, b, "Group", "demo", "hello")
@@ -136,6 +138,7 @@ func TestBackfillApplyAtomic(t *testing.T) {
 // INJ-1: the closed-schema meta-schema refuses the terminal send_keys(text) of the fixture, a
 // free string with any pattern, and passes the closed leaves.
 func TestBackfillClosedSchema(t *testing.T) {
+	t.Parallel()
 	root, err := spec.FindRoot("")
 	if err != nil {
 		t.Fatal(err)
@@ -176,6 +179,7 @@ func TestBackfillClosedSchema(t *testing.T) {
 
 // INJ-3: untrusted_output is required in the manifest of a tool.
 func TestBackfillUntrustedOutputRequired(t *testing.T) {
+	t.Parallel()
 	c := lintCore(t)
 	doc := `apiVersion: botaru/v1alpha1
 kind: ToolPlugin

@@ -16,6 +16,7 @@ import (
 // without an outcome ends dead with exec_unknown, is not handed out again, and the model gets
 // exec_unknown (DLV-1). The run carries the service_grant number as its work id (FEN-7).
 func TestBackfillTerminalWithEvent(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newScriptBench(t)
 	// A task past its deadline ends failed, with its event.
@@ -103,6 +104,7 @@ func codeOf(text string) string {
 // in one transaction: when one of them cannot be written, none is; when they are, they carry
 // one store time (DLV-2).
 func TestBackfillTransitionOneTransaction(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	task := b.hello(t, "1")
@@ -154,6 +156,7 @@ func TestBackfillTransitionOneTransaction(t *testing.T) {
 // A delivery that fails is retried on its own leases with a pause and ends dead with its event;
 // the task it came from stays completed and is not restarted (DLV-3).
 func TestBackfillDeliveryFailureLeavesTask(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	task := b.helloDone(t, "1", "", "Hello!")
@@ -204,6 +207,7 @@ func TestBackfillDeliveryFailureLeavesTask(t *testing.T) {
 // percentage send nothing to the chat, the answer goes as one delivery after the full result
 // check, and a result outside the type's schema sends nothing (DLV-11).
 func TestBackfillNoTextBeforeComplete(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	// The stage of a heartbeat comes from the type's stages (DLV-11).
 	b := newBenchWith(t, func(_ string, ms []map[string]any) []map[string]any {
@@ -256,6 +260,7 @@ func TestBackfillNoTextBeforeComplete(t *testing.T) {
 // Every delivery carries the origin mark the core sets: code for the notices and code texts,
 // model for the model's answer, on the record and in the work the channel gets (DLV-13).
 func TestBackfillDataOrigin(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	task := b.hello(t, "1")
@@ -292,6 +297,7 @@ func TestBackfillDataOrigin(t *testing.T) {
 // field read by code that names the kind human, and a proposal about a person is not created
 // (DLV-14).
 func TestBackfillNoHumanSubject(t *testing.T) {
+	t.Parallel()
 	c := lintCore(t)
 	typ := func(enum string) string {
 		return `apiVersion: botaru/v1alpha1

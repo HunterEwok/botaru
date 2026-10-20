@@ -27,6 +27,8 @@ type bench struct {
 	alice   string
 	agent   *Worker
 	channel *Worker
+	// applied is the manifest set a commission bench applied, for a later apply.
+	applied []map[string]any
 }
 
 func newBench(t *testing.T) *bench { t.Helper(); return newBenchWith(t, nil) }
@@ -129,6 +131,7 @@ func header(t *testing.T, w *WorkItem) string {
 }
 
 func TestHelloSequence(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	a := Activity{Kind: "message", Channel: "telegram", UpdateID: "1", Chat: Chat{Kind: "direct", ExternalID: "1001"}, Text: "/hello hi"}
@@ -267,6 +270,7 @@ func taskReserve(t *testing.T, b *bench, task string) int64 {
 // TestEnqueueReservesEstimate: a task whose estimate does not fit the day limit is refused at
 // enqueue, not accepted and failed later (BUD-1).
 func TestEnqueueReservesEstimate(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	// 14.98 of the 15 EUR day limit is used; the estimate of hello.greet.v1 is 0.05 EUR.
@@ -288,6 +292,7 @@ func TestEnqueueReservesEstimate(t *testing.T) {
 // TestOnFixWaitsForApply: a provider_config failure is not retried on a timer; the next apply
 // wakes the task.
 func TestOnFixWaitsForApply(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	a := Activity{Kind: "message", Channel: "telegram", UpdateID: "11", Chat: Chat{Kind: "direct", ExternalID: "1001"}, Text: "/hello"}
@@ -328,6 +333,7 @@ func TestOnFixWaitsForApply(t *testing.T) {
 
 // TestEnrollWorkerKind: an agent role does not take a job worker.
 func TestEnrollWorkerKind(t *testing.T) {
+	t.Parallel()
 	b := newBench(t)
 	if _, err := b.c.Enroll(context.Background(), b.op, EnrollRequest{Tenant: "demo", Role: "hello", Kind: "job"}); err == nil {
 		t.Fatal("a job worker was enrolled under an agent role")
@@ -337,6 +343,7 @@ func TestEnrollWorkerKind(t *testing.T) {
 // TestTaskReserveDrawDown: the calls of a running tree draw on its task reserve, so another
 // task sees the larger of the two, not their sum.
 func TestTaskReserveDrawDown(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	_, err := b.c.st.Pool.Exec(ctx, `INSERT INTO spend (id, tenant, task, root, subject, line, unit, state, eur_micros, time) VALUES
@@ -364,6 +371,7 @@ func TestTaskReserveDrawDown(t *testing.T) {
 }
 
 func TestModelTextWaitsForAINotice(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	a := Activity{Kind: "message", Channel: "telegram", UpdateID: "7", Chat: Chat{Kind: "direct", ExternalID: "1001"}, Text: "/hello"}
@@ -405,6 +413,7 @@ func TestModelTextWaitsForAINotice(t *testing.T) {
 // TestAccessRecheckedAtClaim: an ungrant after enqueue cancels the queued task (PRM-3), and disabling
 // the recipient after completion withholds the model text.
 func TestAccessRecheckedAtClaim(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	a := Activity{Kind: "message", Channel: "telegram", UpdateID: "21", Chat: Chat{Kind: "direct", ExternalID: "1001"}, Text: "/hello"}
@@ -461,6 +470,7 @@ func TestAccessRecheckedAtClaim(t *testing.T) {
 
 // TestGroupChatIgnored: without chat.bind a group message starts nothing.
 func TestGroupChatIgnored(t *testing.T) {
+	t.Parallel()
 	b := newBench(t)
 	a := Activity{Kind: "message", Channel: "telegram", UpdateID: "12", Chat: Chat{Kind: "group", ExternalID: "-100"}, Text: "/hello"}
 	a.Sender.Identity, a.Sender.Verified = "telegram:1001", true
@@ -471,6 +481,7 @@ func TestGroupChatIgnored(t *testing.T) {
 }
 
 func TestActivityRefusals(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	mk := func(id, identity, text string, verified bool) Activity {
@@ -508,6 +519,7 @@ func TestActivityRefusals(t *testing.T) {
 // has lease_no 2, a call with the token of the first lease gets fenced and changes nothing, and a
 // token of another worker gets lease_mismatch (FEN-2); the second fail exhausts the attempts.
 func TestFailRetriesThenExhausts(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	a := Activity{Kind: "message", Channel: "telegram", UpdateID: "20", Chat: Chat{Kind: "direct", ExternalID: "1001"}, Text: "/hello"}
@@ -560,6 +572,7 @@ func TestFailRetriesThenExhausts(t *testing.T) {
 // TestOffRevokesWork: disabling the initiator cancels the task in work with person_inactive
 // and fences its worker (PRM-3).
 func TestOffRevokesWork(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	a := Activity{Kind: "message", Channel: "telegram", UpdateID: "31", Chat: Chat{Kind: "direct", ExternalID: "1001"}, Text: "/hello"}
@@ -589,6 +602,7 @@ func TestOffRevokesWork(t *testing.T) {
 // TestApplyRefusesPrivilegeRaise: apply rejects a set in which an ordinary group became
 // privileged, with members or without (PRM-13, PRM-7).
 func TestApplyRefusesPrivilegeRaise(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	root, err := spec.FindRoot("")
@@ -618,6 +632,7 @@ func TestApplyRefusesPrivilegeRaise(t *testing.T) {
 
 // TestAINoticeDeadWithholds: model text that waited for a dead ai_notice ends withheld.
 func TestAINoticeDeadWithholds(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	a := Activity{Kind: "message", Channel: "telegram", UpdateID: "41", Chat: Chat{Kind: "direct", ExternalID: "1001"}, Text: "/hello"}
@@ -647,6 +662,7 @@ func TestAINoticeDeadWithholds(t *testing.T) {
 
 // TestModelHandleRechecksAccess: a membership that expires after the claim stops the model call.
 func TestModelHandleRechecksAccess(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	a := Activity{Kind: "message", Channel: "telegram", UpdateID: "51", Chat: Chat{Kind: "direct", ExternalID: "1001"}, Text: "/hello"}
@@ -674,6 +690,7 @@ func TestModelHandleRechecksAccess(t *testing.T) {
 
 // TestDeleteTaskTypeWithOpenTasks: a task type is not deleted while tasks of it are open.
 func TestDeleteTaskTypeWithOpenTasks(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	a := Activity{Kind: "message", Channel: "telegram", UpdateID: "61", Chat: Chat{Kind: "direct", ExternalID: "1001"}, Text: "/hello"}
@@ -701,6 +718,7 @@ func TestDeleteTaskTypeWithOpenTasks(t *testing.T) {
 
 // TestActivityNeedsActiveChannel: a channel without an accepted hello submits nothing.
 func TestActivityNeedsActiveChannel(t *testing.T) {
+	t.Parallel()
 	b := newBench(t)
 	a := Activity{Kind: "message", Channel: "telegram", UpdateID: "71", Chat: Chat{Kind: "direct", ExternalID: "1001"}, Text: "/hello"}
 	a.Sender.Identity, a.Sender.Verified = "telegram:1001", true
@@ -716,6 +734,7 @@ func TestActivityNeedsActiveChannel(t *testing.T) {
 // its own store without erase and match, one with built-in tools, or one with model_attribution
 // per_profile and a capacity above 1 blocks the worker (RT-1, RT-2, RT-3, RT-5, INJ-9).
 func TestHelloRuntimeDeclaration(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	capacity := 0
@@ -769,6 +788,7 @@ func TestHelloRuntimeDeclaration(t *testing.T) {
 // TestSecretsStoredAsHashes: no table of the store holds a worker token, a channel P2 secret or
 // a model handle in the clear (IDN-4, SEC-3).
 func TestSecretsStoredAsHashes(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	r, err := b.c.Enroll(ctx, b.op, EnrollRequest{Tenant: "demo", Kind: "channel", Target: "telegram", RotateP2: true})

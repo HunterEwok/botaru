@@ -25,6 +25,7 @@ var recordFields = []string{"tenant", "initiator", "initiators", "origin", "conv
 // with any of them are refused by the schema, and a child gets the record the core built
 // (IDN-1, blackbox:model/child-record-fields).
 func TestBackfillRecordFieldsCoreOnly(t *testing.T) {
+	t.Parallel()
 	b := newChainBench(t, 3)
 	for _, f := range recordFields {
 		// IDN-1: P1 enqueue and the task body refuse the field.
@@ -55,6 +56,7 @@ func TestBackfillRecordFieldsCoreOnly(t *testing.T) {
 // origin, conversation, the mark and untrusted_seen of the parent (IDN-2,
 // blackbox:model/child-record-fields).
 func TestBackfillInitiatorInherited(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newChainBench(t, 1)
 	root := b.hello(t, "1")
@@ -122,6 +124,7 @@ func TestBackfillInitiatorInherited(t *testing.T) {
 // verification runs no privileged command and takes no decision, while /help still answers
 // (IDN-3, adapter:channel/sender-chat, adapter:channel/unbound-chat, channel/on-behalf).
 func TestBackfillRealSender(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	submit := func(update, identity string, verified, forwarded bool, text string) *ActivityResult {
@@ -185,6 +188,7 @@ func TestBackfillRealSender(t *testing.T) {
 // pending approval is refused only for the channel's weakness, the approval stays pending, and
 // the same press counts once the channel is strong again (IDN-3).
 func TestBackfillWeakChannelNoDecision(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newActionBench(t, nil)
 	att, h := b.attemptTools(t, "1", false)
@@ -222,6 +226,7 @@ func TestBackfillWeakChannelNoDecision(t *testing.T) {
 // and a type of a role with person memory is no default type, so no task of a person reaches an
 // assistant (IDN-5, blackbox:core/assistant-owner-only, D-114).
 func TestBackfillAssistantDeferred(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	// IDN-5: worker.enroll names no owner.
@@ -258,6 +263,7 @@ spec: {kind: test, default_types: [pa.ask.v1]}
 // text of a message never names a type, and an unknown command makes no task (IDN-6,
 // blackbox:channel/type-by-command).
 func TestBackfillTypeByCode(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newChainBench(t, 1)
 	submit := func(update, text string) *ActivityResult {
@@ -302,6 +308,7 @@ func TestBackfillTypeByCode(t *testing.T) {
 // seat, persona, rank or track record, neither in its request schema nor in the core's request;
 // a principal is a person, a program or system, never a bot (IDN-9, gov-fx-05).
 func TestBackfillNoPermissionFromIdentity(t *testing.T) {
+	t.Parallel()
 	root, err := spec.FindRoot("")
 	if err != nil {
 		t.Fatal(err)
@@ -363,6 +370,7 @@ func TestBackfillNoPermissionFromIdentity(t *testing.T) {
 // acting_bot stays the seat holder, and the executing worker is in the lease and the audit
 // (IDN-12, gov-fx-07).
 func TestBackfillSeatTaskAnyWorker(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newManagerBench(t)
 	w1 := b.enroll(t, EnrollRequest{Tenant: "demo", Kind: "agent", Role: "farm-manager"})

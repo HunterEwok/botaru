@@ -30,6 +30,7 @@ func sev2Postmortem(ms []map[string]any) {
 // of every rule (GOV-13, GOV-38, TRN-7) count for a paragraph, and the analysis input never has
 // them (MGR-53, MGR-54).
 func TestPostmortemRequestV03(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newManagerBenchWith(t, nil, []map[string]any{postmortemDoc()}, claimPostmortem, sev2Postmortem)
 	b.diskAlarm(t, true, 3)

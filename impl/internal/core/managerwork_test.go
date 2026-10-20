@@ -85,6 +85,7 @@ func taskRecord(t *testing.T, b *bench, id string) (string, int, map[string]any,
 // fields in the input block and the person's text as the goal; tenant farm and a bad scope are
 // refused. The seat applies operations only within the directive's scope (MGR-4).
 func TestManagerDirect(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newManagerWorkBench(t)
 	_, err := b.c.ManagerDirect(ctx, b.farmOp(), ManagerDirectRequest{Scope: ControlTarget{Kind: "role", ID: "hello"}})
@@ -130,6 +131,7 @@ func TestManagerDirect(t *testing.T) {
 // /manager in a private chat parses the closed fields and needs manager.direct; a forwarded or
 // quoted /manager creates no task (MGR-4).
 func TestManagerCommand(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newManagerWorkBench(t)
 	send := func(update, text string, quoted bool) *ActivityResult {
@@ -180,6 +182,7 @@ func TestManagerCommand(t *testing.T) {
 // The set lint refuses a manage type in may_enqueue and in a continuation (MGR-4); three
 // readings of a worst-case incident at manager-std prices cost 0.624 EUR (MGR-20).
 func TestManagerLint(t *testing.T) {
+	t.Parallel()
 	c := lintCore(t)
 	codes := lintCodes(t, c, `
 apiVersion: botaru/v1alpha1
@@ -209,6 +212,7 @@ spec: {worker_kind: agent, claims: [ops.watch.v1], may_enqueue: [manager.directi
 // daily_review_max_eur as its tree budget; manager.cost shows the manager line with the review
 // as a line of its own; work outside sev1 stops at 70% of the line's day (MGR-20, MGR-41).
 func TestManagerDaily(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newManagerWorkBench(t)
 	b.loop(t, "identity")
@@ -258,6 +262,7 @@ func TestManagerDaily(t *testing.T) {
 // to a person on a control card, whose approval applies it as that person with the origin
 // finding:<id> (MGR-25, MGR-26, MGR-28).
 func TestManagerReading(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newManagerWorkBench(t)
 	bob := b.withApprovers(t)
@@ -409,6 +414,7 @@ func TestManagerReading(t *testing.T) {
 // A release by a directive reaches only a hold whose operation was within the directive's
 // scope; an incident scope is the incident as the basis (MGR-4).
 func TestDirectiveScope(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newManagerWorkBench(t)
 	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO control_ops (id, tenant, op, target_kind, target_id, incident, actor_kind, actor, epoch, hold, created_at) VALUES
@@ -485,6 +491,7 @@ func (b *bench) direct(t *testing.T, person string) {
 // Without the purpose incident_review the core enqueues no reading, and apply cancels the
 // running ones (MGR-20).
 func TestManagerReadingPurposeOff(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	off := func(ms []map[string]any) {
 		for _, m := range ms {
@@ -529,6 +536,7 @@ func TestManagerReadingPurposeOff(t *testing.T) {
 // The seat's memory is a section in each tenant: when the seat passes, the old holder's facts of
 // a tenant go to the new holder by an offer of that tenant, and the old ones are sealed (MGR-27).
 func TestManagerSeatFacts(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newManagerBench(t)
 	now := b.now(t)
@@ -601,6 +609,7 @@ func TestManagerSeatFacts(t *testing.T) {
 // From v0.3 work outside sev1 stops at 70% of the manager line's month; sev1 and the fallback
 // profile run on (MGR-49).
 func TestManagerMonthLineV03(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newManagerBench(t)
 	day, month := 100.0, 10.0
@@ -657,6 +666,7 @@ func TestManagerMonthLineV03(t *testing.T) {
 // The tenant lint of the manager line from v0.3: the day covers the review, the analyses and
 // three reads, the month covers the takeover ceiling (MGR-49).
 func TestManagerLineShortV03(t *testing.T) {
+	t.Parallel()
 	profile := map[string]any{"price": map[string]any{"input": 1.0, "output": 1.0}, "max_output_tokens": 1000.0}
 	fm := map[string]any{"daily_review_max_eur": 0.5}
 	ts := func(day, month float64) map[string]any {

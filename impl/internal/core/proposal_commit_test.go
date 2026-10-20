@@ -24,7 +24,7 @@ func cloneSet(t *testing.T, ms []map[string]any) []map[string]any {
 // withLimit is the applied set with the demo tenant's limits.max_queued at v.
 func withLimit(t *testing.T, b *bench, v int) []map[string]any {
 	t.Helper()
-	ms := cloneSet(t, appliedSets[b])
+	ms := cloneSet(t, b.applied)
 	ten := specOf(ms, "Tenant", "demo")
 	lim, _ := ten["limits"].(map[string]any)
 	if lim == nil {
@@ -94,6 +94,7 @@ func recordOf(t *testing.T, b *bench, id string) map[string]any {
 // with Botaru-Revert that returns the value reverts it, and harm_observed makes the trial
 // worse; the conflicting proposal returns to screened (PRP-8, PRP-9, PRP-19, PRP-20, PRP-22).
 func TestProposalCommitLink(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newCommissionBench(t, true, presentEdit)
 	id, other := acceptLimits(t, b)
@@ -144,6 +145,7 @@ func TestProposalCommitLink(t *testing.T) {
 // After the window the code computes the trial outcome; without points it is undetermined
 // (PRP-22).
 func TestProposalTrialOutcome(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newCommissionBench(t, true, presentEdit)
 	id, _ := acceptLimits(t, b)
@@ -165,6 +167,7 @@ func TestProposalTrialOutcome(t *testing.T) {
 // "My outcomes" of the author passes its closed schema and goes into its analysis task
 // (DIG-7, INS-5).
 func TestMyOutcomes(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newCommissionBench(t, true, presentEdit)
 	acceptLimits(t, b)
@@ -192,6 +195,7 @@ func TestMyOutcomes(t *testing.T) {
 // A commit whose object of another tenant a later apply replaced is still outside the scope
 // of the proposal: the replaced versions count as well as the current manifests (PRP-19).
 func TestProposalLinkCommitOldVersion(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newCommissionBench(t, true, presentEdit)
 	id, _ := acceptLimits(t, b)
@@ -208,6 +212,7 @@ func TestProposalLinkCommitOldVersion(t *testing.T) {
 // points are all there are; a few other points below min_samples leave it undetermined
 // (PRP-22).
 func TestMetricOutcome(t *testing.T) {
+	t.Parallel()
 	s := seriesDef{Outcome: &seriesOutcome{Compare: "window.p95", Better: "down", TolerancePct: 10, MinSamples: 5}}
 	side := func(v float64, n int, author, role int) map[string]any {
 		return map[string]any{"value": v, "samples": n,
