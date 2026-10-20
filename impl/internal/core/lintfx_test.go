@@ -21,7 +21,6 @@ import (
 	"github.com/HunterEwok/botaru/impl/internal/spec"
 	"github.com/HunterEwok/botaru/impl/internal/store"
 	"github.com/HunterEwok/botaru/impl/internal/testbench"
-	"github.com/HunterEwok/botaru/impl/internal/texts"
 	"github.com/HunterEwok/botaru/impl/internal/yamlx"
 )
 
@@ -166,11 +165,11 @@ func runLintFixtures(t *testing.T) []string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sp, err := spec.Load(root)
+	sp, err := testbench.SharedSpec(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	tx, err := texts.Load(root, "")
+	tx, err := testbench.SharedTexts(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,7 +186,7 @@ func runLintFixtures(t *testing.T) []string {
 		t.Fatal(err)
 	}
 	examples := exampleManifests(t, root, sp)
-	personas, err := testbench.Personas(root)
+	personas, err := testbench.SharedPersonas(root)
 	if err != nil {
 		t.Fatal(err)
 	}

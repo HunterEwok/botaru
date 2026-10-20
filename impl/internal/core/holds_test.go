@@ -23,7 +23,7 @@ func (b *bench) withAdmins(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ms, err := testbench.HelloBotManifests(root)
+	ms, err := testbench.SharedHelloBotManifests(root)
 	if err != nil {
 		t.Fatal(err)
 	}

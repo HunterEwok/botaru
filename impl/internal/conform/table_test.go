@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/HunterEwok/botaru/impl/internal/spec"
-	"github.com/HunterEwok/botaru/impl/internal/texts"
+	"github.com/HunterEwok/botaru/impl/internal/testbench"
 )
 
 // TestFunctionTables runs the decision tables of pure core functions through function.eval at a
@@ -20,11 +20,11 @@ func TestFunctionTables(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sp, err := spec.Load(root)
+	sp, err := testbench.SharedSpec(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	tx, err := texts.Load(root, "")
+	tx, err := testbench.SharedTexts(root)
 	if err != nil {
 		t.Fatal(err)
 	}

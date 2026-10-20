@@ -86,7 +86,7 @@ func newKBBench(t *testing.T, edit func(ms []map[string]any) []map[string]any) *
 		return ms
 	})
 	root, _ := spec.FindRoot("")
-	personas, err := testbench.Personas(root)
+	personas, err := testbench.SharedPersonas(root)
 	if err != nil {
 		t.Fatal(err)
 	}

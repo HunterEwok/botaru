@@ -68,7 +68,7 @@ func newExportBench(t *testing.T) (*actionBench, map[string]*ecdh.PrivateKey) {
 	})
 	ctx := context.Background()
 	// A sink for alice by name, which takes an operator's principal.export of her data.
-	personas, err := testbench.Personas(root)
+	personas, err := testbench.SharedPersonas(root)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -14,7 +14,7 @@ import (
 // listens apart from P1, which serves no P2 path (IDN-7, adapter:channel/no-operator-ops).
 func TestBackfillChannelNoOperatorOps(t *testing.T) {
 	r := newRig(t)
-	ms, err := testbench.HelloBotManifests(r.root)
+	ms, err := testbench.SharedHelloBotManifests(r.root)
 	if err != nil {
 		t.Fatal(err)
 	}

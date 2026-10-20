@@ -31,7 +31,7 @@ import (
 func TestIngressOverTheWire(t *testing.T) {
 	ctx := context.Background()
 	r := newRig(t)
-	ms, err := testbench.HelloBotManifests(r.root)
+	ms, err := testbench.SharedHelloBotManifests(r.root)
 	if err != nil {
 		t.Fatal(err)
 	}

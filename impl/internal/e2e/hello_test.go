@@ -32,7 +32,6 @@ import (
 	"github.com/HunterEwok/botaru/impl/internal/spec"
 	"github.com/HunterEwok/botaru/impl/internal/store"
 	"github.com/HunterEwok/botaru/impl/internal/testbench"
-	"github.com/HunterEwok/botaru/impl/internal/texts"
 )
 
 func TestMain(m *testing.M) {
@@ -123,11 +122,11 @@ func newRig(t *testing.T) *rig {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sp, err := spec.Load(root)
+	sp, err := testbench.SharedSpec(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	tx, err := texts.Load(root, "")
+	tx, err := testbench.SharedTexts(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,7 +213,7 @@ func TestHelloBotOverTheWire(t *testing.T) {
 
 	// Initial state: the hello-bot manifests on the test bench, alice with telegram:1001 in
 	// group hello, an agent of role hello and the telegram channel.
-	ms, err := testbench.HelloBotManifests(r.root)
+	ms, err := testbench.SharedHelloBotManifests(r.root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -279,7 +278,7 @@ func TestHelloBotOverTheWire(t *testing.T) {
 	}}
 	agentClient := &p1client.Client{BaseURL: r.p1.URL, Token: agentEnroll.Token}
 	chanClient := &p1client.Client{BaseURL: r.p1.URL, Token: chanEnroll.Token}
-	tx, _ := texts.Load(r.root, "")
+	tx, _ := testbench.SharedTexts(r.root)
 	ch := telegram.New(telegram.Config{Core: chanClient, Channel: "telegram", BotAPI: r.botURL, BotToken: "TEST:TOKEN", Texts: tx, PollTimeoutS: 1})
 	ag := agent.New(agent.Config{Core: agentClient})
 	if err := ch.Hello(ctx); err != nil {

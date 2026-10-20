@@ -20,7 +20,6 @@ import (
 	"github.com/HunterEwok/botaru/impl/internal/spec"
 	"github.com/HunterEwok/botaru/impl/internal/store"
 	"github.com/HunterEwok/botaru/impl/internal/testbench"
-	"github.com/HunterEwok/botaru/impl/internal/texts"
 )
 
 // recProvider records each provider request and answers with answer.
@@ -92,11 +91,11 @@ func newP4Bench(t *testing.T, edit func(ms []map[string]any), answer func(w http
 	if err != nil {
 		t.Fatal(err)
 	}
-	sp, err := spec.Load(root)
+	sp, err := testbench.SharedSpec(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	tx, err := texts.Load(root, "")
+	tx, err := testbench.SharedTexts(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,11 +103,11 @@ func newP4Bench(t *testing.T, edit func(ms []map[string]any), answer func(w http
 	if err != nil {
 		t.Fatal(err)
 	}
-	personas, err := testbench.Personas(root)
+	personas, err := testbench.SharedPersonas(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	ms, err := testbench.HelloBotManifests(root)
+	ms, err := testbench.SharedHelloBotManifests(root)
 	if err != nil {
 		t.Fatal(err)
 	}
