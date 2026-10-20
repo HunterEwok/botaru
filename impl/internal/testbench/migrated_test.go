@@ -49,6 +49,11 @@ func TestMigratedDSN(t *testing.T) {
 	if _, err := a.Init(ctx, true); err != nil {
 		t.Fatal(err)
 	}
+	// The seeded farm manager seat is vacant since the copy, not since the template was built.
+	var age float64
+	if err := b.Pool.QueryRow(ctx, `SELECT extract(epoch FROM now() - unheld_since) FROM seats WHERE id = 'farm-manager'`).Scan(&age); err != nil || age < 0 || age > 60 {
+		t.Fatalf("the farm manager seat is vacant for %v s: %v", age, err)
+	}
 	var n int
 	if err := b.Pool.QueryRow(ctx, `SELECT count(*) FROM farm_meta`).Scan(&n); err != nil || n != 0 {
 		t.Fatalf("a write to one copy reached the other: %d %v", n, err)

@@ -126,6 +126,7 @@ func buildTemplate(key string, prepare func(ctx context.Context, dsn string) err
 		return "", err
 	}
 	if _, err := conn.Exec(ctx, "ALTER DATABASE "+name+" WITH IS_TEMPLATE true"); err != nil {
+		_, _ = conn.Exec(ctx, "DROP DATABASE IF EXISTS "+name+" WITH (FORCE)")
 		return "", err
 	}
 	return name, nil
