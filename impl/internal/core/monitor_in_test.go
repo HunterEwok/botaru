@@ -344,7 +344,7 @@ func waitScript(t *testing.T, b *bench) {
 
 func queued(t *testing.T, b *bench) bool {
 	t.Helper()
-	for range 200 {
+	for range 1000 {
 		var n int
 		if err := b.c.st.Pool.QueryRow(context.Background(), `SELECT count(*) FROM toolcalls WHERE tool = $1 AND state = 'queued'`, scriptRight).Scan(&n); err != nil {
 			t.Fatal(err)

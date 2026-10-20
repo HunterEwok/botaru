@@ -19,8 +19,9 @@ spec:
 
 // The lint keeps the built-in tools of the seat profiles to their list (MGR-10) and the
 // operation targets and the forbidden list of proposals clear of MGR-16's targets.
+// Not parallel: it changes the package tables seatBuiltins and selfChangeTargets, which the lint
+// of every apply reads.
 func TestSeatProfileLint(t *testing.T) {
-	t.Parallel()
 	c := lintCore(t)
 	codes := lintCodes(t, c, seatRoleYAML)
 	if slices.Contains(codes, "role_profile_forbidden") || slices.Contains(codes, "manager_self_change") {
@@ -28,6 +29,7 @@ func TestSeatProfileLint(t *testing.T) {
 	}
 	// A built-in tool of the registry outside the seat list, as a broken registry would give.
 	saved := seatBuiltins["farm-manager"]
+	t.Cleanup(func() { seatBuiltins["farm-manager"] = saved })
 	seatBuiltins["farm-manager"] = slices.DeleteFunc(slices.Clone(saved), func(s string) bool { return s == "service/control" })
 	codes = lintCodes(t, c, seatRoleYAML)
 	seatBuiltins["farm-manager"] = saved
@@ -36,6 +38,7 @@ func TestSeatProfileLint(t *testing.T) {
 	}
 	// An operation target among MGR-16's targets.
 	savedTargets := selfChangeTargets
+	t.Cleanup(func() { selfChangeTargets = savedTargets })
 	selfChangeTargets = append(slices.Clone(savedTargets), "role")
 	codes = lintCodes(t, c, seatRoleYAML)
 	selfChangeTargets = savedTargets

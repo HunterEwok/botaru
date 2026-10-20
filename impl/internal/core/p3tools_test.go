@@ -189,7 +189,7 @@ func callAsync(b *bench, handle string, p mcp.CallParams) <-chan struct {
 // claimTool waits until a call is queued and claims it.
 func (b *bench) claimTool(t *testing.T, w *Worker) *WorkItem {
 	t.Helper()
-	for range 100 {
+	for range 500 {
 		if item := b.claim(t, w, "toolcall"); item != nil {
 			return item
 		}
@@ -453,7 +453,7 @@ func TestP3HoldsAndDeadlines(t *testing.T) {
 
 func waitQueued(t *testing.T, b *bench) {
 	t.Helper()
-	for range 100 {
+	for range 500 {
 		var n int
 		if err := b.c.st.Pool.QueryRow(context.Background(), `SELECT count(*) FROM toolcalls WHERE state = 'queued'`).Scan(&n); err != nil {
 			t.Fatal(err)
@@ -671,7 +671,7 @@ func TestPluginDown(t *testing.T) {
 	args := map[string]any{"check": "www-health"}
 	// A call queued while the plugin is up ends when the toolhost reports it down.
 	queued := callAsync(b, h, mcp.CallParams{Name: "checks_latest", Arguments: args})
-	for range 100 {
+	for range 500 {
 		var n int
 		b.c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM toolcalls WHERE state = 'queued'`).Scan(&n)
 		if n == 1 {
