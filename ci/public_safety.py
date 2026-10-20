@@ -50,6 +50,8 @@ OK_DOMAINS = {
     'docs.anthropic.com', 'api.anthropic.com', 'pypi.org',
     # Go module hosts of impl/go.mod and impl/go.sum (D-92): a new module host is added here on purpose
     'go.dev', 'pkg.go.dev', 'golang.org', 'proxy.golang.org', 'honnef.co', 'go.yaml.in', 'gopkg.in',
+    # OpenTelemetry, which the Anthropic SDK pulls in since 1.82, and the hosts of its go.sum entries
+    'go.opentelemetry.io', 'google.golang.org', 'cloud.google.com', 'go.opencensus.io',
     # the official Telegram Bot API server of spec/bindings/channels/telegram.md
     'api.telegram.org',
 }
