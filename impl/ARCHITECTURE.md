@@ -59,6 +59,15 @@ schema filtered by the task's mark.
 - The result schema reaches the runtime as the extension field `payload.result_schema` of the attempt (MAN-3), so the
   instruction stays exactly the trusted text from git; the runtime appends the request for a JSON answer to the system
   prompt. The projection of the result schema sent to the runtime is a hint: `complete` still checks the full schema.
+- Beside it, the extension field `payload.full_result_schema` is the schema `complete` checks: the `enum_from`
+  leaves with the catalog values fixed in the attempt record (a list the record lacks, such as one of the memory
+  `facts` field, resolved by the same mark), and each `x-botaru-format` with the `pattern` and `maxLength` of
+  `spec/model/formats.yaml` as plain keywords of the leaf. A type with no schema of its own gets a copy of the core's
+  schema (`insight-result`, `review-result` or the necessity output). `botaru-agent` shows the model this schema with
+  the rule to omit unknown optional fields instead of writing `null`, removes a `null` of an optional field that does
+  not take null, and checks the answer locally with the same validator and ECMAScript patterns as the core: a failing
+  answer gets one more turn that quotes the paths and reasons, so the attempt is not spent on a format the model can
+  fix; what the second answer holds goes to `complete`, where the core decides.
 - Results refused at complete (`output_schema_invalid`, OUT-1) are stored on the lease like an accepted outcome, so a
   repeat of the same complete gets the same refusal (IDM-3), and any other call under the lease is fenced. A lease taken
   before the attempt record existed has none; its `enum_from` values are resolved at complete.
@@ -1944,6 +1953,14 @@ nothing again (OBV-1..7).
 - Readers get numbers and values of closed lists only, never text: P1 `obs.query` (a job, the series of its type's
   `observes`, within the task's mark), P2 `obs.series` (the operator of the tenant) and the built-in tool
   `observations_query` in insight, review and aggregate tasks (the role's `insight.observes`).
+- The input schema of `observations_query` lists the subjects of its series as an `enum`: for a `task_type` series
+  the types the role claims (an analysis) or every type of the set (a review or aggregator), the tenant's schedules,
+  catalog hosts and resources by the series' `catalog_kind`, each one that `subjectOfTenant` accepts; its description
+  says which kind each series takes and which rollups fit a closed-list series. The core checks a query as before.
+- An analysis task carries the extension field `insight_context`: `role_task_types` (the subjects of the role's work
+  types) and, for a tenant with `insights.evolution.enabled`, `proposable_targets`: the Tenant limit fields with
+  their current values (only lower), the cron and zone of each proposable schedule and the blocks `benefit`, `cost`
+  and `risk` a manifest change needs (PRP-3). It spares the model guesses; the core checks every proposal.
 - Points are kept 14 days and rollups 93 by default, or by the series `retention`, and go only in whole calendar months,
   once the month's last day is past the period (RET-10).
 - Not built: a dataset record of its own (the backup age uses the subject of the event), `group_by` in a query.

@@ -3,9 +3,16 @@
 package agent
 
 import (
+	"context"
 	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
+
+	"github.com/HunterEwok/botaru/impl/internal/p1client"
 )
 
 func TestParseResult(t *testing.T) {
@@ -58,5 +65,162 @@ func TestPurgeOutcome(t *testing.T) {
 	}
 	if o := purgeOutcome(json.RawMessage(`{"op":"match","needles":["x"]}`)); o["outcome"] != "done" || o["ids"] == nil {
 		t.Errorf("match %v", o)
+	}
+}
+
+// investigateSchema is a full result schema in the form claim hands it: an enum for the
+// catalog services and the pattern of a format in the facts.
+var investigateSchema = map[string]any{
+	"type": "object", "additionalProperties": false, "required": []any{"answer", "verdict"},
+	"properties": map[string]any{
+		"answer":   map[string]any{"type": "string", "maxLength": 4000},
+		"verdict":  map[string]any{"enum": []any{"cause_found", "no_cause"}},
+		"services": map[string]any{"type": "array", "items": map[string]any{"enum": []any{"nginx", "app-api"}}},
+		"facts": map[string]any{"type": "object", "additionalProperties": false, "properties": map[string]any{
+			"count_5xx":  map[string]any{"type": "integer", "minimum": 0},
+			"subnet_401": map[string]any{"type": "string", "pattern": `^(\d{1,3}\.){3}0/24$`, "maxLength": 18},
+			"note":       map[string]any{"type": []any{"string", "null"}},
+		}},
+	},
+}
+
+// A null in an optional field goes, also inside facts; a required field and a field whose
+// schema takes null stay.
+func TestStripNullOptionals(t *testing.T) {
+	res := map[string]any{"answer": nil, "verdict": "no_cause", "services": nil,
+		"facts": map[string]any{"count_5xx": nil, "subnet_401": nil, "note": nil}}
+	stripNullOptionals(res, investigateSchema)
+	if _, ok := res["answer"]; !ok {
+		t.Error("the required answer was removed")
+	}
+	if _, ok := res["services"]; ok {
+		t.Error("the optional services stayed null")
+	}
+	facts := res["facts"].(map[string]any)
+	if _, ok := facts["count_5xx"]; ok {
+		t.Error("facts.count_5xx stayed null")
+	}
+	if _, ok := facts["subnet_401"]; ok {
+		t.Error("facts.subnet_401 stayed null")
+	}
+	if _, ok := facts["note"]; !ok {
+		t.Error("facts.note takes null and was removed")
+	}
+}
+
+// The local check names the path and the reason of each failure.
+func TestCheckResult(t *testing.T) {
+	s := compileSchema(investigateSchema)
+	if s == nil {
+		t.Fatal("the schema did not compile")
+	}
+	if d := checkResult(s, map[string]any{"answer": "a", "verdict": "no_cause", "facts": map[string]any{"subnet_401": "203.0.113.0/24"}}); d != "" {
+		t.Errorf("a valid result: %s", d)
+	}
+	d := checkResult(s, map[string]any{"answer": "a", "verdict": "maybe", "services": []any{"postgres"}, "facts": map[string]any{"subnet_401": "203.0.113.7"}})
+	for _, want := range []string{"/verdict", "/services/0", "/facts/subnet_401"} {
+		if !strings.Contains(d, want) {
+			t.Errorf("detail %q does not name %s", d, want)
+		}
+	}
+}
+
+// fakeCore serves P1 claim, heartbeat and complete for one attempt and P4 messages from a
+// list of model answers; it keeps the requests.
+type fakeCore struct {
+	mu        sync.Mutex
+	answers   []string
+	model     [][]byte
+	completes []map[string]any
+	claimed   bool
+}
+
+func (f *fakeCore) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	body, _ := io.ReadAll(r.Body)
+	w.Header().Set("Content-Type", "application/json")
+	switch r.URL.Path {
+	case "/v1/p1/claim":
+		if f.claimed {
+			_, _ = w.Write([]byte(`{"work":null}`))
+			return
+		}
+		f.claimed = true
+		payload, _ := json.Marshal(map[string]any{
+			"task":        map[string]any{"id": "t1", "type": "ops.investigate.v1", "body": map[string]any{"goal": "Why is the site down?"}},
+			"instruction": "Find the cause.", "handles": map[string]any{"model": "bh_x"},
+			"result_schema":      map[string]any{"type": "object"},
+			"full_result_schema": investigateSchema,
+		})
+		_ = json.NewEncoder(w).Encode(map[string]any{"work": map[string]any{"work_id": "t1", "kind": "attempt", "lease_no": 1, "tenant": "demo",
+			"token": map[string]any{"l": 1}, "payload": json.RawMessage(payload)}})
+	case "/v1/p1/heartbeat":
+		_, _ = w.Write([]byte(`{}`))
+	case "/v1/p1/complete":
+		var req map[string]any
+		_ = json.Unmarshal(body, &req)
+		f.completes = append(f.completes, req)
+		_, _ = w.Write([]byte(`{}`))
+	case "/v1/p4/anthropic/v1/messages":
+		f.model = append(f.model, body)
+		text := f.answers[0]
+		if len(f.answers) > 1 {
+			f.answers = f.answers[1:]
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": "msg_1", "type": "message", "role": "assistant", "model": "m",
+			"content": []any{map[string]any{"type": "text", "text": text}}, "stop_reason": "end_turn",
+			"usage": map[string]any{"input_tokens": 1, "output_tokens": 1}})
+	default:
+		http.Error(w, `{"reason":"not_found"}`, http.StatusNotFound)
+	}
+}
+
+// An answer that fails the full schema is not handed in: the model gets one turn with the
+// failures, and the fixed answer goes to complete, with the null of an optional field left out.
+func TestAgentSchemaRepairTurn(t *testing.T) {
+	f := &fakeCore{answers: []string{
+		`{"answer":"nginx is down","verdict":"cause_found","services":["nginx"],"facts":{"count_5xx":"12","subnet_401":"203.0.113.7"}}`,
+		`{"answer":"nginx is down","verdict":"cause_found","services":["nginx"],"facts":{"count_5xx":12,"subnet_401":"203.0.113.0/24","note":null,"peak":null}}`,
+	}}
+	srv := httptest.NewServer(f)
+	defer srv.Close()
+	a := New(Config{Core: &p1client.Client{BaseURL: srv.URL, Token: "w"}})
+	if worked, err := a.Once(context.Background(), 0); err != nil || !worked {
+		t.Fatalf("once: %v %v", worked, err)
+	}
+	if len(f.model) != 2 {
+		t.Fatalf("%d model calls, want 2", len(f.model))
+	}
+	var second struct {
+		System   []struct{ Text string } `json:"system"`
+		Messages []struct {
+			Role    string `json:"role"`
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(f.model[1], &second); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(second.System[0].Text, `"enum":["nginx","app-api"]`) || !strings.Contains(second.System[0].Text, "never set an optional field to null") {
+		t.Errorf("the system text lacks the full schema or the null rule: %s", second.System[0].Text)
+	}
+	last := second.Messages[len(second.Messages)-1]
+	if last.Role != "user" || !strings.Contains(last.Content[0].Text, "did not match the required JSON schema") ||
+		!strings.Contains(last.Content[0].Text, "/facts/count_5xx") || !strings.Contains(last.Content[0].Text, "/facts/subnet_401") {
+		t.Errorf("repair message %+v", last)
+	}
+	if len(f.completes) != 1 {
+		t.Fatalf("%d completes, want 1", len(f.completes))
+	}
+	res := f.completes[0]["result"].(map[string]any)
+	facts := res["facts"].(map[string]any)
+	if facts["count_5xx"] != float64(12) || facts["subnet_401"] != "203.0.113.0/24" {
+		t.Errorf("result %v", res)
+	}
+	if _, ok := facts["peak"]; ok {
+		t.Errorf("a null optional field was handed in: %v", facts)
 	}
 }

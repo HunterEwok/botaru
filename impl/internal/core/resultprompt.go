@@ -32,6 +32,92 @@ func (c *Core) coreResultSchema(tt manifest.TaskType, record map[string]any) map
 	return nil
 }
 
+// fullResultSchema is the full result schema of a claim payload for the runtime: the payload's
+// result schema with enum_from turned into the values of the attempt (the lists the attempt
+// record does not hold, such as those of the facts field, resolved by the same mark) and each
+// x-botaru-format into its pattern and maximum length; nil when it cannot be built.
+func (c *Core) fullResultSchema(cat *Catalog, tenant, mark string, schema map[string]any, fixed map[string][]any) map[string]any {
+	names := map[string]bool{}
+	enumFromNames(schema, names)
+	enums := map[string][]any{}
+	missing := map[string]bool{}
+	for n := range names {
+		if v, ok := fixed[n]; ok {
+			enums[n] = v
+		} else {
+			missing[n] = true
+		}
+	}
+	if len(missing) > 0 {
+		for n, v := range c.resolveEnumFrom(cat, tenant, mark, missing) {
+			enums[n] = v
+		}
+	}
+	full, err := c.fullSchema(schema, enums)
+	if err != nil {
+		return nil
+	}
+	return flattenFormats(full)
+}
+
+// flattenFormats moves the pattern and maxLength that fullSchema puts under allOf up into the
+// leaf when the leaf has neither, so the model reads them as plain keywords; the schema checks
+// the same values either way.
+func flattenFormats(node map[string]any) map[string]any {
+	var walk func(any) any
+	walk = func(n any) any {
+		switch x := n.(type) {
+		case map[string]any:
+			for k, v := range x {
+				x[k] = walk(v)
+			}
+			list, ok := x["allOf"].([]any)
+			if !ok {
+				return x
+			}
+			var rest []any
+			for _, e := range list {
+				m, _ := e.(map[string]any)
+				moved := false
+				if len(m) == 1 {
+					for _, k := range []string{"pattern", "maxLength"} {
+						if v, ok := m[k]; ok {
+							if _, has := x[k]; !has {
+								x[k], moved = v, true
+							}
+						}
+					}
+				}
+				if !moved {
+					rest = append(rest, e)
+				}
+			}
+			if len(rest) == 0 {
+				delete(x, "allOf")
+			} else {
+				x["allOf"] = rest
+			}
+			return x
+		case []any:
+			for i, v := range x {
+				x[i] = walk(v)
+			}
+		}
+		return n
+	}
+	out, _ := walk(node).(map[string]any)
+	return out
+}
+
+// copySchema is a deep copy of a schema, so the payload shares no map with the core.
+func copySchema(s map[string]any) map[string]any {
+	var out map[string]any
+	if b, err := json.Marshal(s); err == nil && json.Unmarshal(b, &out) == nil {
+		return out
+	}
+	return nil
+}
+
 // inlineSchema is a schema of spec/model with every $ref replaced by its target, for a model
 // that reads the schema as text and resolves no references; nil when it cannot be read.
 func (c *Core) inlineSchema(id string) map[string]any {
@@ -117,4 +203,54 @@ func (c *Core) refTarget(ref, doc string) (map[string]any, string) {
 		cp[k] = v
 	}
 	return cp, id
+}
+
+// insightContext is the reference of an analysis task: role_task_types are the subjects of the
+// work types of the role (the analysis types left out), and with the evolution on
+// proposable_targets lists the changes a manifest_change of this tenant may hold, with the
+// current values of the Tenant limits and the cron of each proposable schedule (PRP-3,
+// PRP-10, PRP-11). The core checks every proposal; this only spares the model guesses.
+func insightContext(cat *Catalog, tenant, role string, evolution bool) map[string]any {
+	types := []any{}
+	if r, ok := cat.Roles[role]; ok {
+		for _, t := range r.Claims {
+			if tt, ok := cat.TaskTypes[t]; ok && tt.Purpose != "insight" {
+				types = append(types, "task_type:"+t)
+			}
+		}
+	}
+	out := map[string]any{"role_task_types": types}
+	if !evolution {
+		return out
+	}
+	tv := cat.Tenants[tenant]
+	if tv == nil {
+		return out
+	}
+	limits := map[string]any{}
+	spec, _ := tv.Raw["spec"].(map[string]any)
+	for _, sec := range []string{"limits", "campaigns", "scripts"} {
+		m, _ := spec[sec].(map[string]any)
+		for k, v := range m {
+			if _, num := toFloat(v); num {
+				limits["spec."+sec+"."+k] = v
+			}
+		}
+	}
+	schedules := map[string]any{}
+	for name, sc := range tv.Schedules {
+		if sc.Task == nil || !typeProposable(cat.TaskTypes[sc.Task.Type]) || sc.Proposable != nil && !*sc.Proposable {
+			continue
+		}
+		schedules[name] = map[string]any{"spec.cron": sc.Cron, "spec.timezone": scheduleTZ(tv, sc)}
+	}
+	out["proposable_targets"] = map[string]any{
+		"change_kinds": "change.kind none for an observation without a change; manifest_change for a change of the fields below, with benefit (a series of the role with direction and expected change), cost and risk",
+		"tenant": map[string]any{"target": map[string]any{"kind": "Tenant", "name": tenant}, "op": "set",
+			"rule": "a field of spec.limits, spec.campaigns or spec.scripts, only lower than its current value", "current": limits},
+		"schedules": map[string]any{"target_kind": "Schedule", "op": "set",
+			"rule":    "spec.cron shifts the minutes and hours at no more than the current frequency and at least half of it; spec.timezone is a zone name",
+			"current": schedules},
+	}
+	return out
 }

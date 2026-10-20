@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -67,7 +68,11 @@ func incidentAndCommission(ctx context.Context, d *Director, sc string) error {
 	})
 	d.check(sc, "incident_resolved", err == nil, "incident %s %s", incident, istate)
 
-	// 2. The commission.
+	// 2. The commission. The world's history first: investigations with repeated and long
+	// attempts, so the analysis has series to read (one investigation alone gives too little).
+	if err := d.S.SeedInvestigationLoad(ctx); err != nil {
+		return fmt.Errorf("seeding the observations: %w", err)
+	}
 	if err := d.S.SetInsights(ctx, true); err != nil {
 		return fmt.Errorf("starting the analysis schedule: %w", err)
 	}
@@ -183,8 +188,19 @@ func scaffoldEvolution(ctx context.Context, d *Director, sc string) error {
 	if err := d.ensureInvestigation(ctx); err != nil {
 		return err
 	}
-	d.S.Brain.SetEvolve(true)
-	defer d.S.Brain.SetEvolve(false)
+	// The world's history: investigations that took repeated and long attempts, so the
+	// analysis reads a load worth a lower queue limit.
+	if err := d.S.SeedInvestigationLoad(ctx); err != nil {
+		return fmt.Errorf("seeding the observations: %w", err)
+	}
+	defer func() {
+		if err := d.S.SetEvolve(context.WithoutCancel(ctx), false); err != nil {
+			d.S.log.Addf(KindDirector, "ending the evolution mode: %v", err)
+		}
+	}()
+	if err := d.S.SetEvolve(ctx, true); err != nil {
+		return fmt.Errorf("the evolution mode: %w", err)
+	}
 	if err := d.S.SetInsights(ctx, true); err != nil {
 		return fmt.Errorf("starting the analysis schedule: %w", err)
 	}
@@ -193,7 +209,7 @@ func scaffoldEvolution(ctx context.Context, d *Director, sc string) error {
 			d.S.log.Addf(KindDirector, "pausing the analysis schedule: %v", err)
 		}
 	}()
-	d.S.log.Addf(KindDirector, "the analysis schedule of ops-reader runs, in the evolution mode of the mock model")
+	d.S.log.Addf(KindDirector, "the analysis schedule of ops-reader runs, in the evolution mode (the load check)")
 
 	// 1. The manifest change and its variant.
 	var prop, pstate string
@@ -293,7 +309,12 @@ func scaffoldEvolution(ctx context.Context, d *Director, sc string) error {
 	card := slices.ContainsFunc(d.S.Cards(), func(c Card) bool { return c.Subject == prop && c.Pressed != "" })
 	msg, _ := d.S.repo.git(ctx, "log", "-1", "--format=%B", commit)
 	trailer := strings.Contains(msg, "Botaru-Proposal: "+prop)
-	d.check(sc, "accepted_and_realized", err == nil && pstate == "realized" && queued == fmt.Sprint(EvolveQueued) && card && trailer,
+	// A real model may name another value; any lower limit is the safe direction (PRP-3).
+	lowered := false
+	if n, perr := strconv.Atoi(queued); perr == nil && n > 0 && n < 5000 {
+		lowered = true
+	}
+	d.check(sc, "accepted_and_realized", err == nil && pstate == "realized" && lowered && card && trailer,
 		"%s accepted on the card (pressed %v), trial recorded; commit %s (Botaru-Proposal %v) applied, proposal %s, max_queued %s",
 		who, card, commit[:12], trailer, pstate, queued)
 	if pstate != "realized" {

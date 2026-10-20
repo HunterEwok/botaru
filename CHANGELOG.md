@@ -33,6 +33,20 @@ Entries are grouped by area; within a group the newest entry comes first.
 
 ### Reference Implementation (impl/)
 
+- The runtime gets the full result schema and fixes its answer before `complete` (impl/ARCHITECTURE.md "The
+  attempt record"): the claim payload carries `full_result_schema` beside the unchanged `result_schema`, with the
+  `enum_from` values of the attempt and the patterns of `x-botaru-format`; `botaru-agent` shows it to the model with
+  the rule to omit unknown optional fields, drops a `null` of an optional field, checks the answer locally and gives
+  a failing one a single repair turn with the failed paths, so a format error no longer spends the attempt (OUT-1).
+- `observations_query` lists the subjects of its series as a closed list and says which kind each series takes, and
+  an analysis task carries `insight_context` (the subjects of the role's work types and, with the evolution on, the
+  manifest fields a proposal may change with their current values), so a real model reads the series that have
+  points and proposes only changes the core takes.
+- `botaru-sim` for real models: the world samples the traffic items of `eth0` too, so every field of
+  `monitor/item_history` has points on every machine; `incident-and-commission` and `scaffold-evolution` seed the
+  core series of the investigations with a history of repeated long attempts before the analysis; the evolution
+  mode (scenario and console command `evolve`) also writes a load check into the instruction of `ops.insight.v1` in
+  the farm git, and `accepted_and_realized` takes any lower `max_queued`.
 - Fixes found by the first `botaru-sim -real` runs on Claude Haiku 4.5 (the mock had hidden them): the built-in
   tool `request_action` has no `oneOf` at the top of its input schema, which the Messages API refuses (the
   per-action argument schemas are now branches of `anyOf` under `args`; `requestAction` checks the pairing as

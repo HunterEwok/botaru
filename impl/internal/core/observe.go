@@ -1278,17 +1278,99 @@ func (c *Core) obsTool(cat *Catalog, g *toolsGrant) *catalogTool {
 	for _, id := range slices.Sorted(mapKeys(c.rollups())) {
 		rollups = append(rollups, id)
 	}
+	subject := map[string]any{"type": "string", "maxLength": 152, "pattern": "^[a-z][a-z_]{0,31}:[a-z0-9][a-z0-9_.@-]{0,119}$"}
+	// The subjects the series may have in this tenant, as a closed list: a model that guesses a
+	// subject reads an empty series and finds nothing.
+	bySeries, subjects := c.obsSubjects(cat, g, enum)
+	if len(subjects) > 0 {
+		subject["enum"] = subjects
+	}
 	schema := map[string]any{
 		"type": "object", "additionalProperties": false, "required": []any{"series", "subject", "window", "rollup"},
 		"properties": map[string]any{
 			"series":  map[string]any{"enum": enum},
-			"subject": map[string]any{"type": "string", "maxLength": 152, "pattern": "^[a-z][a-z_]{0,31}:[a-z0-9][a-z0-9_.@-]{0,119}$"},
+			"subject": subject,
 			"window":  map[string]any{"enum": []any{"1d", "7d", "14d", "93d"}},
 			"rollup":  map[string]any{"enum": rollups},
 		},
 	}
-	desc := "Read the rollups of an observation series of this tenant: only numbers and values of closed lists. The subject is kind:id, for example task_type:demo.db.backup.v1, schedule:report-nightly or host:db1."
-	return &catalogTool{Name: obsToolName, Builtin: true, Tool: toolspec.Tool{Description: desc}, Schema: schema}
+	var desc strings.Builder
+	desc.WriteString("Read the rollups of an observation series of this tenant: only numbers and values of closed lists. The subject is kind:id of the series' catalog kind:")
+	for _, s := range enum {
+		name := asString(s)
+		fmt.Fprintf(&desc, " %s takes %s", name, bySeries[name])
+		desc.WriteString(";")
+	}
+	desc.WriteString(" a series of a closed list (such as farm.task.outcome) takes the rollup window.share, a numeric one window.mean, window.p95 or a stored day rollup.")
+	return &catalogTool{Name: obsToolName, Builtin: true, Tool: toolspec.Tool{Description: desc.String()}, Schema: schema}
+}
+
+// obsSubjects are the subjects the readable series of a grant may have in its tenant: for each
+// series a short note of the kind and its ids, and the sorted list of all of them. A task type
+// subject is a type of the role (an analysis reads its own role's results), or any type of the
+// set for a reviewer or an aggregator; a schedule, host or resource subject is one of the
+// tenant (OBV-3, TEN-4).
+func (c *Core) obsSubjects(cat *Catalog, g *toolsGrant, series []any) (map[string]string, []any) {
+	known := c.tenantSeries(cat, g.Tenant)
+	ids := func(kind string) []string {
+		switch kind {
+		case "task_type":
+			if r, ok := cat.Roles[g.Role]; ok && g.Purpose == "insight" {
+				var out []string
+				for _, t := range r.Claims {
+					if _, ok := cat.TaskTypes[t]; ok {
+						out = append(out, t)
+					}
+				}
+				return out
+			}
+			return slices.Sorted(mapKeys(cat.TaskTypes))
+		case "schedule":
+			if tv := cat.Tenants[g.Tenant]; tv != nil {
+				return slices.Sorted(mapKeys(tv.Schedules))
+			}
+			return nil
+		case "role":
+			return slices.Sorted(mapKeys(cat.Roles))
+		case "host":
+			return catalogHosts(cat, g.Tenant)
+		}
+		return catalogResources(cat, g.Tenant)
+	}
+	notes := map[string]string{}
+	seen := map[string]bool{}
+	var all []string
+	for _, s := range series {
+		name := asString(s)
+		kind := known[name].CatalogKind
+		list := ids(kind)
+		var subs []string
+		for _, id := range list {
+			sub := kind + ":" + id
+			if !c.subjectOfTenant(cat, g.Tenant, kind, sub) {
+				continue
+			}
+			subs = append(subs, sub)
+			if !seen[sub] {
+				seen[sub] = true
+				all = append(all, sub)
+			}
+		}
+		switch {
+		case len(subs) == 0:
+			notes[name] = kind + ":<id>"
+		case len(subs) > 6:
+			notes[name] = kind + ":<id>, such as " + strings.Join(subs[:6], ", ")
+		default:
+			notes[name] = strings.Join(subs, " or ")
+		}
+	}
+	slices.Sort(all)
+	out := make([]any, len(all))
+	for i, v := range all {
+		out[i] = v
+	}
+	return notes, out
 }
 
 // obsToolCall answers observations_query; reading sets no untrusted_seen (OBV-3).

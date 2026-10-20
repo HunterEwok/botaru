@@ -46,6 +46,9 @@ const (
 	itemHTTP = "net.tcp.service[http]"
 	itemCPU  = "system.cpu.load[all,avg1]"
 	itemMem  = "vm.memory.utilization"
+	// The traffic of the interface eth0, in bytes per second.
+	itemNetIn  = "net.if.in[eth0]"
+	itemNetOut = "net.if.out[eth0]"
 )
 
 // seriesKey is the key of a series: the host and the item key.
@@ -101,8 +104,13 @@ func sample(w *World, at time.Time, r *rand.Rand) {
 			w.Sample(seriesKey(id, diskItem(m, "pused")), at, 100*(1-d.FreeRatio))
 			w.Sample(seriesKey(id, diskItem(m, "pfree")), at, 100*d.FreeRatio)
 		}
-		w.Sample(seriesKey(id, itemCPU), at, 0.3+r.Float64()*0.4)
+		cpu := 0.3 + r.Float64()*0.4
+		w.Sample(seriesKey(id, itemCPU), at, cpu)
 		w.Sample(seriesKey(id, itemMem), at, 40+r.Float64()*10)
+		// The traffic follows the load; it takes no draw of its own, so the logs of a seed stay
+		// as they were.
+		w.Sample(seriesKey(id, itemNetIn), at, 2e5+cpu*1e6)
+		w.Sample(seriesKey(id, itemNetOut), at, 5e5+cpu*3e6)
 		if s := h.Services[UnitNginx]; s != nil {
 			up := 0.0
 			if s.State == "active" {

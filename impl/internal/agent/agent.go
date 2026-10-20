@@ -101,12 +101,18 @@ type attemptPayload struct {
 	Instruction  string         `json:"instruction"`
 	Handles      map[string]any `json:"handles"`
 	ResultSchema map[string]any `json:"result_schema"`
+	// FullResultSchema is the schema complete checks the result against: enum_from with the
+	// catalog values of the attempt, x-botaru-format with its pattern (OUT-1).
+	FullResultSchema map[string]any `json:"full_result_schema"`
 	// Facts are the bot memory of the acting identity (MEM-6); MyOutcomes are the author's
 	// earlier proposals of an analysis task (DIG-7, INS-5).
 	Facts      any `json:"facts"`
 	MyOutcomes any `json:"my_outcomes"`
 	// Evolution are the variants and review rules of the role in an analysis task (EVO-5).
 	Evolution any `json:"evolution"`
+	// InsightContext is the reference of an analysis task: the subjects of the role's work and
+	// the fields a proposal may change (extension field insight_context).
+	InsightContext any `json:"insight_context"`
 	// Skills are the role's skill-refs and SkillFiles their files by path (SKL-2).
 	Skills     []skillRef                   `json:"skills"`
 	SkillFiles map[string]map[string]string `json:"skill_files"`
@@ -129,6 +135,9 @@ func dataText(p attemptPayload) string {
 	}
 	if p.Evolution != nil {
 		data["evolution"] = p.Evolution
+	}
+	if p.InsightContext != nil {
+		data["insight_context"] = p.InsightContext
 	}
 	if len(data) == 0 {
 		return ""
@@ -224,6 +233,22 @@ const maxTurns = 10
 // repairPrompt asks a model that answered in prose for the result object.
 const repairPrompt = "Your answer is not a JSON object. Answer again with one JSON object that matches the JSON Schema of the instructions, and nothing else: put your answer into its fields."
 
+// schemaRepairPrompt asks a model whose result object failed the local check of the full
+// schema to fix the fields; %s is the validation detail.
+const schemaRepairPrompt = "Your answer did not match the required JSON schema (%s). Fix the invalid fields, omit optional fields you do not have exact values for, and reply with the valid JSON object only."
+
+// nullRule is the rule of the answer format for optional fields.
+const nullRule = "Omit optional fields when their value is unknown or not applicable; never set an optional field to null, \"\" or \"N/A\" unless the schema explicitly allows null."
+
+// resultSchema is the schema the model is shown and the answer is checked against: the full
+// schema of the payload, else the projection of a core that sends none.
+func (p attemptPayload) resultSchema() map[string]any {
+	if len(p.FullResultSchema) > 0 {
+		return p.FullResultSchema
+	}
+	return p.ResultSchema
+}
+
 // run is the runtime loop of one attempt: model calls through P4, and between them the tool
 // calls the model asks for, through P3 with the attempt's tools handle. It returns the result
 // object, or a reason code from reasons.yaml.
@@ -240,10 +265,12 @@ func (a *Agent) run(ctx context.Context, p attemptPayload) (map[string]any, stri
 	}
 	defer func() { _ = removeSkills(dir) }()
 	system += section
-	if p.ResultSchema != nil {
-		schema, _ := json.Marshal(p.ResultSchema)
-		system += "\n\nAnswer with one JSON object that matches this JSON Schema, and nothing else:\n" + string(schema)
+	rschema := p.resultSchema()
+	if rschema != nil {
+		schema, _ := json.Marshal(rschema)
+		system += "\n\n" + nullRule + "\nAnswer with one JSON object that matches this JSON Schema, and nothing else:\n" + string(schema)
 	}
+	check := compileSchema(rschema)
 	hc := a.cfg.Core.HTTP
 	if hc == nil {
 		hc = &http.Client{Timeout: 10 * time.Minute}
@@ -271,7 +298,7 @@ func (a *Agent) run(ctx context.Context, p attemptPayload) (map[string]any, stri
 		first = append(first, anthropic.NewTextBlock(d))
 	}
 	messages := []anthropic.MessageParam{anthropic.NewUserMessage(first...)}
-	repaired := false
+	repaired, schemaRepaired := false, false
 	for turn := 0; turn < maxTurns; turn++ {
 		// The catalog is read before every model call: P4 requires the current one, and an
 		// apply between turns may change it (GW-1).
@@ -312,8 +339,8 @@ func (a *Agent) run(ctx context.Context, p attemptPayload) (map[string]any, stri
 					text.WriteString(b.Text)
 				}
 			}
-			res, err := parseResult(text.String(), p.ResultSchema)
-			if err != nil && !repaired && p.ResultSchema != nil && turn+1 < maxTurns {
+			res, err := parseResult(text.String(), rschema)
+			if err != nil && !repaired && rschema != nil && turn+1 < maxTurns {
 				// A model that answered in prose gets one more turn to put the answer into
 				// the result object; a second prose answer ends the attempt.
 				repaired = true
@@ -322,6 +349,16 @@ func (a *Agent) run(ctx context.Context, p attemptPayload) (map[string]any, stri
 			}
 			if err != nil {
 				return nil, "output_schema_invalid", err
+			}
+			stripNullOptionals(res, rschema)
+			if detail := checkResult(check, res); detail != "" && !schemaRepaired && turn+1 < maxTurns {
+				// A result the core would refuse (OUT-1) gets one turn to fix the fields the
+				// check names, before complete spends the attempt; what the second answer
+				// holds goes to complete, where the core decides.
+				schemaRepaired = true
+				a.log.Info("result repair", "task", p.Task.ID)
+				messages = append(messages, msg.ToParam(), anthropic.NewUserMessage(anthropic.NewTextBlock(fmt.Sprintf(schemaRepairPrompt, detail))))
+				continue
 			}
 			return res, "", nil
 		}
