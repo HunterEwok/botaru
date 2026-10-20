@@ -731,6 +731,8 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 	// model for a matching answer. The instruction itself stays the trusted text from git.
 	if tt.ResultSchema != nil {
 		payload["result_schema"] = c.payloadResultSchema(cat, w.Tenant, tt)
+	} else if rs := c.coreResultSchema(tt, record); rs != nil {
+		payload["result_schema"] = rs
 	}
 	// A type that reads bot memory gets the facts of the acting identity (MEM-6).
 	if facts, err := c.taskFacts(ctx, tx, now, cat, w, typ, id, acting, record); err != nil {

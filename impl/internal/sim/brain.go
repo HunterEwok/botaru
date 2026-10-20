@@ -196,6 +196,17 @@ func fits(schema map[string]any, in map[string]any) (map[string]any, bool) {
 	return out, true
 }
 
+// topLevelCombinator names the oneOf, allOf or anyOf at the top of a tool's input schema, or
+// is empty.
+func topLevelCombinator(schema map[string]any) string {
+	for _, k := range []string{"oneOf", "allOf", "anyOf"} {
+		if _, ok := schema[k]; ok {
+			return k
+		}
+	}
+	return ""
+}
+
 func (b *Brain) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	raw, err := io.ReadAll(io.LimitReader(r.Body, 8<<20))
 	var req brainRequest
@@ -204,6 +215,16 @@ func (b *Brain) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(400)
 		_, _ = io.WriteString(w, `{"type":"error","error":{"type":"invalid_request_error","message":"the request is not a Messages request"}}`)
 		return
+	}
+	// The Messages API refuses a tool whose input schema has oneOf, allOf or anyOf at the top
+	// level; the mock refuses it the same way, so a mock run catches such a tool.
+	for i, t := range req.Tools {
+		if k := topLevelCombinator(t.InputSchema); k != "" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(400)
+			_, _ = fmt.Fprintf(w, `{"type":"error","error":{"type":"invalid_request_error","message":"tools.%d.custom.input_schema: input_schema does not support oneOf, allOf, or anyOf at the top level (%s)"}}`, i, k)
+			return
+		}
 	}
 	n := b.calls.Add(1)
 	system := text(req.System)
@@ -245,6 +266,13 @@ func (b *Brain) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		stop = "tool_use"
 	} else {
 		content = []map[string]any{{"type": "text", "text": answer(system, goal, seen.String())}}
+	}
+	// The Messages API marks a tool call by the model with caller {type: direct}, and the
+	// runtime sends it back in the history; the mock answers the same way.
+	for _, bl := range content {
+		if bl["type"] == "tool_use" {
+			bl["caller"] = map[string]any{"type": "direct"}
+		}
 	}
 	out, _ := json.Marshal(content)
 	resp := map[string]any{"id": fmt.Sprintf("msg_sim%06d", n), "type": "message", "role": "assistant", "model": req.Model,

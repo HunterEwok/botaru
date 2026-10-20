@@ -2,7 +2,7 @@ schema: urn:botaru:schema:p4-anthropic-messages-request:1
 rules:
 - GW-1
 description: 'A runtime request to P4 outside the allowlist: service_tier, region field inference_geo, tool_choice of kind
-  any, mcp_servers, temperature out of range (D-87 (4)).'
+  any, mcp_servers, temperature out of range, a tool call made by a provider server tool (D-87 (4)).'
 cases:
 - model: base-std
   max_tokens: 400
@@ -29,3 +29,13 @@ cases:
   temperature: 1.5
   messages:
   - {role: user, content: Hello}
+- model: base-std
+  max_tokens: 400
+  messages:
+  - {role: user, content: Check nginx}
+  - role: assistant
+    content:
+    - {type: tool_use, id: toolu_01, name: cmd_run, input: {command: service_status}, caller: {type: code_execution_20250825, tool_id: srvtoolu_01}}
+  - role: user
+    content:
+    - {type: tool_result, tool_use_id: toolu_01, content: active}

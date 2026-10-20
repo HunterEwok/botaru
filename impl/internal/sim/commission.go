@@ -144,7 +144,7 @@ func (d *Director) ensureInvestigation(ctx context.Context) error {
 // worker ran on its schedule.
 func labRequests(ctx context.Context, d *Director, sc string) error {
 	for _, ask := range []struct{ who, chat, text, want, check string }{
-		{"alice", "alice-dm", "/geo What is in the bathy-50m raster and the map-areas layer?", "GTiff", "geo_described"},
+		{"alice", "alice-dm", "/geo What is in the bathy-50m raster and the map-areas layer?", "GTiff|GeoTIFF", "geo_described"},
 		{"bob", "bob-dm", "/pipeline Why did the last CTD run fail?", "st-05", "pipeline_explained"},
 	} {
 		key, err := d.S.Say(ask.who, ask.chat, ask.text)
@@ -156,7 +156,10 @@ func labRequests(ctx context.Context, d *Director, sc string) error {
 			return err
 		}
 		raw, _ := json.Marshal(result)
-		d.check(sc, ask.check, state == "completed" && strings.Contains(string(raw), ask.want), "state %s %s: %s", state, reason, clip(string(raw), 200))
+		// want lists the words of which the answer names one: the driver's name GTiff, or
+		// GeoTIFF as a real model writes it.
+		named := slices.ContainsFunc(strings.Split(ask.want, "|"), func(w string) bool { return strings.Contains(string(raw), w) })
+		d.check(sc, ask.check, state == "completed" && named, "state %s %s: %s", state, reason, clip(string(raw), 200))
 	}
 	var checks int
 	err := d.S.waitFor(ctx, d.Timeout+5*time.Minute, func() (bool, error) {

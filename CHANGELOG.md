@@ -23,12 +23,26 @@ Entries are grouped by area; within a group the newest entry comes first.
   `evolution` (`insight-evolution.schema.json`) without reason codes (EVO-4..EVO-6, GOV-29); the revert in one
   command, with the realization field `revert_absent` for the fields a change added (EVO-10). The eval check
   `tools_allowed` takes `tools_required`.
+- The P4 request allowlist (`p4-anthropic-messages-request.schema.json`) accepts `caller` of type `direct` on a
+  `tool_use` block of the history: the Messages API marks every tool call of the model with it, and a runtime
+  that sends the history back was refused at its second model call; a call made by a provider server tool still
+  does not pass (GW-1).
 - The demo catalog and `examples/README.md` give trigger 4401 the monitoring class `disk_free` of
   `spec/model/monitor-map.yaml` instead of `disk_full`, which is an incident class, not a monitoring class: the
   free space problem now raises `alarm.disk.free.low`.
 
 ### Reference Implementation (impl/)
 
+- Fixes found by the first `botaru-sim -real` runs on Claude Haiku 4.5 (the mock had hidden them): the built-in
+  tool `request_action` has no `oneOf` at the top of its input schema, which the Messages API refuses (the
+  per-action argument schemas are now branches of `anyOf` under `args`; `requestAction` checks the pairing as
+  before); the claim payload carries the core's own result schema for a type that declares none (the analysis
+  envelope `insight-result`, the lens `review-result` or the necessity output), with every `$ref` inlined; the
+  runtime passes the task's params beside the goal (the incident view of `manager.incident.respond.v1` never
+  reached the model) and the current time, gives a model that answered in prose one more turn for the result
+  object, and takes a plain answer as `{answer}` for a type with no result schema. The sim mock refuses a tool
+  with a top-level `oneOf`/`allOf`/`anyOf` and marks its tool calls with `caller` like the Messages API, the
+  console prints a real model's final answer, and the `geo_described` check also takes "GeoTIFF".
 - `botaru-sim` runs the scaffold evolution (D-120, [impl/SIM.md](impl/SIM.md)): the stand keeps its set in a
   farm git under `<work>/repo` and applies every change as a commit of it, `demo` turns on
   `insights.evolution` and `insights.gate.required`, `bob` holds `proposal.gate:reliability`, and hidden cases of
