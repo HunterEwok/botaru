@@ -43,6 +43,12 @@ func load(root string) *shared {
 		if s.tx, s.err = texts.Load(root, ""); s.err != nil {
 			return
 		}
+		// HelloBotManifests drops the fields of the profiles the build does not claim; the cache
+		// is for every test, so it is read with the claims of the build, not with the profile
+		// override a test may have set when the process first gets here.
+		if prev := spec.SetProfileOverride(); prev != nil {
+			defer spec.SetProfileOverride(prev...)
+		}
 		if s.ms, s.err = HelloBotManifests(root); s.err != nil {
 			return
 		}
