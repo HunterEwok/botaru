@@ -61,3 +61,46 @@ func TestMigrateAndInit(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// TestMigrateUpToDate: on a store with every migration applied Migrate applies nothing and
+// changes neither the migration list nor the schema, which the test templates of
+// pgtest.TemplateDSN rely on.
+func TestMigrateUpToDate(t *testing.T) {
+	ctx := context.Background()
+	s, err := Open(ctx, pgtest.DSN(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err := s.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := func() string {
+		var out string
+		err := s.Pool.QueryRow(ctx, `SELECT
+			(SELECT string_agg(name || '@' || applied_at::text, ',' ORDER BY name) FROM schema_migrations) || '|' ||
+			(SELECT string_agg(oid::text || ':' || relname, ',' ORDER BY oid) FROM pg_class WHERE relnamespace = 'public'::regnamespace)`).Scan(&out)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	before := snapshot()
+	names, err := migrationNames()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := s.Pool.QueryRow(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&n); err != nil || n != len(names) {
+		t.Fatalf("applied %d of %d migrations: %v", n, len(names), err)
+	}
+	if err := s.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if after := snapshot(); after != before {
+		t.Fatalf("a second Migrate changed the store:\nbefore %s\nafter  %s", before, after)
+	}
+	if k := MigrationsKey(); len(k) != 64 || k != MigrationsKey() {
+		t.Fatalf("migrations key %q", k)
+	}
+}

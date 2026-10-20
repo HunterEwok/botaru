@@ -30,7 +30,7 @@ import (
 type Config struct {
 	// Root is the repository root (spec, examples).
 	Root string
-	// DSN is an empty database for the store.
+	// DSN is an empty or a migrated database for the store.
 	DSN string
 	// Work is the work directory of the world; it must be empty.
 	Work string

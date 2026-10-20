@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/HunterEwok/botaru/impl/internal/pgtest"
 	"github.com/HunterEwok/botaru/impl/internal/spec"
+	"github.com/HunterEwok/botaru/impl/internal/testbench"
 )
 
 // syncBuffer is a console the test reads while the stand writes it.
@@ -55,7 +55,7 @@ func startStand(t *testing.T, maxMicros int64) (*Stand, *syncBuffer) {
 	if err := os.Mkdir(world, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	s, err := Start(t.Context(), Config{Root: root, DSN: pgtest.DSN(t), Work: world, Exe: exe, MaxMicros: maxMicros, Seed: 42, Step: time.Second, Log: log})
+	s, err := Start(t.Context(), Config{Root: root, DSN: testbench.MigratedDSN(t), Work: world, Exe: exe, MaxMicros: maxMicros, Seed: 42, Step: time.Second, Log: log})
 	if err != nil {
 		t.Fatal(err)
 	}
