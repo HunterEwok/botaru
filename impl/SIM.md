@@ -127,7 +127,8 @@ Each step (`-step`, 5 seconds by default) the physics:
 
 - fills `db1:/data` while the fault `disk-filling` is in play;
 - samples the series the monitoring system serves (`vfs.fs.size[<mount>,pused|pfree]`, `system.cpu.load[all,avg1]`,
-  `vm.memory.utilization`, `net.tcp.service[http]`);
+  `vm.memory.utilization`, the in and out traffic of `eth0`, `net.tcp.service[http]`) on every machine, so each
+  closed field of `monitor/item_history` (`cpu_load`, `mem_used`, `disk_used`, `net_in`, `net_out`) has points;
 - opens and closes the problems of the catalog triggers: `4407` (`service_down`) while nginx on `web1` is not
   active, `4401` (`disk_free`) below 15% free on `db1:/data` (it closes at 20%);
 - appends the log lines of the moment: `502` with `connect() failed` while app-api is down, `504` with `upstream
@@ -178,7 +179,10 @@ and the result schema in the system prompt). It plays a plain operator:
   scenario `scaffold-evolution` and the console command `evolve on` turn on, it proposes a manifest change instead:
   `spec.limits.max_queued` of the Tenant `demo` from 5000 down to 4000, with the attempts of the investigations
   (`farm.task.attempts`) as the trial metric. A real model gets the core's own prompt and input, the `evolution`
-  block included, and proposes what it finds;
+  block included, and proposes what it finds; for it the evolution mode also extends the instruction of
+  `ops.insight.v1` in the farm git with a load check (read the attempts and durations of the investigations, and
+  when they are high hand in the lower `max_queued` as a manifest change), applied as a commit and restored when the
+  mode ends;
 - a commission review passes the proposal with a score of 3 and a forecast that agrees with it;
 - the farm manager answers an incident with what it found and the operation it proposes.
 
@@ -199,6 +203,13 @@ call would (the example profile prices), so the fuse can be tried without a key.
 | `incident-and-commission` | the pipeline fills `db1:/data` to 3% free; then the analysis of `ops-reader` runs | the problem opened, the incident `disk_full` opened, the farm manager answered it, the incident resolved after the cleanup; a proposal was created, the commission reviewed it, it reached a verdict and `bob` decided it on its card (a manifest change of a real model passes the merge gate first, which the director runs once as the operator) |
 | `lab-requests` | `alice` asks about the raster and the layer, `bob` why the last CTD run failed | both tasks completed and named what the data shows, and `data-job` ran the site checks on its schedule |
 | `scaffold-evolution` | the analysis of `ops-reader` runs in the evolution mode; the stand plays the operator with the farm git | `proposal_manifest_created`: a manifest change was created and its variant is `pending` in `variant.list`; `commission_recommended`: after the lens reviews of `reviewer-a` and `reviewer-b` it is `recommended`; `gate_passed`: the merge gate on the farm git at the applied commit passed (diff, lint and coupling passed, and the regression and holdout steps of the stand's suite), recorded through P2 `proposal.gate` as `bob`; `accepted_and_realized`: the digest brought the card to `bob`, the policy accepted it (`realizing`, with its trial), and the patch with `Botaru-Proposal` committed to the farm git and applied moved it to `realized`; `reverted_and_rule_recorded`: the revert in one step (`gate.Revert` with `harm_observed`, then apply) moved it to `reverted`, the Tenant manifest has its hash from before again (EVO-10), the variant has the outcome `reverted`, `review_rule.list` holds the rule of the approach `Tenant.spec.limits.max_queued:down` (EVO-3), and the next analysis that proposes it again is refused with `rejected(review_rule)` |
+
+Before the analysis runs, `incident-and-commission` and `scaffold-evolution` write the history of the world into the
+core series of `ops-reader`: 18 past investigations over the last day (`farm.task.outcome`, `farm.task.attempts`,
+`farm.attempt.duration` of `task_type:ops.investigate.v1`), two of three with all three attempts near the timeout and a third failed, so the
+analysis has a load to read rather than the one investigation of a fresh stand. The keys are fixed, so a second
+seeding writes nothing. `accepted_and_realized` takes any `max_queued` below 5000, the safe direction a real model
+may choose.
 
 `-scenario all` runs them in this order. Between scenarios the world is made healthy again, and a tenant admin
 releases the holds the incidents set (`contain_auto`; the core keeps them until they expire). A scenario waits at

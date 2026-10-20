@@ -81,6 +81,11 @@ type Stand struct {
 	watched int
 	// insights says whether the analysis schedule of ops-reader runs.
 	insights bool
+	// insightInstruction is the instruction of ops.insight.v1 before the evolution mode
+	// extended it, kept while the mode is on.
+	insightInstruction string
+	// evolveActive says whether the farm git holds the extended instruction.
+	evolveActive bool
 	// held is set once the holds of the fuse are set.
 	held    bool
 	spent   int64
@@ -708,21 +713,25 @@ func (s *Stand) CheckFuse(ctx context.Context) error {
 	return nil
 }
 
-// ReleaseContainment releases the active holds the incidents set (contain_auto) through P2, as
-// a tenant admin does once the cause is gone.
+// ReleaseContainment releases the active holds the incidents set (contain_auto) and the farm
+// manager safeguard through P2, as a tenant admin and the farm operator do once the cause is gone.
 func (s *Stand) ReleaseContainment(ctx context.Context) error {
-	// Only the containment of incidents (reason contain_auto): not the maintenance holds of the
-	// monitoring system (MON-9) nor the core's own guards, which a person releases on purpose.
-	rows, err := s.Bench.Store().Pool.Query(ctx, `SELECT id, tenant FROM holds WHERE author_kind = 'contain_auto' AND reason = 'contain_auto'
-		AND state = 'active' AND coalesce(source, '') NOT LIKE 'system:%'`)
+	// The containment of incidents (reason contain_auto): not the maintenance holds of the
+	// monitoring system (MON-9) nor the other guards of the core, which a person releases on
+	// purpose.
+	// Besides them, the safeguard of the farm manager seat (manager_breaker, MGR-14), which a
+	// real model trips with three refused control operations: the farm operator reads its page
+	// and releases it between scenarios, so the next incident has a manager again.
+	rows, err := s.Bench.Store().Pool.Query(ctx, `SELECT id, tenant, reason FROM holds WHERE author_kind = 'contain_auto'
+		AND (reason = 'contain_auto' AND coalesce(source, '') NOT LIKE 'system:%' OR reason = 'manager_breaker') AND state = 'active'`)
 	if err != nil {
 		return err
 	}
-	type hold struct{ id, tenant string }
+	type hold struct{ id, tenant, reason string }
 	var holds []hold
 	for rows.Next() {
 		var h hold
-		if err := rows.Scan(&h.id, &h.tenant); err != nil {
+		if err := rows.Scan(&h.id, &h.tenant, &h.reason); err != nil {
 			rows.Close()
 			return err
 		}
@@ -732,6 +741,10 @@ func (s *Stand) ReleaseContainment(ctx context.Context) error {
 	for _, h := range holds {
 		if err := s.Bench.P2(ctx, h.tenant, "hold.release", map[string]any{"id": h.id}, nil); err != nil {
 			s.log.Addf(KindDirector, "releasing the incident hold %s: %v", h.id, err)
+			continue
+		}
+		if h.reason == "manager_breaker" {
+			s.log.Addf(KindDirector, "the farm operator released the safeguard hold %s of the farm manager seat (manager_breaker)", h.id)
 			continue
 		}
 		s.log.Addf(KindDirector, "a tenant admin released the incident hold %s", h.id)

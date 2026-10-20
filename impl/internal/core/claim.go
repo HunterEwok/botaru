@@ -729,10 +729,21 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 	payload["reply_locale"] = rl
 	// Implementation extension (MAN-3): the result schema, so that the runtime can ask the
 	// model for a matching answer. The instruction itself stays the trusted text from git.
+	// Beside it, full_result_schema is the schema complete checks the result against (OUT-1):
+	// the enum_from leaves with the catalog values fixed for this attempt, x-botaru-format with
+	// the pattern and length of the format, so the runtime can check an answer before it hands
+	// it in.
 	if tt.ResultSchema != nil {
-		payload["result_schema"] = c.payloadResultSchema(cat, w.Tenant, tt)
+		rs := c.payloadResultSchema(cat, w.Tenant, tt)
+		payload["result_schema"] = rs
+		if full := c.fullResultSchema(cat, w.Tenant, mark, rs, att.EnumFrom); full != nil {
+			payload["full_result_schema"] = full
+		}
 	} else if rs := c.coreResultSchema(tt, record); rs != nil {
 		payload["result_schema"] = rs
+		// The core's own schemas have no enum_from and no x-botaru-format: a second copy is
+		// already the full schema.
+		payload["full_result_schema"] = copySchema(rs)
 	}
 	// A type that reads bot memory gets the facts of the acting identity (MEM-6).
 	if facts, err := c.taskFacts(ctx, tx, now, cat, w, typ, id, acting, record); err != nil {
@@ -747,12 +758,18 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 			return nil, err
 		}
 		payload["my_outcomes"] = mo
+		// Extension field insight_context (MAN-3): the subjects of the role's work and, with
+		// the evolution on, the manifest fields a proposal of this tenant may change, so that
+		// a model reads the right series and proposes only what the core takes (PRP-3).
+		evoOn, err := evolutionOn(ctx, tx, w.Tenant)
+		if err != nil {
+			return nil, err
+		}
+		payload["insight_context"] = insightContext(cat, w.Tenant, w.Role, evoOn)
 		// And the evolution block of its role: variants of the archive with different
 		// approaches and the live review rules, outcome classes only (EVO-3, EVO-5).
 		// Only for a tenant with the evolution on: the input of 0.3.0 stays as it was otherwise.
-		if on, err := evolutionOn(ctx, tx, w.Tenant); err != nil {
-			return nil, err
-		} else if on {
+		if evoOn {
 			evo, err := evolutionInput(ctx, tx, w.Tenant, w.Role)
 			if err != nil {
 				return nil, err

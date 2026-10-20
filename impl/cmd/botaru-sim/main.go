@@ -498,8 +498,9 @@ func command(ctx context.Context, d *sim.Director, line string, out io.Writer) b
 			err = errors.New("evolve on|off")
 			break
 		}
-		d.S.Brain.SetEvolve(f[1] == "on")
-		fmt.Fprintf(out, "the mock model's analyses propose %s\n", map[bool]string{true: "a manifest change", false: "changes of the kind none"}[f[1] == "on"])
+		if err = d.S.SetEvolve(ctx, f[1] == "on"); err == nil {
+			fmt.Fprintf(out, "the analyses %s\n", map[bool]string{true: "do the queue check and propose a manifest change", false: "follow their own instruction"}[f[1] == "on"])
+		}
 	case "gate":
 		if len(f) != 2 {
 			err = errors.New("gate PROPOSAL")
