@@ -967,6 +967,16 @@ func (s *Stand) onModelCall(req, resp []byte, status int) {
 	}
 	if len(tools) > 0 {
 		msg += "; asks for " + strings.Join(tools, "; ")
+	} else if s.cfg.Real {
+		// The final answer of a real model is printed too: a result the core refuses
+		// (output_schema_invalid) can then be read in the log.
+		var text strings.Builder
+		for _, b := range r.Content {
+			if b.Type == "text" {
+				text.WriteString(b.Text)
+			}
+		}
+		msg += "; answers " + clip(strings.Join(strings.Fields(text.String()), " "), 600)
 	}
 	s.log.Add(KindModel, msg, map[string]any{"model": r.Model, "input_tokens": in, "output_tokens": r.Usage.Out, "stop": r.StopReason,
 		"cost_micros": cost, "tools": tools})

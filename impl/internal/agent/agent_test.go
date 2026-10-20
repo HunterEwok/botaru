@@ -23,16 +23,21 @@ func TestParseResult(t *testing.T) {
 	if _, err := parseResult("plain", map[string]any{"required": []any{"a", "b"}}); err == nil {
 		t.Error("plain text passed a two-field result")
 	}
+	// A type with no result schema takes the plain answer as text.
+	if r, err := parseResult("The volume is full.", nil); err != nil || r["answer"] != "The volume is full." {
+		t.Errorf("no schema: %v %v", r, err)
+	}
 }
 
-// The facts and "My outcomes" of the claim payload reach the model as data beside the goal.
+// The params, the facts and "My outcomes" of the claim payload reach the model as data beside
+// the goal.
 func TestDataText(t *testing.T) {
 	var p attemptPayload
-	if err := json.Unmarshal([]byte(`{"task":{"id":"t1"},"facts":[{"key":"k1"}],"my_outcomes":{"rows":[]}}`), &p); err != nil {
+	if err := json.Unmarshal([]byte(`{"task":{"id":"t1","body":{"goal":"g","params":{"input":{"incident":"inc_1"}}}},"facts":[{"key":"k1"}],"my_outcomes":{"rows":[]}}`), &p); err != nil {
 		t.Fatal(err)
 	}
 	d := dataText(p)
-	if !strings.Contains(d, `"facts":[{"key":"k1"}]`) || !strings.Contains(d, `"my_outcomes":{"rows":[]}`) {
+	if !strings.Contains(d, `"facts":[{"key":"k1"}]`) || !strings.Contains(d, `"my_outcomes":{"rows":[]}`) || !strings.Contains(d, `"params":{"input":{"incident":"inc_1"}}`) {
 		t.Errorf("data text %q", d)
 	}
 	if dataText(attemptPayload{}) != "" {

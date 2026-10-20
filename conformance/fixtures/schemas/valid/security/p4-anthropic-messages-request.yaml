@@ -2,7 +2,8 @@ schema: urn:botaru:schema:p4-anthropic-messages-request:1
 rules:
 - GW-1
 description: A runtime request to P4 within the allowlist; temperature, top_p, top_k and stop_sequences pass as they are,
-  metadata is accepted and dropped before the provider call (D-87 (4)).
+  metadata is accepted and dropped before the provider call (D-87 (4)); a history with the provider's direct tool call
+  (caller of type direct) passes.
 cases:
 - model: base-std
   max_tokens: 400
@@ -18,3 +19,14 @@ cases:
   tool_choice: {type: auto}
   messages:
   - {role: user, content: Daily summary}
+- model: base-std
+  max_tokens: 400
+  messages:
+  - {role: user, content: Check nginx}
+  - role: assistant
+    content:
+    - {type: text, text: Checking.}
+    - {type: tool_use, id: toolu_01, name: cmd_run, input: {command: service_status}, caller: {type: direct}}
+  - role: user
+    content:
+    - {type: tool_result, tool_use_id: toolu_01, content: active}

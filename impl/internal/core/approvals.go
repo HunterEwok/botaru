@@ -227,14 +227,16 @@ func requestableActions(cat *Catalog, g *toolsGrant) []string {
 }
 
 // requestActionTool is the built-in tool of step 7 of the catalog assembly, or nil when the
-// attempt may request no action (APR-1, PRF-1). Its schema holds, for each action, the closed
-// argument schema with the catalog values of the task's mark as enum (APR-2).
+// attempt may request no action (APR-1, PRF-1). Its args hold, as branches of anyOf, the closed
+// argument schema of each action with the catalog values of the task's mark as enum (APR-2).
+// The pairing of action and args is checked by requestAction: the Messages API refuses oneOf,
+// allOf and anyOf at the top level of a tool's input schema.
 func (c *Core) requestActionTool(cat *Catalog, g *toolsGrant) (*catalogTool, error) {
 	actions := requestableActions(cat, g)
 	if len(actions) == 0 {
 		return nil, nil
 	}
-	var variants []any
+	var argsSchemas []any
 	var desc strings.Builder
 	desc.WriteString("Ask for an action of the farm catalog. A person decides on a card; you get the request number and do not wait for the decision. Actions:")
 	names := make([]any, 0, len(actions))
@@ -245,18 +247,15 @@ func (c *Core) requestActionTool(cat *Catalog, g *toolsGrant) (*catalogTool, err
 			return nil, err
 		}
 		names = append(names, name)
-		variants = append(variants, map[string]any{
-			"properties": map[string]any{"action": map[string]any{"const": name}, "args": schema},
-		})
+		argsSchemas = append(argsSchemas, schema)
 		fmt.Fprintf(&desc, "\n- %s: %s", name, strings.TrimSpace(a.Description))
 	}
 	schema := map[string]any{
 		"type": "object", "additionalProperties": false, "required": []any{"action", "args"},
 		"properties": map[string]any{
 			"action": map[string]any{"enum": names},
-			"args":   map[string]any{"type": "object", "maxProperties": 32},
+			"args":   map[string]any{"type": "object", "maxProperties": 32, "anyOf": argsSchemas},
 		},
-		"oneOf": variants,
 	}
 	return &catalogTool{Name: requestActionName, Builtin: true, Tool: toolspec.Tool{Description: desc.String()}, Schema: schema}, nil
 }
