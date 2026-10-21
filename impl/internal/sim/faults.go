@@ -134,15 +134,26 @@ func newProviderFront(target string, seed int64) (*providerFront, error) {
 	if err != nil || u.Scheme == "" || u.Host == "" {
 		return nil, fmt.Errorf("the provider address %q is not a URL", target)
 	}
-	rp := &httputil.ReverseProxy{Rewrite: func(r *httputil.ProxyRequest) { r.SetURL(u) },
-		// A provider that cannot be reached is no answer of the provider (the metrics).
-		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
-			if sw, ok := w.(*statusWriter); ok {
-				sw.transport = true
+	p := &providerFront{r: rand.New(rand.NewPCG(uint64(seed), 29)), injected: map[int]int{}, answered: map[int]int{}}
+	p.pass = &httputil.ReverseProxy{Rewrite: func(r *httputil.ProxyRequest) { r.SetURL(u) },
+		// The answer of the provider itself to a model call (the metrics). A provider that cannot
+		// be reached, or a call P4 gave up on before any answer, goes to the proxy's error
+		// handler and has no status.
+		ModifyResponse: func(resp *http.Response) error {
+			if isModelCall(resp.Request) {
+				p.mu.Lock()
+				p.answered[resp.StatusCode]++
+				p.mu.Unlock()
 			}
-			w.WriteHeader(http.StatusBadGateway)
-		}}
-	return &providerFront{pass: rp, r: rand.New(rand.NewPCG(uint64(seed), 29)), injected: map[int]int{}, answered: map[int]int{}}, nil
+			return nil
+		},
+		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, _ error) { w.WriteHeader(http.StatusBadGateway) }}
+	return p, nil
+}
+
+// isModelCall says a request is a model call of the Messages API.
+func isModelCall(r *http.Request) bool {
+	return r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/messages")
 }
 
 // set puts a fault on for a time: a share of errors with the codes (the first next calls fail
@@ -171,31 +182,6 @@ func (p *providerFront) answers() map[int]int {
 	return maps.Clone(p.answered)
 }
 
-// statusWriter keeps the status of an answer.
-type statusWriter struct {
-	http.ResponseWriter
-	code int
-	// transport is set when the proxy could not reach the provider.
-	transport bool
-}
-
-func (w *statusWriter) WriteHeader(code int) {
-	if w.code == 0 {
-		w.code = code
-	}
-	w.ResponseWriter.WriteHeader(code)
-}
-
-func (w *statusWriter) Write(b []byte) (int, error) {
-	if w.code == 0 {
-		w.code = http.StatusOK
-	}
-	return w.ResponseWriter.Write(b)
-}
-
-// Unwrap lets the proxy flush through the writer.
-func (w *statusWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
-
 // providerErrors are the error answers of the provider (the Messages API error shapes).
 var providerErrors = map[int]struct{ typ, msg string }{
 	500: {"api_error", "Internal server error"},
@@ -204,7 +190,7 @@ var providerErrors = map[int]struct{ typ, msg string }{
 }
 
 func (p *providerFront) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	model := r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/messages")
+	model := isModelCall(r)
 	tenant := ""
 	if k := r.Header.Get("x-api-key"); strings.Contains(k, tenantKeyMark) {
 		key, t, _ := strings.Cut(k, tenantKeyMark)
@@ -257,18 +243,7 @@ func (p *providerFront) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if !model {
-		p.pass.ServeHTTP(w, r)
-		return
-	}
-	sw := &statusWriter{ResponseWriter: w}
-	p.pass.ServeHTTP(sw, r)
-	// A call P4 gave up on before any answer has no status.
-	if sw.code != 0 && !sw.transport {
-		p.mu.Lock()
-		p.answered[sw.code]++
-		p.mu.Unlock()
-	}
+	p.pass.ServeHTTP(w, r)
 }
 
 // crashFile is the mark that kills the next plugin process the toolhosts start (F-2): the
