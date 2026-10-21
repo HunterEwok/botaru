@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"math/rand/v2"
 	"net/http"
 	"net/http/httputil"
@@ -114,6 +115,9 @@ type providerFront struct {
 	// injected counts the errors it answered by status and delayed the calls it held.
 	injected map[int]int
 	delayed  int
+	// answered counts the answers of the provider itself to model calls by status (the
+	// metrics: 429 and 5xx without an injected fault).
+	answered map[int]int
 	// observe sees each model request with the tenant its key names (the invariant watch).
 	observe func(tenant string, body []byte)
 	// halted says the run is halted: a model request is then refused, the one that caused the
@@ -131,7 +135,7 @@ func newProviderFront(target string, seed int64) (*providerFront, error) {
 		return nil, fmt.Errorf("the provider address %q is not a URL", target)
 	}
 	rp := &httputil.ReverseProxy{Rewrite: func(r *httputil.ProxyRequest) { r.SetURL(u) }}
-	return &providerFront{pass: rp, r: rand.New(rand.NewPCG(uint64(seed), 29)), injected: map[int]int{}}, nil
+	return &providerFront{pass: rp, r: rand.New(rand.NewPCG(uint64(seed), 29)), injected: map[int]int{}, answered: map[int]int{}}, nil
 }
 
 // set puts a fault on for a time: a share of errors with the codes (the first next calls fail
@@ -152,6 +156,36 @@ func (p *providerFront) counts() (map[int]int, int) {
 	}
 	return out, p.delayed
 }
+
+// answers are the answers of the provider itself to model calls by status.
+func (p *providerFront) answers() map[int]int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return maps.Clone(p.answered)
+}
+
+// statusWriter keeps the status of an answer.
+type statusWriter struct {
+	http.ResponseWriter
+	code int
+}
+
+func (w *statusWriter) WriteHeader(code int) {
+	if w.code == 0 {
+		w.code = code
+	}
+	w.ResponseWriter.WriteHeader(code)
+}
+
+func (w *statusWriter) Write(b []byte) (int, error) {
+	if w.code == 0 {
+		w.code = http.StatusOK
+	}
+	return w.ResponseWriter.Write(b)
+}
+
+// Unwrap lets the proxy flush through the writer.
+func (w *statusWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
 // providerErrors are the error answers of the provider (the Messages API error shapes).
 var providerErrors = map[int]struct{ typ, msg string }{
@@ -214,7 +248,15 @@ func (p *providerFront) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	p.pass.ServeHTTP(w, r)
+	if !model {
+		p.pass.ServeHTTP(w, r)
+		return
+	}
+	sw := &statusWriter{ResponseWriter: w}
+	p.pass.ServeHTTP(sw, r)
+	p.mu.Lock()
+	p.answered[sw.code]++
+	p.mu.Unlock()
 }
 
 // crashFile is the mark that kills the next plugin process the toolhosts start (F-2): the
@@ -288,6 +330,9 @@ func (s *Stand) injectFault(ctx context.Context, code, tenant, task string) (*Fa
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", f.Code, err)
 	}
+	s.mu.Lock()
+	s.faultRuns = append(s.faultRuns, *run)
+	s.mu.Unlock()
 	s.log.Add(KindFault, fmt.Sprintf("%s in %s: %s", f.Code, run.Scope, f.What), map[string]any{"code": f.Code, "scope": run.Scope, "worker": run.Worker, "task": run.Task, "expect": f.Expect})
 	return run, nil
 }

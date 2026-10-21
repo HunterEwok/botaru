@@ -50,6 +50,11 @@ type Config struct {
 	Model      string
 	RankModels map[int]string
 	Prices     map[string][2]float64
+	// ProviderPrices are the EUR per million tokens the provider bills for a model, which may
+	// be below Prices (Haiku at the price of a short prompt); EstimateModels give each rank the
+	// model the metrics price a mock run's tokens at.
+	ProviderPrices map[string][2]float64
+	EstimateModels map[int]string
 	// MaxMicros is the money fuse: the spend of the store at which every tenant is held.
 	MaxMicros int64
 	// HaltOnViolation halts the run at a breach of a security invariant (I-1 to I-8), as the
@@ -116,6 +121,10 @@ type Stand struct {
 	// for the farm faults F-3 and F-4.
 	runCtx context.Context
 	front  *providerFront
+	// profiles are the model profiles of the applied set by name: their rank (the metrics).
+	profiles map[string]int
+	// faultRuns are the farm faults put on, in order (the metrics: M-5).
+	faultRuns []FaultRun
 	// closing is set once Close begins: no new background work starts (spawn).
 	closing bool
 	done    sync.WaitGroup
@@ -275,7 +284,9 @@ func Start(ctx context.Context, cfg Config) (_ *Stand, err error) {
 		EditSeed: editSeed,
 		Skills:   skills,
 		Edit: func(ms []map[string]any) []map[string]any {
-			return editManifests(farmManifests(ms, farm, s.Insights()), cfg)
+			out := editManifests(farmManifests(ms, farm, s.Insights()), cfg)
+			s.noteProfiles(out)
+			return out
 		},
 		EditTenants: func(ms []map[string]any) []map[string]any {
 			out, err := tenantManifests(ms, f, cfg.Work)
@@ -1336,6 +1347,39 @@ func (s *Stand) onModelCall(req, resp []byte, status int) {
 	}
 	s.log.Add(KindModel, msg, map[string]any{"model": r.Model, "input_tokens": in, "output_tokens": r.Usage.Out, "stop": r.StopReason,
 		"cost_micros": cost, "tools": tools})
+}
+
+// noteProfiles keeps the rank of each model profile of a set the stand applies.
+func (s *Stand) noteProfiles(ms []map[string]any) {
+	ranks := map[string]int{}
+	for _, m := range ms {
+		if m["kind"] == "ModelProfile" {
+			name, _ := mapOf(m["metadata"])["name"].(string)
+			ranks[name] = int(num(mapOf(m["spec"])["rank"]))
+		}
+	}
+	s.mu.Lock()
+	s.profiles = ranks
+	s.mu.Unlock()
+}
+
+// profileModel is the model a profile's tokens are priced at in the metrics: the model of the
+// real run, else the estimate model of the profile's rank.
+func (s *Stand) profileModel(profile string) (string, int) {
+	s.mu.Lock()
+	rank, ok := s.profiles[profile]
+	s.mu.Unlock()
+	switch {
+	case !ok:
+		return "", 0
+	case s.cfg.Real && s.cfg.Model != "":
+		return s.cfg.Model, rank
+	case s.cfg.Real:
+		return rankModel(s.cfg.RankModels, rank), rank
+	case len(s.cfg.EstimateModels) > 0:
+		return rankModel(s.cfg.EstimateModels, rank), rank
+	}
+	return "", rank
 }
 
 // price is the price of the model of an answer; a provider that answers with another id than the

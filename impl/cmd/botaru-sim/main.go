@@ -9,7 +9,6 @@ package main
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -72,13 +71,22 @@ func main() {
 // prices are the list prices of models in USD per million tokens (input, output), checked
 // 2026-10-21; the simulator counts them as EUR, which overstates the spend a little and so trips
 // the fuse early rather than late. A profile has one price, so Haiku 5.5 counts at the price of a
-// prompt over 100K tokens (0.10/0.50 below): a call is never counted below what it costs.
-// -price-in and -price-out override them for -model.
+// prompt over 100K tokens: a call is never counted below what it costs. -price-in and -price-out
+// override them for -model.
 var prices = map[string][2]float64{
 	"claude-fable-5-1":  {10, 50},
 	"claude-opus-5-5":   {4, 20},
 	"claude-sonnet-5-5": {2, 10},
 	"claude-haiku-5-5":  {0.50, 2.50},
+}
+
+// providerPrices are what the provider bills: the list prices, Haiku 5.5 at the price of a
+// short prompt. The metrics price the tokens of a run at them beside the stand's prices.
+var providerPrices = map[string][2]float64{
+	"claude-fable-5-1":  {10, 50},
+	"claude-opus-5-5":   {4, 20},
+	"claude-sonnet-5-5": {2, 10},
+	"claude-haiku-5-5":  {0.10, 0.50},
 }
 
 // rankModels are the models of a rank run: each model profile gets the model of its rank, the
@@ -108,11 +116,11 @@ func priceOf(model string) ([2]float64, bool) {
 }
 
 type options struct {
-	root, dsn, out, scenario, approve, model, keyFile, providerURL, farm, load, halt string
-	mock, real, interactive, keepDB, verbose, showVersion                            bool
-	maxEUR, priceIn, priceOut                                                        float64
-	duration, faultEvery, step, timeout                                              time.Duration
-	seed                                                                             int64
+	root, dsn, out, scenario, approve, model, keyFile, providerURL, farm, load, halt, export string
+	mock, real, interactive, keepDB, verbose, showVersion                                    bool
+	maxEUR, priceIn, priceOut                                                                float64
+	duration, faultEvery, step, timeout                                                      time.Duration
+	seed                                                                                     int64
 	// loadProfile is the load profile of -load, read by check.
 	loadProfile *sim.LoadProfile
 }
@@ -142,6 +150,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	fs.DurationVar(&o.step, "step", 5*time.Second, "the period of the world physics")
 	fs.DurationVar(&o.timeout, "timeout", 3*time.Minute, "how long a scenario waits for each step")
 	fs.Int64Var(&o.seed, "seed", 42, "the seed of the generated logs, faults and random decisions")
+	fs.StringVar(&o.export, "export", "", "a folder the results (results.json, metrics.json, report.md, load.json) and the compressed events are copied to every 5 minutes and after each scenario, in a folder of the run's name")
 	fs.BoolVar(&o.keepDB, "keep-db", false, "keep the run's database for a look afterwards")
 	fs.StringVar(&o.halt, "halt-on-violation", "auto", "halt the run at a breach of a security invariant (I-1 to I-8): yes, no, or auto (yes with -real)")
 	fs.BoolVar(&o.verbose, "v", false, "log the bench to the standard error")
@@ -333,7 +342,7 @@ func runWith(o options, stdin io.Reader, stdout, stderr io.Writer) (int, error) 
 	}
 	log.Addf(sim.KindDirector, "botaru-sim %s: %s, money fuse %s EUR, auto-approve %s, world in %s", version.Version, mode, sim.EUR(capMicros), o.approve, work)
 	s, err := sim.Start(ctx, sim.Config{Root: root, DSN: dsn, Work: work, Exe: exe, Real: o.real, Key: key, BaseURL: o.providerURL,
-		Model: single, RankModels: ranks, Prices: models, MaxMicros: capMicros, Seed: o.seed, Step: o.step, Log: log, Farm: farm,
+		Model: single, RankModels: ranks, Prices: models, ProviderPrices: providerPriceTable(single, o), EstimateModels: rankModels, MaxMicros: capMicros, Seed: o.seed, Step: o.step, Log: log, Farm: farm,
 		HaltOnViolation: o.halt == "yes" || o.halt == "auto" && o.real, ViolationsFile: sim.WatchFile(runDir),
 		Logger: slog.New(slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: level}))})
 	if err != nil {
@@ -357,6 +366,20 @@ func runWith(o options, stdin io.Reader, stdout, stderr io.Writer) (int, error) 
 		}
 	}()
 	go d.HandleCards(dctx)
+	rep := sim.NewReporter(s, d, runDir, o.export, sim.RunInfo{Mode: map[bool]string{true: "real", false: "mock"}[o.real],
+		Model: map[bool]string{true: o.model}[o.real], MaxEUR: o.maxEUR, Approve: o.approve})
+	d.AfterScenario = rep.AfterScenario
+	rctx, rcancel := context.WithCancel(context.Background())
+	repDone := make(chan struct{})
+	go func() {
+		defer close(repDone)
+		rep.Run(rctx)
+	}()
+	stopRep := func() {
+		rcancel()
+		<-repDone
+	}
+	defer stopRep()
 	var runErr error
 	if o.scenario != "" {
 		names := split(o.scenario)
@@ -367,11 +390,9 @@ func runWith(o options, stdin io.Reader, stdout, stderr io.Writer) (int, error) 
 	}
 	if runErr == nil && (o.interactive || o.duration > 0) {
 		var load *sim.LoadSummary
-		load, runErr = continuous(dctx, d, o, stdin, stdout)
+		load, runErr = continuous(dctx, d, rep, o, stdin, stdout)
 		if load != nil {
-			if err := writeJSON(filepath.Join(runDir, "load.json"), load); err != nil {
-				return 1, err
-			}
+			rep.SetLoadSummary(load)
 			fmt.Fprintf(stdout, "\nload %s: %s\n", o.loadProfile.Name, loadLine(load))
 		}
 	}
@@ -383,8 +404,12 @@ func runWith(o options, stdin io.Reader, stdout, stderr io.Writer) (int, error) 
 	wcancel()
 	viol := s.Violations()
 	res := d.Results()
-	if err := writeResults(filepath.Join(runDir, "results.json"), res, s, o); err != nil {
-		return 1, err
+	stopRep()
+	fctx, fcancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	err = rep.Write(fctx, true)
+	fcancel()
+	if err != nil {
+		return 1, fmt.Errorf("the results: %w", err)
 	}
 	failed, gaps := 0, 0
 	for _, r := range res {
@@ -417,6 +442,16 @@ func runWith(o options, stdin io.Reader, stdout, stderr io.Writer) (int, error) 
 	return 0, nil
 }
 
+// providerPriceTable is the provider's prices for the metrics; a single model of the run that
+// the table does not know is priced at the run's own price.
+func providerPriceTable(single string, o options) map[string][2]float64 {
+	out := maps.Clone(providerPrices)
+	if _, ok := out[single]; single != "" && !ok {
+		out[single] = [2]float64{o.priceIn, o.priceOut}
+	}
+	return out
+}
+
 // rankList names the model of each rank with its list price.
 func rankList() string {
 	var out []string
@@ -425,16 +460,6 @@ func rankList() string {
 		out = append(out, fmt.Sprintf("%d %s (%.2f/%.2f)", r, rankModels[r], p[0], p[1]))
 	}
 	return strings.Join(out, ", ")
-}
-
-func writeResults(path string, res []sim.Result, s *sim.Stand, o options) error {
-	raw, err := json.MarshalIndent(map[string]any{"mode": map[bool]string{true: "real", false: "mock"}[o.real], "model": map[bool]string{true: o.model}[o.real],
-		"spent_eur": sim.EUR(s.Spent()), "max_eur": o.maxEUR, "fuse_tripped": s.Tripped(), "halted": s.Halted(), "auto_approve": o.approve, "checks": res,
-		"violations": s.Violations()}, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, append(raw, '\n'), 0o644)
 }
 
 // faults are the faults of the continuous mode.
@@ -465,7 +490,7 @@ var labAsks = []struct{ who, ask string }{
 
 // continuous runs the world until the duration ends, quit, Ctrl+C or the fuse: it breaks the
 // world every -fault-every, a person asks about it, and the console takes commands.
-func continuous(ctx context.Context, d *sim.Director, o options, stdin io.Reader, stdout io.Writer) (*sim.LoadSummary, error) {
+func continuous(ctx context.Context, d *sim.Director, rep *sim.Reporter, o options, stdin io.Reader, stdout io.Writer) (*sim.LoadSummary, error) {
 	if o.duration > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, o.duration)
@@ -496,6 +521,7 @@ func continuous(ctx context.Context, d *sim.Director, o options, stdin io.Reader
 		// The load profile brings its own faults; the ticker of -fault-every stays quiet.
 		t.Stop()
 		load = make(chan sim.LoadSummary, 1)
+		rep.SetLoad(o.loadProfile, time.Now())
 		go func() { load <- d.RunLoad(ctx, o.loadProfile, o.seed) }()
 	}
 	end := func(err error) (*sim.LoadSummary, error) {
@@ -795,14 +821,6 @@ func redactDSN(dsn string) string {
 		kept = append(kept, f)
 	}
 	return strings.Join(kept, " ")
-}
-
-func writeJSON(path string, v any) error {
-	raw, err := json.MarshalIndent(v, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, append(raw, '\n'), 0o644)
 }
 
 // loadLine sums the load by code: started, and skipped when any.
