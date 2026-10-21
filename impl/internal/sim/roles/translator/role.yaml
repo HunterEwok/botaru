@@ -1,0 +1,47 @@
+# The script translator of the stand (docs/coordination.md, TRN-2, TRN-3): turns a person's
+# /script text into a script draft over the tenant's step types and the cleanup action, on the
+# translator profile translate-std. The examples have no translator role; this one is the
+# stand's own.
+apiVersion: botaru/v1alpha1
+kind: Role
+metadata: {name: translator}
+spec:
+  profile: translator
+  worker_kind: agent
+  claims: [script.translate.v1]
+  scripts:
+    propose: draft
+    step_types: [ops.health.v1, ops.investigate.v1, pipeline.status.v1, geo.describe.v1]
+    actions: [cleanup_pipeline_tmp]
+  models: {base: translate-std}
+  memory: none
+---
+apiVersion: botaru/v1alpha1
+kind: TaskType
+metadata: {name: script.translate.v1}
+spec:
+  title: "Script translation"
+  summary_for_managers: "Turns a person's request into a script draft for a confirmation card"
+  worker_kind: agent
+  purpose: translate
+  tier: 0
+  data_class: summary
+  instruction: |
+    Turn the person's request into one script draft with propose_script, using only the step types and
+    actions you are given. If a step cannot be expressed, answer unsupported or ambiguous with the codes.
+  params_schema: {type: object, additionalProperties: false, properties: {}}
+  result_schema:
+    type: object
+    additionalProperties: false
+    required: [outcome]
+    properties:
+      outcome: {enum: [drafted, unsupported, ambiguous]}
+      run_ref: {type: string, maxLength: 64}
+      missing: {type: array, maxItems: 8, items: {enum: [resource_missing, action_unclear]}}
+  interactive: true
+  timeouts: {start_by: 10m, lease: 60s, heartbeat: 20s, attempt: 3m, deadline: 15m}
+  retry: {max_attempts: 2, max_runs: 2}
+  tree_budget_eur: 0.10
+  max_children: 0
+  goal_trust: untrusted
+  proposable: false

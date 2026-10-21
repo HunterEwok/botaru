@@ -12,9 +12,11 @@ import (
 
 // farmRoles are the role folders of examples/roles the stand runs beside hello and ops-reader:
 // every bot of the farm except the deferred analyst (sandbox, tier 2) and assistant (DSP-10).
-// The job role data-job runs on the simulator's own job worker.
+// The job role data-job runs on the simulator's own job worker. The translator and the campaign
+// operator have no example role; the stand's own are in roles/ beside this file.
 var farmRoles = []string{"data-reader", "data-job", "geo-reader", "pipeline-reader", "reporter",
-	"reviewer-a", "reviewer-b", "farm-manager", "farm-manager-reader"}
+	"reviewer-a", "reviewer-b", "farm-manager", "farm-manager-reader",
+	"impl/internal/sim/roles/translator/role.yaml", "impl/internal/sim/roles/ops-operator/role.yaml"}
 
 // jobTypes are the task types of data-job the schedules of the stand enqueue.
 var jobTypes = []string{"data.sensor_watch.v1", "pipeline.watch.v1", "check.http.v1"}
@@ -36,7 +38,7 @@ var farmFiles = []string{
 func farmSeed(sd *evals.Seed) {
 	if g := sd.Groups["staff"]; g != nil {
 		caps, _ := g["caps"].([]any)
-		g["caps"] = append(caps, "task:geo.describe.v1", "task:pipeline.status.v1")
+		g["caps"] = append(caps, "task:geo.describe.v1", "task:pipeline.status.v1", "task:script.translate.v1", "task:ops.rollout.v1")
 	}
 	sd.Groups["deciders"] = map[string]any{"caps": []any{"proposal.decide:reliability", "proposal.gate:reliability"}, "data_up_to": "internal"}
 	for i := range sd.People {
@@ -56,11 +58,32 @@ func farmSeed(sd *evals.Seed) {
 func farmManifests(ms, farm []map[string]any, insights bool) []map[string]any {
 	ms = append(ms, farm...)
 	for _, m := range ms {
-		if m["kind"] == "Role" && mapOf(m["metadata"])["name"] == "ops-reader" {
-			if in := mapOf(mapOf(m["spec"])["insight"]); in != nil {
+		sp, name := mapOf(m["spec"]), mapOf(m["metadata"])["name"]
+		switch {
+		case m["kind"] == "Role" && name == "ops-reader":
+			if in := mapOf(sp["insight"]); in != nil {
 				in["max_runs"] = map[string]any{"per": "week", "count": 50}
 				in["max_per_week"] = 10
 			}
+		case m["kind"] == "Role" && name == "farm-manager":
+			// The analysis after an incident (MGR-53), which the example role leaves to a farm
+			// that runs it.
+			claims, _ := sp["claims"].([]any)
+			if !slices.Contains(claims, any("manager.postmortem.v1")) {
+				sp["claims"] = append(claims, "manager.postmortem.v1")
+			}
+		case m["kind"] == "Action" && name == "cleanup_pipeline_tmp":
+			// The translator's scripts may ask for the cleanup (SCR-2); the example keeps it
+			// out of scripts.
+			sp["script"] = map[string]any{"allowed": true}
+		case m["kind"] == "Tenant" && name == "demo":
+			cmds := mapOf(sp["commands"])
+			if cmds == nil {
+				cmds = map[string]any{}
+				sp["commands"] = cmds
+			}
+			cmds["/script"] = "script.translate.v1"
+			cmds["/rollout"] = "ops.rollout.v1"
 		}
 	}
 	group := func(name string, caps ...any) map[string]any {
@@ -77,7 +100,7 @@ func farmManifests(ms, farm []map[string]any, insights bool) []map[string]any {
 	}
 	ms = append(ms,
 		group("system-ops", sysCaps...),
-		group("farm-manager-ops", "task:manager.incident.respond.v1", "control.apply:hold", "control.apply:quarantine",
+		group("farm-manager-ops", "task:manager.incident.respond.v1", "task:manager.postmortem.v1", "control.apply:hold", "control.apply:quarantine",
 			"control.apply:drain", "control.apply:preempt", "control.apply:cancel"),
 		schedule("ops-insight", "* * * * *", "ops.insight.v1", !insights),
 		schedule("pipelines-watch", "*/2 * * * *", "pipeline.watch.v1", false),

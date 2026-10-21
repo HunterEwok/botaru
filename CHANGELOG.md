@@ -33,6 +33,10 @@ Entries are grouped by area; within a group the newest entry comes first.
 
 ### Reference Implementation (impl/)
 
+- The stand's own roles (impl/SIM.md, "What runs"): the script translator `translator` with the task type
+  `script.translate.v1` on `/script`, and the campaign operator `ops-operator` (profile `manager`, read and action
+  campaigns) with `ops.rollout.v1` on `/rollout`; `farm-manager` claims `manager.postmortem.v1` on the stand; the
+  `standard` farm runs 39 agent workers. `BenchConfig.Roles` also takes a role file path.
 - `botaru-sim -farm smoke|standard` (impl/SIM.md, "Farm profiles"): a farm profile names the tenants of the stand,
   their machines and the workers of each bot role per tenant. `smoke`, the default, is the stand as it was;
   `standard` runs the four tenants of the cloud load test on sixteen machines with 35 agent workers. The eval bench

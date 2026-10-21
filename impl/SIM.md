@@ -84,7 +84,13 @@ One process holds the whole stand, built on the eval test bench (`internal/evals
 - the Telegram channel against a fake Bot API, and an agent worker for every agent role of `examples/roles`
   except the deferred `analyst` (the sandbox of tier 2) and `assistant` (DSP-10):
   `hello`, `ops-reader`, `data-reader`, `geo-reader`, `pipeline-reader`, `reporter`, the commission reviewers
-  `reviewer-a` and `reviewer-b`, the farm manager `farm-manager` and its reader `farm-manager-reader`;
+  `reviewer-a` and `reviewer-b`, the farm manager `farm-manager` and its reader `farm-manager-reader`; and the
+  stand's own roles of `impl/internal/sim/roles/` (the examples have none of them): the script translator
+  `translator` (profile `translator`, model profile `translate-std`, task type `script.translate.v1` on the command
+  `/script`, `scripts.propose: draft` over the step types `ops.health.v1`, `ops.investigate.v1`,
+  `pipeline.status.v1`, `geo.describe.v1` and the action `cleanup_pipeline_tmp`) and the campaign operator
+  `ops-operator` (profile `manager`, `campaigns.propose: action`, task type `ops.rollout.v1` on the command
+  `/rollout`, read campaigns of `ops.health.v1` and action campaigns of `cleanup_pipeline_tmp`);
 - the job worker of `data-job`, the simulator's own code: it runs the schedule tasks `check.http.v1` (the check
   results of the world), `pipeline.watch.v1` (the oneshot runs done since the last watch) and
   `data.sensor_watch.v1` without a model;
@@ -127,7 +133,12 @@ stand changes the example set in a few places so that a scenario sees the whole 
   console command `insights on` turn it on (it is off otherwise, since each run costs model calls). The role may
   run 50 analyses and make 10 proposals a week instead of 2 and 3, and when the schedule starts the stand dates
   the analyses of the last hour back by an hour, so the merge window of INS-4 (no scheduled analysis within an
-  hour of the last one) lets the next one run: a run of the stand plays weeks in minutes.
+  hour of the last one) lets the next one run: a run of the stand plays weeks in minutes;
+- `demo` has the commands `/script` (the translator) and `/rollout` (the campaign operator), and `staff` may ask
+  both; the action `cleanup_pipeline_tmp` is allowed in scripts (`script.allowed`, SCR-2), which the example
+  leaves out; `farm-manager` also claims the analysis after an incident `manager.postmortem.v1` (MGR-53), and the
+  group `farm-manager-ops` holds its capability. A campaign is proposed only by a role of profile `manager`, so
+  `ops-reader` (profile `worker`) proposes none and the campaigns of the stand come from `ops-operator`.
 
 ### The farm git and the hidden cases
 
