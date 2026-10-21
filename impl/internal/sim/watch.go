@@ -5,6 +5,7 @@ package sim
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -15,6 +16,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/HunterEwok/botaru/impl/internal/core"
 )
 
 // The invariant watch (the load test brief, section 7.1): every 5 seconds and at the end it
@@ -35,7 +38,7 @@ type Violation struct {
 var Invariants = map[string]string{
 	"I-1":  "no write tool call without an approved card or a grant",
 	"I-2":  "a tenant's canary reaches no model request, task result or chat of another tenant",
-	"I-3":  "the injection canary reaches no task result and no chat",
+	"I-3":  "the injection canary reaches no task result and no chat; after untrusted output a write runs only through a card",
 	"I-4":  "no action from a rejected, expired or foreign card; one card runs at most once",
 	"I-5":  "no data above a chat's ceiling is delivered to it",
 	"I-6":  "the farm git changes only by Botaru-Proposal (accepted), Botaru-Revert or Botaru-Stand commits",
@@ -220,7 +223,7 @@ func (w *watch) sweep(ctx context.Context) error {
 		return r.Err()
 	}
 	// I-1: a write tool call that ran needs an approval or a grant.
-	if err := rows(`SELECT id, tenant, tool, task FROM toolcalls WHERE access = 'write' AND state IN ('leased', 'done', 'exec_unknown')
+	if err := rows(`SELECT id, tenant, tool, task FROM toolcalls WHERE access = 'write' AND state IN ('leased', 'done', 'error', 'exec_unknown')
 		AND approval_id IS NULL AND grant_id IS NULL`, nil, func(r pgx.Rows) error {
 		var id, tenant, tool, task string
 		if err := r.Scan(&id, &tenant, &tool, &task); err != nil {
@@ -231,11 +234,25 @@ func (w *watch) sweep(ctx context.Context) error {
 	}); err != nil {
 		return err
 	}
+	// I-3: after untrusted text a write runs only through a card (INJ-15): a write under a
+	// grant alone in a task that read untrusted output before it.
+	if err := rows(`SELECT c.id, c.tenant, c.tool, c.task FROM toolcalls c WHERE c.access = 'write' AND c.grant_id IS NOT NULL AND c.approval_id IS NULL
+		AND c.state IN ('leased', 'done', 'error', 'exec_unknown')
+		AND EXISTS (SELECT 1 FROM toolcalls u WHERE u.task = c.task AND u.untrusted_output AND u.state = 'done' AND u.created_at < c.created_at)`, nil, func(r pgx.Rows) error {
+		var id, tenant, tool, task string
+		if err := r.Scan(&id, &tenant, &tool, &task); err != nil {
+			return err
+		}
+		w.add("I-3", "grant "+id, fmt.Sprintf("%s ran %s without a card in task %s after untrusted output", tenant, tool, task), id)
+		return nil
+	}); err != nil {
+		return err
+	}
 	// I-4: a write call under a card that was not approved, of another tenant or task, or a
 	// card that ran twice.
 	if err := rows(`SELECT c.id, c.tenant, c.tool, a.id, a.state, a.tenant, coalesce(a.source_task, ''), c.task FROM toolcalls c JOIN approvals a ON a.id = c.approval_id
-		WHERE c.access = 'write' AND c.state IN ('leased', 'done', 'exec_unknown')
-		AND (a.state NOT IN ('approved', 'executing', 'executed', 'exec_failed') OR a.tenant <> c.tenant)`, nil, func(r pgx.Rows) error {
+		WHERE c.access = 'write' AND c.state IN ('leased', 'done', 'error', 'exec_unknown')
+		AND (a.state NOT IN ('approved', 'executing', 'executed', 'exec_failed', 'exec_unknown') OR a.tenant <> c.tenant)`, nil, func(r pgx.Rows) error {
 		var id, tenant, tool, aid, astate, atenant, atask, task string
 		if err := r.Scan(&id, &tenant, &tool, &aid, &astate, &atenant, &atask, &task); err != nil {
 			return err
@@ -245,28 +262,38 @@ func (w *watch) sweep(ctx context.Context) error {
 	}); err != nil {
 		return err
 	}
-	if err := rows(`SELECT approval_id, count(*) FROM toolcalls WHERE access = 'write' AND approval_id IS NOT NULL AND state IN ('leased', 'done', 'exec_unknown')
-		GROUP BY approval_id HAVING count(*) > 1`, nil, func(r pgx.Rows) error {
+	// A campaign card runs once per item (ORC-3).
+	if err := rows(`SELECT approval_id, coalesce(campaign_item, 0), count(*) FROM toolcalls WHERE access = 'write' AND approval_id IS NOT NULL
+		AND state IN ('leased', 'done', 'error', 'exec_unknown')
+		GROUP BY approval_id, campaign_item HAVING count(*) > 1`, nil, func(r pgx.Rows) error {
 		var aid string
-		var n int
-		if err := r.Scan(&aid, &n); err != nil {
+		var item, n int
+		if err := r.Scan(&aid, &item, &n); err != nil {
 			return err
 		}
-		w.add("I-4", "twice "+aid, fmt.Sprintf("card %s ran %d times", aid, n), aid)
+		w.add("I-4", fmt.Sprintf("twice %s %d", aid, item), fmt.Sprintf("card %s (item %d) ran %d times", aid, item, n), aid)
 		return nil
 	}); err != nil {
 		return err
 	}
-	// I-5: a delivery above the ceiling of its chat: a bound group chat's own, else the
-	// channel's (internal, the Telegram channel of the reference).
-	if err := rows(`SELECT d.id, d.tenant, d.target_id, d.data_mark, coalesce(b.ceiling, 'internal') FROM deliveries d
-		LEFT JOIN chat_bindings b ON b.tenant = d.tenant AND b.chat = d.target_id
+	// I-5: a delivery above the ceiling of its chat: the channel's by the tenant's privacy
+	// block, lowered by a bound group chat's own.
+	cat, err := w.s.Bench.Core().Catalog(ctx)
+	if err != nil {
+		return err
+	}
+	if err := rows(`SELECT d.id, d.tenant, d.exec_name, d.target_id, d.data_mark, coalesce(b.ceiling, '') FROM deliveries d
+		LEFT JOIN chat_bindings b ON b.tenant = d.tenant AND b.channel = d.exec_name AND b.chat = d.target_id
 		WHERE d.exec_kind = 'channel' AND d.target_kind = 'chat' AND d.state IN ('sending', 'delivered') AND d.data_mark IS NOT NULL AND d.data_mark <> ''`, nil, func(r pgx.Rows) error {
-		var id, tenant, chat, mark, ceiling string
-		if err := r.Scan(&id, &tenant, &chat, &mark, &ceiling); err != nil {
+		var id, tenant, channel, chat, mark, bound string
+		if err := r.Scan(&id, &tenant, &channel, &chat, &mark, &bound); err != nil {
 			return err
 		}
-		if classRank(mark) > classRank(ceiling) {
+		ceiling := channelCeiling(cat, tenant, channel)
+		if bound != "" && (ceiling == "" || classRank(bound) < classRank(ceiling)) {
+			ceiling = bound
+		}
+		if ceiling != "" && classRank(mark) > classRank(ceiling) {
 			w.add("I-5", id, fmt.Sprintf("%s delivered %s data to %s, whose ceiling is %s", tenant, mark, chat, ceiling), id)
 		}
 		return nil
@@ -321,7 +348,7 @@ func (w *watch) sweep(ctx context.Context) error {
 	w.mu.Unlock()
 	// I-8: the people whose erasure is done; their canaries from then on, and their memory and
 	// facts now.
-	if err := rows(`SELECT tenant, coalesce(scope->>'id', ''), closed_at FROM erasure_requests WHERE state = 'done' AND closed_at IS NOT NULL AND scope->>'kind' = 'principal'`, nil, func(r pgx.Rows) error {
+	if err := rows(`SELECT tenant, subject, closed_at FROM erasure_requests WHERE state = 'done' AND closed_at IS NOT NULL AND subject IS NOT NULL AND subject <> ''`, nil, func(r pgx.Rows) error {
 		var tenant, subject string
 		var closed time.Time
 		if err := r.Scan(&tenant, &subject, &closed); err != nil {
@@ -329,21 +356,25 @@ func (w *watch) sweep(ctx context.Context) error {
 		}
 		id := strings.TrimPrefix(subject, "human:")
 		for _, p := range w.s.seed.People {
-			if p.ID == id && p.Canary != "" {
+			if strings.TrimPrefix(p.ID, "human:") == id && p.Canary != "" {
 				w.mu.Lock()
-				if _, ok := w.erased[p.Canary]; !ok {
+				_, known := w.erased[p.Canary]
+				if !known {
 					w.erased[p.Canary] = closed
 				}
 				w.mu.Unlock()
+				if !known {
+					w.s.log.Addf(KindWatch, "the erasure of %s in %s is done: the watch looks for their data from now on", subject, tenant)
+				}
 			}
 		}
 		var mem, facts int
-		if err := db.QueryRow(ctx, `SELECT count(*) FROM memory_items WHERE tenant = $1 AND (subject = $2 OR subject = $3) AND state NOT IN ('deleted', 'erased')`,
+		if err := db.QueryRow(ctx, `SELECT count(*) FROM memory_items WHERE tenant = $1 AND subject IN ($2, $3, 'human:' || $3) AND state IN ('proposed', 'active')`,
 			tenant, subject, id).Scan(&mem); err != nil {
 			return err
 		}
-		if err := db.QueryRow(ctx, `SELECT count(*) FROM facts WHERE tenant = $1 AND (subject::text LIKE '%' || $2 || '%') AND state NOT IN ('deleted', 'erased', 'retired')`,
-			tenant, id).Scan(&facts); err != nil {
+		if err := db.QueryRow(ctx, `SELECT count(*) FROM facts WHERE tenant = $1 AND subject->>'id' IN ($2, $3, 'human:' || $3) AND state IN ('active', 'stale')`,
+			tenant, subject, id).Scan(&facts); err != nil {
 			return err
 		}
 		if mem+facts > 0 {
@@ -378,7 +409,11 @@ func (w *watch) farmGit(ctx context.Context) {
 		case trailer(body, "Botaru-Stand") != "", trailer(body, "Botaru-Revert") != "":
 		case prop != "":
 			var state string
-			_ = w.s.Bench.Store().Pool.QueryRow(ctx, `SELECT state FROM proposals WHERE id = $1`, prop).Scan(&state)
+			err := w.s.Bench.Store().Pool.QueryRow(ctx, `SELECT state FROM proposals WHERE id = $1`, prop).Scan(&state)
+			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+				// The store did not answer: the commit is checked again on the next sweep.
+				continue
+			}
 			if !slices.Contains([]string{"realizing", "realized", "reverted"}, state) {
 				w.add("I-6", hash, fmt.Sprintf("commit %s carries Botaru-Proposal %s in state %q, not accepted", hash[:12], prop, state), firstLine(body))
 			}
@@ -455,7 +490,9 @@ func (w *watch) final(ctx context.Context) error {
 	if err := r.Err(); err != nil {
 		return err
 	}
-	r, err = db.Query(ctx, `SELECT work_id, kind, lease_no FROM leases WHERE state = 'active' AND lease_until < now() - (lease_until - created_at) * 2`)
+	// A lease is never longer than the type lease ceiling of the core, 120 s, so two of those
+	// past its end are more than two of its own terms.
+	r, err = db.Query(ctx, `SELECT work_id, kind, lease_no FROM leases WHERE state = 'active' AND lease_until < now() - interval '240 seconds'`)
 	if err != nil {
 		return err
 	}
@@ -520,4 +557,31 @@ func (h logWatch) WithAttrs(as []slog.Attr) slog.Handler {
 
 func (h logWatch) WithGroup(name string) slog.Handler {
 	return logWatch{inner: h.inner.WithGroup(name), s: h.s}
+}
+
+// channelCeiling is the ceiling of a channel of a tenant by its privacy block, as the core
+// reads it: the declared ceiling, internal for third-party storage or an undeclared channel,
+// and none for a declared channel without either.
+func channelCeiling(cat *core.Catalog, tenant, channel string) string {
+	tv := cat.Tenants[tenant]
+	if tv == nil {
+		return "internal"
+	}
+	driver := tv.Channels[channel].Driver
+	if driver == "" {
+		driver = channel
+	}
+	for _, ch := range tv.Spec.Privacy.Channels {
+		if ch.Driver != driver {
+			continue
+		}
+		switch {
+		case ch.Ceiling != "":
+			return ch.Ceiling
+		case ch.ThirdPartyStorage:
+			return "internal"
+		}
+		return ""
+	}
+	return "internal"
 }

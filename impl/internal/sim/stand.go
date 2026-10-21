@@ -232,6 +232,7 @@ func Start(ctx context.Context, cfg Config) (_ *Stand, err error) {
 			s.watch.model(tenant, body)
 		}
 	}
+	s.front.halted = func() bool { return s.Halted() != "" }
 	fu, stopFront, err := serve(s.front)
 	if err != nil {
 		return nil, err
