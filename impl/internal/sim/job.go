@@ -5,6 +5,7 @@ package sim
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"math"
 	"net/http"
 	"os"
@@ -70,7 +71,11 @@ func (s *Stand) jobOnce(ctx context.Context, c *p1client.Client, tenant string) 
 	case "pipeline.watch.v1":
 		result = map[string]any{"finished": s.finishedRuns(tenant)}
 	case "data.sensor_watch.v1":
-		result = map[string]any{"silent": 0}
+		silent, err := s.sensorNotes(ctx, c, lease, tenant, p.Task.ID)
+		if err != nil {
+			return failJob(ctx, c, lease, err)
+		}
+		result = map[string]any{"silent": silent}
 	case "data.sensor_check.v1":
 		sensors := s.sensorNumbers(tenant)
 		issues := 0
@@ -119,6 +124,36 @@ func failJob(ctx context.Context, c *p1client.Client, lease string, err error) e
 func enqueueChild(ctx context.Context, c *p1client.Client, lease, parent, typ, goal string, params map[string]any) error {
 	return c.Call(ctx, "enqueue", lease, map[string]any{"body": map[string]any{"type": typ, "goal": goal, "params": params},
 		"idempotency_key": "sim:" + typ + ":" + parent}, nil)
+}
+
+// NoteTo are the addresses of the sensor notes of data-job: the inbox of ops-reader. A bot
+// group address cannot be among them: a role is a global manifest, and the lint of global
+// manifests refuses any group:<name> in one (TEN-6, global_tenant_data).
+var NoteTo = []string{"role:ops-reader"}
+
+// sensorNotes sends a sensor note (report.sensor_note.v1) for every sensor of the tenant's
+// catalog the world keeps silent, to each address of NoteTo, and returns how many are silent.
+// The notes are published when the watch completes (MSG-9).
+func (s *Stand) sensorNotes(ctx context.Context, c *p1client.Client, lease, tenant, task string) (int, error) {
+	w, err := LoadWorld(s.cfg.Work)
+	if err != nil {
+		return 0, err
+	}
+	silent := 0
+	for _, id := range catalogList(s.cfg.Work, tenant, "sensors") {
+		if !w.Faults[FaultSensorSilent+":"+id] {
+			continue
+		}
+		silent++
+		for _, to := range NoteTo {
+			key := "sim:note:" + task + ":" + id + ":" + to
+			if err := c.Call(ctx, "msg.send", lease, map[string]any{"type": "report.sensor_note.v1", "to": to,
+				"fields": map[string]any{"sensor": id, "issue": "gap", "hours": 1}, "idempotency_key": key}, nil); err != nil {
+				return 0, fmt.Errorf("msg.send to %s: %w", to, err)
+			}
+		}
+	}
+	return silent, nil
 }
 
 // sensorNumbers are the nightly numbers of the sensors in a tenant's catalog: the first sensor

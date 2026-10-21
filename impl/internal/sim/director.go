@@ -71,6 +71,9 @@ var Scenarios = []Scenario{
 	{"knowledge", "bob uploads a manual to the knowledge corpus, data-job indexes it, and ops-reader answers a question from it", knowledge},
 	{"translator-script", "in the lab tenant bob asks the translator in plain words to check the last pipeline run and clean up after it, " +
 		"runs the draft on its card, and the cleanup step is approved by the safe policy", translatorScript},
+	{"bot-notes", "a sensor falls silent; data-job sends a sensor note to ops-reader, and the summary of the day " +
+		"names the sensor", botNotes},
+	{"follow-up", "alice asks about the sensors, the answer asks back, and her next words continue that task in the follow-up window", followUp},
 	{"translator-refuses", "bob asks the translator for something outside its vocabulary and for something vague: no draft, no run", translatorRefuses},
 }
 

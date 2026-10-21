@@ -258,3 +258,85 @@ func translatorRefuses(ctx context.Context, d *Director, sc string) error {
 	}
 	return nil
 }
+
+// botNotes plays the messages between bots (R-15): a sensor of the home tenant falls silent,
+// the sensor watch of data-job sends a sensor note to the inbox of ops-reader, and the summary
+// of the day ops-reader writes for alice reads it and names the sensor.
+func botNotes(ctx context.Context, d *Director, sc string) error {
+	home := d.S.Home()
+	sensors := catalogList(d.S.cfg.Work, home, "sensors")
+	if len(sensors) == 0 {
+		return fmt.Errorf("tenant %s has no sensors in its catalog", home)
+	}
+	sensor := sensors[len(sensors)-1]
+	fault := FaultSensorSilent + ":" + sensor
+	start := time.Now().UTC()
+	if err := d.world("sensor "+sensor+" falls silent (the director's fault)", func(w *World) { w.Faults[fault] = true }); err != nil {
+		return err
+	}
+	defer func() { _ = d.world("sensor "+sensor+" sends again", func(w *World) { delete(w.Faults, fault) }) }()
+	inboxes := func(states ...string) (int, error) {
+		var n int
+		err := d.S.Bench.Store().Pool.QueryRow(ctx, `SELECT count(DISTINCT inbox_kind || ':' || inbox_name) FROM messages WHERE tenant = $1
+			AND type = 'report.sensor_note.v1' AND created_at >= $2 AND state = ANY($3)`, home, start, states).Scan(&n)
+		return n, err
+	}
+	err := d.S.waitFor(ctx, d.Timeout, func() (bool, error) {
+		n, err := inboxes("queued", "leased", "acked")
+		return n == len(NoteTo), err
+	})
+	d.check(sc, "notes_sent", err == nil, "a sensor note in %v: %v", NoteTo, err)
+	if err != nil {
+		return nil
+	}
+	if err := d.world("sensor "+sensor+" sends again", func(w *World) { delete(w.Faults, fault) }); err != nil {
+		return err
+	}
+	key, err := d.S.Say("alice", "alice-dm", "How did the day go on the farm?")
+	if err != nil {
+		return err
+	}
+	state, reason, result, err := d.taskEnd(ctx, key)
+	if err != nil {
+		return err
+	}
+	answer := fmt.Sprint(result["answer"])
+	d.check(sc, "notes_read", state == "completed" && strings.Contains(answer, sensor), "state %s %s: %s", state, reason, clip(answer, 200))
+	acked, err := inboxes("acked")
+	d.check(sc, "notes_acked", err == nil && acked == len(NoteTo), "inboxes with the note acknowledged %d of %d %v", acked, len(NoteTo), err)
+	return nil
+}
+
+// followUp plays the continuation of a conversation (R-16): alice asks how the sensors are, the
+// summary answers and asks back, which opens the follow-up window, and her next words without a
+// command continue that task with its type.
+func followUp(ctx context.Context, d *Director, sc string) error {
+	home := d.S.Home()
+	key, err := d.S.Say("alice", "alice-dm", "How are the sensors today?")
+	if err != nil {
+		return err
+	}
+	state, reason, result, err := d.taskEnd(ctx, key)
+	if err != nil {
+		return err
+	}
+	var first, until string
+	_ = d.S.Bench.Store().Pool.QueryRow(ctx, `SELECT id, coalesce(record->>'followup_until', '') FROM tasks WHERE tenant = $1 AND idempotency_key = $2`,
+		home, key).Scan(&first, &until)
+	d.check(sc, "window_opened", state == "completed" && result["need_input"] == true && until != "",
+		"state %s %s, need_input %v, window until %q", state, reason, result["need_input"], until)
+	key, err = d.S.Say("alice", "alice-dm", "And was it the same yesterday?")
+	if err != nil {
+		return err
+	}
+	state, reason, _, err = d.taskEnd(ctx, key)
+	if err != nil {
+		return err
+	}
+	var typ, continues string
+	_ = d.S.Bench.Store().Pool.QueryRow(ctx, `SELECT type, coalesce(record->>'continues', '') FROM tasks WHERE tenant = $1 AND idempotency_key = $2`,
+		home, key).Scan(&typ, &continues)
+	d.check(sc, "continued", state == "completed" && first != "" && continues == first && typ == "ops.summary.v1",
+		"state %s %s, type %s, continues %q of %q", state, reason, typ, continues, first)
+	return nil
+}

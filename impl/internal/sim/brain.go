@@ -128,6 +128,8 @@ var (
 	reDescribeTask = regexp.MustCompile(`(?i)describe the ctd file`)
 	reHealthTask   = regexp.MustCompile(`(?i)whether the sites and services`)
 	reParamsTask   = regexp.MustCompile(`(?i)numbers only from params`)
+	reSummaryTask  = regexp.MustCompile(`(?i)answer briefly from the summaries`)
+	reSensorAsk    = regexp.MustCompile(`(?i)\bsensors?\b`)
 	reFragment     = regexp.MustCompile(`"fragment": ?"([a-z]{1,8}_[0-9A-HJKMNP-TV-Z]{26}:[0-9]{1,4})"`)
 )
 
@@ -150,6 +152,9 @@ func plan(system, goal string) []step {
 		return nil
 	case reDescribeTask.MatchString(system):
 		return []step{{plugin: "data", tool: "describe", input: map[string]any{"file": ""}}}
+	case reSummaryTask.MatchString(system):
+		// The summary of the day reads the bots' notes when its type has an inbox (MSG-8).
+		return []step{{plugin: "", tool: "inbox_read", input: map[string]any{"max": 20}}}
 	case reHealthTask.MatchString(system):
 		return []step{
 			{plugin: "checks", tool: "latest", input: map[string]any{"check": "www-health"}},
@@ -449,11 +454,18 @@ var reSchema = regexp.MustCompile(`(?s)matches this JSON Schema, and nothing els
 func answer(system, goal, seen string) string {
 	f := findings(seen)
 	summary := "From what the tools show: " + strings.Join(f.lines, " ")
+	// A short answer about the sensors offers to look further and waits for the person
+	// (need_input opens the follow-up window, CNT-5).
+	ask := reSummaryTask.MatchString(system) && reSensorAsk.MatchString(firstLine(goal))
 	switch params := attemptParams(goal); {
 	case reParamsTask.MatchString(system) && len(params) > 0:
 		summary = "The numbers of this report: " + paramsLine(params) + "."
 	case len(f.lines) == 0:
 		summary = "I looked at what the tools show and found nothing unusual."
+	}
+	if ask {
+		f.needsYou = true
+		summary += " Shall I compare it with yesterday?"
 	}
 	m := reSchema.FindStringSubmatch(system)
 	if m == nil {
@@ -580,6 +592,11 @@ func findings(seen string) found {
 			for k, v := range m {
 				if n, ok := v.(float64); ok {
 					f.nums[k] = n
+				}
+			}
+			if sensor, ok := m["sensor"].(string); ok {
+				if issue, ok := m["issue"].(string); ok {
+					f.lines = append(f.lines, fmt.Sprintf("A bot note says sensor %s has a %s.", sensor, strings.ReplaceAll(issue, "_", " ")))
 				}
 			}
 			if c, ok := m["check"].(string); ok {
@@ -711,16 +728,19 @@ func fill(schema map[string]any, name, summary string, f found) any {
 				out[r] = fill(p, r, summary, f)
 			}
 		}
-		// An optional field the code reads is filled only with an enum value the facts back,
-		// such as the state of a run the bot saw fail.
+		// An optional field the code reads is filled only with a value the facts back: an enum
+		// value such as the state of a run the bot saw fail, or need_input when the bot asks back.
 		for k, v := range props {
 			p, _ := v.(map[string]any)
-			enum, _ := p["enum"].([]any)
-			if _, done := out[k]; done || p["x-botaru-read-by"] != "code" || len(enum) == 0 {
+			if _, done := out[k]; done || p["x-botaru-read-by"] != "code" {
 				continue
 			}
-			if pick, ok := enumFact(enum, f); ok {
-				out[k] = pick
+			if enum, _ := p["enum"].([]any); len(enum) > 0 {
+				if pick, ok := enumFact(enum, f); ok {
+					out[k] = pick
+				}
+			} else if k == "need_input" && p["type"] == "boolean" && f.needsYou {
+				out[k] = true
 			}
 		}
 		if p, ok := props["facts"].(map[string]any); ok {

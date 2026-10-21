@@ -32,6 +32,7 @@ var farmFiles = []string{
 	"examples/incidents/disk-filling.yaml",
 	"examples/incidents/disk-full.yaml",
 	"examples/incidents/store-low.yaml",
+	"examples/messagetypes/report.sensor_note.v1.yaml",
 }
 
 // farmSeed gives the people of the seed what the farm bots need: alice and bob may ask the data
@@ -85,6 +86,21 @@ func farmManifests(ms, farm []map[string]any, insights bool) []map[string]any {
 				in["max_runs"] = map[string]any{"per": "week", "count": 50}
 				in["max_per_week"] = 10
 			}
+			// The sensor notes of data-job (MSG-5), read by the summary of the day.
+			sp["messages"] = map[string]any{"receive": []any{map[string]any{"type": "report.sensor_note.v1"}}}
+		case m["kind"] == "Role" && name == "data-job":
+			to := make([]any, 0, len(NoteTo))
+			for _, a := range NoteTo {
+				to = append(to, a)
+			}
+			sp["messages"] = map[string]any{"send": []any{map[string]any{"type": "report.sensor_note.v1", "to": to}}}
+		case m["kind"] == "TaskType" && name == "data.sensor_watch.v1":
+			// The watch sends sensor notes of class summary, and a message may not be below the
+			// mark of its attempt (MSG-6); the example's internal would refuse every note, while
+			// the watch reads no tool and returns only a count.
+			sp["data_class"] = "summary"
+		case m["kind"] == "TaskType" && name == "ops.summary.v1":
+			sp["inbox"] = map[string]any{"read": []any{"report.sensor_note.v1"}}
 		case m["kind"] == "Role" && name == "farm-manager":
 			// The analysis after an incident (MGR-53), which the example role leaves to a farm
 			// that runs it.
@@ -114,7 +130,7 @@ func farmManifests(ms, farm []map[string]any, insights bool) []map[string]any {
 		return map[string]any{"apiVersion": "botaru/v1alpha1", "kind": "Schedule", "metadata": map[string]any{"name": name, "tenant": "demo"},
 			"spec": map[string]any{"cron": cron, "task": map[string]any{"type": typ}, "skip_if_waiting": true, "proposable": false, "paused": paused}}
 	}
-	sysCaps := []any{"task:ops.insight.v1", "task:review.security.v1", "task:review.operational.v1", "task:review.cost.v1", "task:review.value.v1"}
+	sysCaps := []any{"msg.send:report.sensor_note.v1", "task:ops.insight.v1", "task:review.security.v1", "task:review.operational.v1", "task:review.cost.v1", "task:review.value.v1"}
 	for _, t := range jobTypes {
 		sysCaps = append(sysCaps, "task:"+t)
 	}
@@ -124,7 +140,7 @@ func farmManifests(ms, farm []map[string]any, insights bool) []map[string]any {
 			"control.apply:drain", "control.apply:preempt", "control.apply:cancel"),
 		schedule("ops-insight", "* * * * *", "ops.insight.v1", !insights),
 		schedule("pipelines-watch", "*/2 * * * *", "pipeline.watch.v1", false),
-		schedule("sensor-watch", "*/5 * * * *", "data.sensor_watch.v1", false),
+		schedule("sensor-watch", "* * * * *", "data.sensor_watch.v1", false),
 		schedule("ext-checks", "* * * * *", "check.http.v1", false),
 		// The nightly sensor check runs when a scenario or the load turns it on (SetSchedule).
 		schedule(SensorSchedule, "* * * * *", "data.sensor_check.v1", true),

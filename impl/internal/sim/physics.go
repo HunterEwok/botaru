@@ -28,6 +28,9 @@ const (
 	// FaultDiskFilling makes the pipeline temporary files on the data volume of the db machine
 	// grow every step.
 	FaultDiskFilling = "disk-filling"
+	// FaultSensorSilent, as sensor-silent:<sensor>, keeps a sensor of the catalog from sending:
+	// the sensor watch of data-job sees a gap in it.
+	FaultSensorSilent = "sensor-silent"
 )
 
 // Catalog triggers of the monitoring system (monitor_triggers of examples/tenants/demo/catalog.yaml).
