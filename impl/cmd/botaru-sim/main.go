@@ -406,10 +406,15 @@ func runWith(o options, stdin io.Reader, stdout, stderr io.Writer) (int, error) 
 	res := d.Results()
 	stopRep()
 	fctx, fcancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	err = rep.Write(fctx, true)
+	m, merr := rep.Write(fctx, true)
 	fcancel()
-	if err != nil {
-		return 1, fmt.Errorf("the results: %w", err)
+	if merr != nil {
+		// results.json holds the checks still; the exit code below stays the run's.
+		fmt.Fprintln(stderr, "botaru-sim: the results:", merr)
+	}
+	spent := sim.EUR(s.Spent())
+	if m != nil {
+		spent = m.Spend.StandEUR
 	}
 	failed, gaps := 0, 0
 	for _, r := range res {
@@ -425,7 +430,7 @@ func runWith(o options, stdin io.Reader, stdout, stderr io.Writer) (int, error) 
 		gapNote = fmt.Sprintf(", %d stopped at a known gap of the core", gaps)
 	}
 	fmt.Fprintf(stdout, "\n%d checks, %d failed%s; %d breaches of the invariants; spend %s EUR of the %s EUR fuse; %d model calls answered by the mock\nevents: %s\n",
-		len(res), failed, gapNote, len(viol), sim.EUR(s.Spent()), sim.EUR(capMicros), s.Brain.Calls(), filepath.Join(runDir, "sim-events.jsonl"))
+		len(res), failed, gapNote, len(viol), spent, sim.EUR(capMicros), s.Brain.Calls(), filepath.Join(runDir, "sim-events.jsonl"))
 	for _, v := range viol {
 		fmt.Fprintf(stdout, "BREACH %s %s\n", v.Code, v.What)
 	}

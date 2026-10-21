@@ -119,6 +119,8 @@ type SpendRow struct {
 	Calls           int    `json:"calls"`
 	InputTokens     int64  `json:"input_tokens"`
 	OutputTokens    int64  `json:"output_tokens"`
+	CacheWrite      int64  `json:"cache_write_tokens,omitempty"`
+	CacheRead       int64  `json:"cache_read_tokens,omitempty"`
 	StandEUR        string `json:"stand_eur"`
 	ProviderEUR     string `json:"provider_eur"`
 	StandPerHour    string `json:"stand_eur_per_hour"`
@@ -253,16 +255,17 @@ type peopleTask struct {
 
 // metricsInput is what a report reads besides the store.
 type metricsInput struct {
-	start, loadStart time.Time
-	load             *LoadProfile
-	final            bool
-	samples          []procSample
-	budgetWaiting    map[string]map[string]bool
-	results          []Result
+	start, loadStart, now time.Time
+	load                  *LoadProfile
+	final                 bool
+	samples               []procSample
+	budgetWaiting         map[string]map[string]bool
+	results               []Result
 }
 
-// passedCommission are the states of a proposal the commission of its tenant passed on.
-var passedCommission = []string{"recommended", "presented", "accepted", "realizing", "realized", "realization_failed", "reverted"}
+// passedCommission are the states a proposal reaches only after its commission recommended it
+// (spec/lifecycles/proposal.md); an expired one counts when it had been presented.
+var passedCommission = []string{"recommended", "presented", "declined", "noted", "realizing", "realized", "realization_failed", "reverted"}
 
 // warmup is the time after the start of the load the growth of the process is measured from
 // (M-12), and the least time after it a growth is measured over.
@@ -275,6 +278,7 @@ const (
 func (s *Stand) computeMetrics(ctx context.Context, in metricsInput) (*Metrics, error) {
 	db := s.Bench.Store().Pool
 	now := time.Now().UTC()
+	in.now = now
 	m := &Metrics{At: now, Final: in.final, Elapsed: now.Sub(in.start).Round(time.Second).String()}
 	if in.load != nil {
 		m.Load = in.load.Name
@@ -353,7 +357,7 @@ func (s *Stand) computeMetrics(ctx context.Context, in metricsInput) (*Metrics, 
 		loadOnly(m1(tasks)),
 		loadOnly(m2(tasks, in)),
 	)
-	m3, err := s.m3(ctx, in.start)
+	m3, err := s.m3(ctx, in.start, now)
 	if err != nil {
 		return nil, err
 	}
@@ -366,7 +370,12 @@ func (s *Stand) computeMetrics(ctx context.Context, in metricsInput) (*Metrics, 
 	if err != nil {
 		return nil, err
 	}
-	m.Thresholds = append(m.Thresholds, loadOnly(m6), loadOnly(m7(tasks, refused)))
+	var peopleLimited int
+	if err := db.QueryRow(ctx, `SELECT count(*) FROM audit WHERE record->>'ok' = 'false' AND record->>'reason' = 'service_rate_limited'
+		AND record->'actor'->>'principal' LIKE 'human:%' AND at >= $1`, in.start).Scan(&peopleLimited); err != nil {
+		return nil, err
+	}
+	m.Thresholds = append(m.Thresholds, loadOnly(m6), loadOnly(m7(tasks, peopleLimited)))
 	m8, m9, err := s.m8m9(ctx, in.start, now)
 	if err != nil {
 		return nil, err
@@ -375,7 +384,7 @@ func (s *Stand) computeMetrics(ctx context.Context, in metricsInput) (*Metrics, 
 	if err != nil {
 		return nil, err
 	}
-	m.Thresholds = append(m.Thresholds, loadOnly(m8), loadOnly(m9), loadOnly(m10), m11(in.samples), m12(in), m13(in.results))
+	m.Thresholds = append(m.Thresholds, loadOnly(m8), loadOnly(m9), loadOnly(m10), m11(in), m12(in), m13(in.results))
 	if m.Observed, err = s.observed(ctx, in, tasks, refused); err != nil {
 		return nil, err
 	}
@@ -464,11 +473,19 @@ func m1(tasks []peopleTask) Metric {
 func m2(tasks []peopleTask, in metricsInput) Metric {
 	mt := Metric{Code: "M-2", Name: "queue wait of a person's task, 95th percentile", Threshold: "<= 5 min; <= 8 min in a peak"}
 	var calm, peak []time.Duration
+	open := 0
 	for _, t := range tasks {
-		if t.firstLease == nil {
+		var w time.Duration
+		switch {
+		case t.firstLease != nil:
+			w = max(t.firstLease.Sub(t.created), 0)
+		case t.state == "submitted" && !slices.Contains(ruleReasons, t.reason):
+			// Not taken yet: it has waited at least this long.
+			w = max(in.now.Sub(t.created), 0)
+			open++
+		default:
 			continue
 		}
-		w := max(t.firstLease.Sub(t.created), 0)
 		if inPeak(in, t.created) {
 			peak = append(peak, w)
 		} else {
@@ -485,6 +502,9 @@ func m2(tasks []peopleTask, in metricsInput) Metric {
 		mt.Value += fmt.Sprintf("; in peaks %.1f s of %d", p.P95, p.N)
 	}
 	mt.Status = pass(c.P95 <= 300 && p.P95 <= 480)
+	if open > 0 {
+		mt.Detail = fmt.Sprintf("%d not taken yet count with their wait so far", open)
+	}
 	return mt
 }
 
@@ -502,15 +522,19 @@ func inPeak(in metricsInput, at time.Time) bool {
 	return false
 }
 
-// m3 is the share of schedule slots run on time: taken within the start window of their type
-// and completed, as the core observes them; a slot skipped for another reason than a pause is
-// not on time.
-func (s *Stand) m3(ctx context.Context, start time.Time) (Metric, error) {
+// m3 is the share of scheduled tasks taken within their start window: the first attempt lease
+// before start_by_at (the core sets it from timeouts.start_by of the type). A task not taken whose
+// window has not passed yet is pending; a slot skipped for another reason than a pause is not on
+// time. How the task ended does not count here (M-1 and the checks read that).
+func (s *Stand) m3(ctx context.Context, start, now time.Time) (Metric, error) {
 	mt := Metric{Code: "M-3", Name: "scheduled work started on time (start_by)", Threshold: ">= 99%"}
 	db := s.Bench.Store().Pool
 	var onTime, late, skipped int
-	if err := db.QueryRow(ctx, `SELECT count(*) FILTER (WHERE enum = 'on_time'), count(*) FILTER (WHERE enum = 'late')
-		FROM obs_points WHERE series = 'farm.schedule.slot' AND at >= $1`, start).Scan(&onTime, &late); err != nil {
+	if err := db.QueryRow(ctx, `SELECT
+		count(*) FILTER (WHERE l.first IS NOT NULL AND (t.start_by_at IS NULL OR l.first <= t.start_by_at)),
+		count(*) FILTER (WHERE l.first IS NOT NULL AND l.first > t.start_by_at OR l.first IS NULL AND t.start_by_at < $2)
+		FROM tasks t LEFT JOIN LATERAL (SELECT min(created_at) AS first FROM leases WHERE work_id = t.id AND kind = 'attempt') l ON true
+		WHERE t.record->>'enqueued_by' LIKE 'schedule:%' AND t.created_at >= $1`, start, now).Scan(&onTime, &late); err != nil {
 		return mt, err
 	}
 	if err := db.QueryRow(ctx, `SELECT count(*) FROM events WHERE type = 'schedule.skipped' AND coalesce(data->>'reason', '') <> 'paused'
@@ -554,7 +578,7 @@ func (s *Stand) m5(ctx context.Context) Metric {
 	runs := slices.Clone(s.faultRuns)
 	s.mu.Unlock()
 	db := s.Bench.Store().Pool
-	n, ok := 0, true
+	n, ok, pending := 0, true, 0
 	var bad []string
 	for _, r := range runs {
 		if r.Code != "F-1" || r.Task == "" {
@@ -570,8 +594,10 @@ func (s *Stand) m5(ctx context.Context) Metric {
 			if time.Since(r.At) > 2*maxLeaseTerm+10*time.Second {
 				ok = false
 				bad = append(bad, r.Task+" still "+state)
+				n++
+			} else {
+				pending++
 			}
-			n++
 			continue
 		}
 		var termS float64
@@ -585,10 +611,16 @@ func (s *Stand) m5(ctx context.Context) Metric {
 		}
 	}
 	if n == 0 {
-		mt.Value, mt.Status = "no F-1", "n/a"
+		mt.Value, mt.Status = "no F-1 ended", "n/a"
+		if pending > 0 {
+			mt.Value = fmt.Sprintf("%d F-1 pending", pending)
+		}
 		return mt
 	}
 	mt.Value = fmt.Sprintf("%d of %d in time", n-len(bad), n)
+	if pending > 0 {
+		mt.Value += fmt.Sprintf(", %d pending", pending)
+	}
 	mt.Status = pass(ok)
 	mt.Detail = strings.Join(bad, "; ")
 	return mt
@@ -659,12 +691,15 @@ func (s *Stand) m6(ctx context.Context, in metricsInput, refused map[string]map[
 	return mt, nil
 }
 
-// m7 is the share of service_rate_limited refusals against people's tasks.
-func m7(tasks []peopleTask, refused map[string]map[string]int) Metric {
+// m7 is the share of service_rate_limited refusals of people's work (their enqueue refused, or
+// their task ended with it) against people's tasks.
+func m7(tasks []peopleTask, peopleLimited int) Metric {
 	mt := Metric{Code: "M-7", Name: "service_rate_limited refusals", Threshold: "<= 5% of people's tasks (above: the load profile does not fit the limits)"}
-	n := 0
-	for _, rs := range refused {
-		n += rs["service_rate_limited"]
+	n := peopleLimited
+	for _, t := range tasks {
+		if t.state != "completed" && t.reason == "service_rate_limited" {
+			n++
+		}
 	}
 	if len(tasks) == 0 {
 		mt.Value, mt.Status = fmt.Sprintf("%d, no people's task", n), "n/a"
@@ -760,7 +795,8 @@ func (s *Stand) m10(ctx context.Context, in metricsInput) (Metric, error) {
 			continue
 		}
 		var n int
-		if err := s.Bench.Store().Pool.QueryRow(ctx, `SELECT count(*) FROM proposals WHERE tenant = $1 AND state = ANY($2) AND created_at >= $3`,
+		if err := s.Bench.Store().Pool.QueryRow(ctx, `SELECT count(*) FROM proposals WHERE tenant = $1
+			AND (state = ANY($2) OR state = 'expired' AND presented_at IS NOT NULL) AND created_at >= $3`,
 			t.Name, passedCommission, in.start).Scan(&n); err != nil {
 			return mt, err
 		}
@@ -769,27 +805,28 @@ func (s *Stand) m10(ctx context.Context, in metricsInput) (Metric, error) {
 			ok = false
 		}
 	}
+	if len(parts) == 0 {
+		mt.Value, mt.Status = "no tenant with a manager", "n/a"
+		return mt, nil
+	}
 	evo, failed := 0, 0
 	for _, r := range in.results {
 		if r.Scenario == "scaffold-evolution" {
 			evo++
-			if !r.OK {
+			if !r.OK && r.Gap == "" {
 				failed++
 			}
 		}
 	}
 	switch {
 	case evo == 0:
-		parts = append(parts, "the evolution scenario did not run")
+		// A load run has no scenarios: the evolution scenario is checked in a scenario run.
+		parts = append(parts, "the evolution scenario did not run in this run")
 	case failed > 0:
 		ok = false
 		parts = append(parts, fmt.Sprintf("the evolution scenario failed %d of %d checks", failed, evo))
 	default:
 		parts = append(parts, "the evolution scenario passed")
-	}
-	if len(parts) == 0 {
-		mt.Value, mt.Status = "no tenant with a manager", "n/a"
-		return mt, nil
 	}
 	mt.Value = strings.Join(parts, "; ")
 	mt.Status = pass(ok)
@@ -832,17 +869,25 @@ func growth(ss []procSample, v func(procSample) float64) float64 {
 	return last/first - 1
 }
 
-// m11 are the store connections: never above the pool, and no growth after the warm-up.
-func m11(samples []procSample) Metric {
+// m11 are the store connections: the connections of the run's database beyond the core's pool
+// never more than at the start (and two), so nothing opens connections past the pool, and no
+// growth after the warm-up.
+func m11(in metricsInput) Metric {
 	mt := Metric{Code: "M-11", Name: "store connections", Threshold: "not above the pool, no growth"}
+	samples := in.samples
 	if len(samples) == 0 {
-		mt.Value, mt.Status = "no procSample", "n/a"
+		mt.Value, mt.Status = "no sample", "n/a"
 		return mt
 	}
 	p := process(samples)
-	mt.Value = fmt.Sprintf("pool peak %d of %d; database peak %d", p.PoolPeak, p.PoolMax, p.DBPeak)
-	ok := p.PoolPeak <= p.PoolMax
-	if ss := afterWarmup(metricsInput{samples: samples, start: samples[0].At}); ss != nil {
+	base := samples[0].DBConns - int(samples[0].PoolConns)
+	most := base
+	for _, sm := range samples {
+		most = max(most, sm.DBConns-int(sm.PoolConns))
+	}
+	mt.Value = fmt.Sprintf("pool peak %d of %d; database peak %d; beyond the pool %d at the start, %d at most", p.PoolPeak, p.PoolMax, p.DBPeak, base, most)
+	ok := most <= base+2
+	if ss := afterWarmup(in); ss != nil {
 		g := growth(ss, func(s procSample) float64 { return float64(s.DBConns) })
 		mt.Value += "; growth " + pct(g)
 		// A few connections more is no growth: the pool opens them as the load needs.
@@ -867,8 +912,7 @@ func m12(in metricsInput) Metric {
 	return mt
 }
 
-// m13 are the checks of the scenarios: every one passed; a step at a known gap of the core is
-// not a pass.
+// m13 are the checks of the scenarios: every one passed or stopped at a known gap of the core.
 func m13(results []Result) Metric {
 	mt := Metric{Code: "M-13", Name: "scenario checks", Threshold: "100% PASS"}
 	if len(results) == 0 {
@@ -885,7 +929,8 @@ func m13(results []Result) Metric {
 		}
 	}
 	mt.Value = fmt.Sprintf("%d of %d", ok, len(results))
-	mt.Status = pass(ok == len(results))
+	// A known gap of the core is recorded and does not decide the outcome (the brief, 9.7).
+	mt.Status = pass(ok+gaps == len(results))
 	if gaps > 0 {
 		mt.Detail = fmt.Sprintf("%d stopped at a known gap of the core", gaps)
 	}
@@ -934,7 +979,9 @@ func (s *Stand) observed(ctx context.Context, in metricsInput, tasks []peopleTas
 	}
 	db := s.Bench.Store().Pool
 	var opening []time.Duration
-	r, err := db.Query(ctx, `SELECT opened_at - since FROM incidents WHERE opened_at >= $1 AND since IS NOT NULL`, in.start)
+	// From the alarm episode that opened the incident to the incident.
+	r, err := db.Query(ctx, `SELECT i.opened_at - e.opened_at FROM incidents i JOIN alarm_episodes e ON e.id = i.episode
+		WHERE i.opened_at >= $1`, in.start)
 	if err != nil {
 		return o, err
 	}
@@ -1013,6 +1060,7 @@ func (s *Stand) spend(ctx context.Context, elapsed time.Duration) (Spend, error)
 	sp := Spend{Hours: elapsed.Hours()}
 	rows, err := s.Bench.Store().Pool.Query(ctx, `SELECT tenant, coalesce(profile, ''), count(*) FILTER (WHERE tokens IS NOT NULL)::int,
 		coalesce(sum((tokens->>'input')::bigint), 0)::bigint, coalesce(sum((tokens->>'output')::bigint), 0)::bigint,
+		coalesce(sum((tokens->>'cache_write')::bigint), 0)::bigint, coalesce(sum((tokens->>'cache_read')::bigint), 0)::bigint,
 		coalesce(sum(eur_micros + coalesce(correction_eur_micros, 0)), 0)::bigint
 		FROM spend WHERE unit <> 'task' GROUP BY 1, 2`)
 	if err != nil {
@@ -1027,8 +1075,8 @@ func (s *Stand) spend(ctx context.Context, elapsed time.Duration) (Spend, error)
 	err = forRows(rows, func(r pgx.Rows) error {
 		var tenant, profile string
 		var calls int
-		var in, out, micros int64
-		if err := r.Scan(&tenant, &profile, &calls, &in, &out, &micros); err != nil {
+		var in, out, cw, cr, micros int64
+		if err := r.Scan(&tenant, &profile, &calls, &in, &out, &cw, &cr, &micros); err != nil {
 			return err
 		}
 		model, rank := s.profileModel(profile)
@@ -1038,8 +1086,11 @@ func (s *Stand) spend(ctx context.Context, elapsed time.Duration) (Spend, error)
 			byKey[key{tenant, rank}] = row
 		}
 		p := s.cfg.ProviderPrices[model]
-		cost := int64(float64(in)*p[0] + float64(out)*p[1])
+		// The provider bills a cache write at 1.25 and a cache read at 0.1 of the input price.
+		cost := int64((float64(in)+1.25*float64(cw)+0.1*float64(cr))*p[0] + float64(out)*p[1])
 		row.Calls += calls
+		row.CacheWrite += cw
+		row.CacheRead += cr
 		row.InputTokens += in
 		row.OutputTokens += out
 		row.stand += micros

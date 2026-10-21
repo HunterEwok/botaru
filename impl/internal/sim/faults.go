@@ -134,7 +134,14 @@ func newProviderFront(target string, seed int64) (*providerFront, error) {
 	if err != nil || u.Scheme == "" || u.Host == "" {
 		return nil, fmt.Errorf("the provider address %q is not a URL", target)
 	}
-	rp := &httputil.ReverseProxy{Rewrite: func(r *httputil.ProxyRequest) { r.SetURL(u) }}
+	rp := &httputil.ReverseProxy{Rewrite: func(r *httputil.ProxyRequest) { r.SetURL(u) },
+		// A provider that cannot be reached is no answer of the provider (the metrics).
+		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
+			if sw, ok := w.(*statusWriter); ok {
+				sw.transport = true
+			}
+			w.WriteHeader(http.StatusBadGateway)
+		}}
 	return &providerFront{pass: rp, r: rand.New(rand.NewPCG(uint64(seed), 29)), injected: map[int]int{}, answered: map[int]int{}}, nil
 }
 
@@ -168,6 +175,8 @@ func (p *providerFront) answers() map[int]int {
 type statusWriter struct {
 	http.ResponseWriter
 	code int
+	// transport is set when the proxy could not reach the provider.
+	transport bool
 }
 
 func (w *statusWriter) WriteHeader(code int) {
@@ -254,9 +263,12 @@ func (p *providerFront) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	sw := &statusWriter{ResponseWriter: w}
 	p.pass.ServeHTTP(sw, r)
-	p.mu.Lock()
-	p.answered[sw.code]++
-	p.mu.Unlock()
+	// A call P4 gave up on before any answer has no status.
+	if sw.code != 0 && !sw.transport {
+		p.mu.Lock()
+		p.answered[sw.code]++
+		p.mu.Unlock()
+	}
 }
 
 // crashFile is the mark that kills the next plugin process the toolhosts start (F-2): the

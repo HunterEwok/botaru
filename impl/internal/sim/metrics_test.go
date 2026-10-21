@@ -47,14 +47,22 @@ func TestM2Peaks(t *testing.T) {
 	tasks := []peopleTask{
 		{created: calm, firstLease: lease(calm, time.Minute)},
 		{created: peak, firstLease: lease(peak, 7*time.Minute)},
-		{created: calm},
+		{created: calm, state: "completed"},
 	}
+	in.now = start.Add(3 * time.Minute)
 	if m := m2(tasks, in); m.Status != "pass" || !strings.Contains(m.Value, "60.0 s of 1") || !strings.Contains(m.Value, "in peaks 420.0 s of 1") {
 		t.Fatalf("%+v", m)
 	}
 	tasks[1].firstLease = lease(peak, 9*time.Minute)
 	if m := m2(tasks, in); m.Status != "fail" {
 		t.Fatalf("%+v", m)
+	}
+	// A task not taken counts with its wait so far.
+	tasks[1].firstLease = lease(peak, time.Minute)
+	in.now = start.Add(20 * time.Minute)
+	tasks = append(tasks, peopleTask{created: calm, state: "submitted"})
+	if m := m2(tasks, in); m.Status != "fail" || m.Detail == "" {
+		t.Fatalf("a starving queue: %+v", m)
 	}
 }
 
@@ -84,11 +92,28 @@ func TestGrowth(t *testing.T) {
 }
 
 func TestM13(t *testing.T) {
-	if m := m13([]Result{{OK: true}, {OK: false, Gap: "x"}}); m.Status != "fail" || m.Detail == "" {
+	// A known gap is recorded, not failed.
+	if m := m13([]Result{{OK: true}, {OK: false, Gap: "x"}}); m.Status != "pass" || m.Detail == "" {
+		t.Fatalf("%+v", m)
+	}
+	if m := m13([]Result{{OK: true}, {OK: false}}); m.Status != "fail" {
 		t.Fatalf("%+v", m)
 	}
 	if m := m13([]Result{{OK: true}}); m.Status != "pass" {
 		t.Fatalf("%+v", m)
+	}
+}
+
+// M-11 fails when connections beyond the core's pool grow.
+func TestM11(t *testing.T) {
+	start := time.Now()
+	ss := []procSample{{At: start, PoolConns: 4, PoolMax: 4, DBConns: 5}, {At: start.Add(time.Minute), PoolConns: 4, PoolMax: 4, DBConns: 7}}
+	if m := m11(metricsInput{start: start, samples: ss}); m.Status != "pass" {
+		t.Fatalf("%+v", m)
+	}
+	ss = append(ss, procSample{At: start.Add(2 * time.Minute), PoolConns: 2, PoolMax: 4, DBConns: 9})
+	if m := m11(metricsInput{start: start, samples: ss}); m.Status != "fail" {
+		t.Fatalf("a leak: %+v", m)
 	}
 }
 

@@ -541,14 +541,16 @@ found a breach, 2 for bad flags, 3 when the fuse stopped the run and 4 when a br
 
 Every 5 minutes, after each scenario and at the end, the run writes `results.json`, `metrics.json` and
 `report.md` (and `load.json` once the load ended) in its folder through a temporary file and a rename, so a
-reader never sees half a file. `results.json` says whether it is the `final` one. `metrics.json` holds:
+reader never sees half a file; `results.json` comes last and says whether it is the `final` one. When the metrics
+cannot be read, `results.json` is written still with the spend the fuse read and `metrics_error`, and the exit
+code stays the run's. The provider price counts a cache write at 1.25 and a cache read at 0.1 of the input price. `metrics.json` holds:
 
 - the threshold metrics `M-1` to `M-13` of the load test brief, each with its value, its threshold and `pass`,
   `fail` or `n/a` (`n/a` when the run did no work the metric reads; `M-1` to `M-4` and `M-6` to `M-10` are checked
   in a load run, so a run of scenarios only shows their values as `n/a`);
 - the observed values: the answer time of people's tasks by task type (median and 95th percentile), the share with
   a second attempt, the refusals of a rule by reason, the provider's own answers by status and the errors the
-  stand put in, the time from an alarm to its incident, the messages and cards per person, the cards the core put
+  stand put in (a provider that cannot be reached is neither), the time from the alarm episode to its incident, the messages and cards per person, the cards the core put
   off, the share of cards decided before they expired, and the processor load of the stand process and the host;
 - the spend by tenant and rank at two prices: the stand's, which is what the core charged at the prices of the
   profiles (the fuse reads it, and its total is `spent_eur` of `results.json`), and the provider's, the tokens at
@@ -563,17 +565,17 @@ the checks that did not pass. How the metrics are read:
 | Code | Read from |
 |---|---|
 | `M-1` | the tasks a channel enqueued for a person (`enqueued_by` `channel:...`) that ended; one a rule refused (`budget_exhausted`, `service_rate_limited`, `type_not_allowed`, `no_group_cap` and the like) does not count |
-| `M-2` | from such a task to its first attempt lease; the tasks created in a peak of the load profile apart. The wait in a limiter of the model calls falls inside the attempt |
-| `M-3` | the core's observation of each schedule slot (`farm.schedule.slot`: on time, late), and a slot skipped for another reason than a pause |
+| `M-2` | from such a task to its first attempt lease, and for one not taken yet its wait so far; the tasks created in a peak of the load profile apart. The wait in a limiter of the model calls falls inside the attempt |
+| `M-3` | each task a schedule enqueued: its first attempt lease before its `start_by_at`, late when it came after or the window passed without one; and a slot skipped for another reason than a pause, late. How the task ended is M-1's |
 | `M-4` | the attempt leases that ended with `output_schema_invalid` or `output_schema_invalid_repeated` |
 | `M-5` | each `F-1` put on: its task ended `completed` within two terms of its expired lease after the stop |
 | `M-6` | refusals with `budget_exhausted`, tasks seen waiting with that reason, holds for `runaway_spend`, by tenant; only a tenant with `tight_budget: true` in the farm profile may have any |
-| `M-7` | the refusals with `service_rate_limited` against the people's tasks |
+| `M-7` | the refusals with `service_rate_limited` of a person's enqueue and the people's tasks that ended with it, against the people's tasks |
 | `M-8`, `M-9` | each incident: in a tenant with the farm manager its `manager.incident.respond.v1` completed within 5 minutes of the opening; elsewhere its `manager_notice` was delivered within 2 minutes. An incident younger than the bound without an answer is pending |
-| `M-10` | a proposal of each tenant with the farm manager in a state past its commission (`recommended` on), and the checks of `scaffold-evolution` when it ran |
-| `M-11` | the samples: the core's pool never above its size, and the connections of the database growing at most 20% (or by two) from the first to the last quarter of the samples after the warm-up |
+| `M-10` | a proposal of each tenant with the farm manager in a state only a recommendation of its commission leads to (`recommended`, `presented`, `declined`, `noted`, `realizing` on, or `expired` after it was presented), and the checks of `scaffold-evolution` when the run played it (a load run plays no scenario) |
+| `M-11` | the samples: the connections of the run's database beyond the core's pool never more than two above the first sample, and growing at most 20% (or by two) from the first to the last quarter of the samples after the warm-up |
 | `M-12` | the same growth of the resident memory and the goroutines, measured from 10 minutes after the start of the load (of the run without one) over at least 4 minutes |
-| `M-13` | the checks of the scenarios; a check at a known gap of the core is not a pass |
+| `M-13` | the checks of the scenarios; a check at a known gap of the core is recorded in the detail and is no failure |
 
 `-export DIR` copies the same files and `sim-events.jsonl.gz`, the events compressed, to `DIR/run-<time>/` at the
 same moments, each through a temporary file and a rename, so a shared folder (rclone) holds a whole result no

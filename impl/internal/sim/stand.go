@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"math"
 	"math/rand/v2"
 	"net"
@@ -1358,8 +1359,12 @@ func (s *Stand) noteProfiles(ms []map[string]any) {
 			ranks[name] = int(num(mapOf(m["spec"])["rank"]))
 		}
 	}
+	// Merged, not replaced: the spend of a profile a later set left out is still priced.
 	s.mu.Lock()
-	s.profiles = ranks
+	if s.profiles == nil {
+		s.profiles = map[string]int{}
+	}
+	maps.Copy(s.profiles, ranks)
 	s.mu.Unlock()
 }
 

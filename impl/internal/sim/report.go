@@ -79,7 +79,7 @@ func (r *Reporter) Run(ctx context.Context) {
 		case <-st.C:
 			r.sample(ctx)
 		case <-wt.C:
-			if err := r.Write(ctx, false); err != nil && ctx.Err() == nil {
+			if _, err := r.Write(ctx, false); err != nil && ctx.Err() == nil {
 				r.S.log.Addf(KindDirector, "the results could not be written: %v", err)
 			}
 		}
@@ -138,15 +138,17 @@ func (r *Reporter) SetLoadSummary(l *LoadSummary) {
 
 // AfterScenario writes the results after a scenario.
 func (r *Reporter) AfterScenario(ctx context.Context, name string) {
-	if err := r.Write(ctx, false); err != nil && ctx.Err() == nil {
+	if _, err := r.Write(ctx, false); err != nil && ctx.Err() == nil {
 		r.S.log.Addf(KindDirector, "the results after %s could not be written: %v", name, err)
 	}
 }
 
 // Write writes results.json, metrics.json, report.md (and load.json once the load ended) in the
 // run's folder and copies them with the compressed events to the export folder. The spend of
-// results.json is the stand column of metrics.json, read in the same pass.
-func (r *Reporter) Write(ctx context.Context, final bool) error {
+// results.json is the stand column of metrics.json, read in the same pass. When the metrics
+// cannot be read (the final pass tries twice), results.json is written still, with the spend
+// the fuse read and the error, and Write returns the error with nil metrics.
+func (r *Reporter) Write(ctx context.Context, final bool) (*Metrics, error) {
 	r.writeMu.Lock()
 	defer r.writeMu.Unlock()
 	if final {
@@ -154,61 +156,96 @@ func (r *Reporter) Write(ctx context.Context, final bool) error {
 	}
 	r.mu.Lock()
 	in := metricsInput{start: r.start, loadStart: r.loadStart, load: r.load, final: final, samples: append([]procSample(nil), r.samples...),
-		budgetWaiting: map[string]map[string]bool{}, results: r.D.Results()}
+		budgetWaiting: map[string]map[string]bool{}}
 	for t, ids := range r.budgetWaiting {
 		in.budgetWaiting[t] = ids
 	}
 	loadSum := r.loadSum
 	r.mu.Unlock()
-	m, err := r.S.computeMetrics(ctx, in)
-	if err != nil {
-		return err
+	in.results = r.D.Results()
+	m, merr := r.S.computeMetrics(ctx, in)
+	if merr != nil && final && ctx.Err() == nil {
+		m, merr = r.S.computeMetrics(ctx, in)
 	}
-	results := map[string]any{"mode": r.Info.Mode, "model": r.Info.Model, "spent_eur": m.Spend.StandEUR, "max_eur": r.Info.MaxEUR,
+	spent := EUR(r.S.Spent())
+	if m != nil {
+		spent = m.Spend.StandEUR
+	} else if n, err := r.S.Bench.SpendTotal(ctx); err == nil {
+		spent = EUR(n)
+	}
+	results := map[string]any{"mode": r.Info.Mode, "model": r.Info.Model, "spent_eur": spent, "max_eur": r.Info.MaxEUR,
 		"fuse_tripped": r.S.Tripped(), "halted": r.S.Halted(), "auto_approve": r.Info.Approve, "final": final, "checks": in.results,
 		"violations": r.S.Violations()}
+	if merr != nil {
+		results["metrics_error"] = merr.Error()
+	}
 	files := map[string][]byte{}
-	for name, v := range map[string]any{"results.json": results, "metrics.json": m} {
+	docs := map[string]any{"results.json": results}
+	if m != nil {
+		docs["metrics.json"] = m
+		files["report.md"] = []byte(reportMD(m, in.results, r.S.Violations()))
+	} else {
+		files["report.md"] = []byte(fmt.Sprintf("# botaru-sim run report\n\nThe metrics could not be read at %s: %s\n", time.Now().UTC().Format(time.RFC3339), merr))
+	}
+	if loadSum != nil {
+		docs["load.json"] = loadSum
+	}
+	for name, v := range docs {
 		raw, err := json.MarshalIndent(v, "", "  ")
 		if err != nil {
-			return err
+			return nil, err
 		}
 		files[name] = append(raw, '\n')
 	}
-	files["report.md"] = []byte(reportMD(m, in.results, r.S.Violations()))
-	if loadSum != nil {
-		raw, err := json.MarshalIndent(loadSum, "", "  ")
-		if err != nil {
-			return err
+	// metrics.json first and results.json last, so a results.json is never newer than the
+	// metrics beside it.
+	order := []string{"metrics.json", "load.json", "report.md", "results.json"}
+	put := func(dir string) error {
+		for _, name := range order {
+			if raw, ok := files[name]; ok {
+				if err := writeShared(filepath.Join(dir, name), raw); err != nil {
+					return err
+				}
+			}
 		}
-		files["load.json"] = append(raw, '\n')
-	}
-	for name, raw := range files {
-		if err := writeShared(filepath.Join(r.Dir, name), raw); err != nil {
-			return err
-		}
-	}
-	if r.Export == "" {
 		return nil
 	}
-	dst := filepath.Join(r.Export, filepath.Base(r.Dir))
-	if err := os.MkdirAll(dst, 0o755); err != nil {
-		return err
+	if err := put(r.Dir); err != nil {
+		return nil, err
 	}
-	for name, raw := range files {
-		if err := writeShared(filepath.Join(dst, name), raw); err != nil {
-			return err
+	if r.Export != "" {
+		dst := filepath.Join(r.Export, filepath.Base(r.Dir))
+		if err := os.MkdirAll(dst, 0o755); err != nil {
+			return nil, err
+		}
+		if err := put(dst); err != nil {
+			return nil, err
+		}
+		if err := gzipAtomic(filepath.Join(r.Dir, "sim-events.jsonl"), filepath.Join(dst, "sim-events.jsonl.gz")); err != nil {
+			return nil, err
 		}
 	}
-	return gzipAtomic(filepath.Join(r.Dir, "sim-events.jsonl"), filepath.Join(dst, "sim-events.jsonl.gz"))
+	return m, merr
 }
 
-// writeShared is writeAtomic for a file others read: readable by all, as the run's other files.
+// writeShared writes a file others read through a temporary file, readable by all before the
+// rename, and the rename (a mount without modes keeps its own).
 func writeShared(path string, raw []byte) error {
-	if err := writeAtomic(path, raw); err != nil {
+	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*")
+	if err != nil {
 		return err
 	}
-	return os.Chmod(path, 0o644)
+	name := tmp.Name()
+	defer os.Remove(name)
+	_ = tmp.Chmod(0o644)
+	if _, err := tmp.Write(raw); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(name, path)
 }
 
 // gzipAtomic compresses src into dst through a temporary file and a rename; the events are
