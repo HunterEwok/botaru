@@ -84,7 +84,13 @@ One process holds the whole stand, built on the eval test bench (`internal/evals
 - the Telegram channel against a fake Bot API, and an agent worker for every agent role of `examples/roles`
   except the deferred `analyst` (the sandbox of tier 2) and `assistant` (DSP-10):
   `hello`, `ops-reader`, `data-reader`, `geo-reader`, `pipeline-reader`, `reporter`, the commission reviewers
-  `reviewer-a` and `reviewer-b`, the farm manager `farm-manager` and its reader `farm-manager-reader`;
+  `reviewer-a` and `reviewer-b`, the farm manager `farm-manager` and its reader `farm-manager-reader`; and the
+  stand's own roles of `impl/internal/sim/roles/` (the examples have none of them): the script translator
+  `translator` (profile `translator`, model profile `translate-std`, task type `script.translate.v1` on the command
+  `/script`, `scripts.propose: draft` over the step types `ops.health.v1`, `ops.investigate.v1`,
+  `pipeline.status.v1`, `geo.describe.v1` and the action `cleanup_pipeline_tmp`) and the campaign operator
+  `ops-operator` (profile `manager`, `campaigns.propose: action`, task type `ops.rollout.v1` on the command
+  `/rollout`, read campaigns of `ops.health.v1` and action campaigns of `cleanup_pipeline_tmp`);
 - the job worker of `data-job`, the simulator's own code: it runs the schedule tasks `check.http.v1` (the check
   results of the world), `pipeline.watch.v1` (the oneshot runs done since the last watch) and
   `data.sensor_watch.v1` without a model;
@@ -127,7 +133,20 @@ stand changes the example set in a few places so that a scenario sees the whole 
   console command `insights on` turn it on (it is off otherwise, since each run costs model calls). The role may
   run 50 analyses and make 10 proposals a week instead of 2 and 3, and when the schedule starts the stand dates
   the analyses of the last hour back by an hour, so the merge window of INS-4 (no scheduled analysis within an
-  hour of the last one) lets the next one run: a run of the stand plays weeks in minutes.
+  hour of the last one) lets the next one run: a run of the stand plays weeks in minutes;
+- `demo` has the commands `/script` (the translator) and `/rollout` (the campaign operator), and `staff` may ask
+  both; the action `cleanup_pipeline_tmp` is allowed in scripts (`script.allowed`, SCR-2), which the example
+  leaves out; `farm-manager` also claims the analysis after an incident `manager.postmortem.v1` (MGR-53), and the
+  group `farm-manager-ops` holds its capability, so every incident that resolves in a tenant with the farm manager
+  gets an analysis task too (one more model call in a real run); `alice` is in the group `runners` with the
+  privileged `script.run` (active through her code from `/me`), so she may run the scripts the translator drafts
+  for her that hold an action, a `confirm` step or a step that may control services. A bot proposes a campaign through
+  `propose_campaign` only in a role of profile `manager`, so `ops-reader` (profile `worker`) proposes none; the
+  stand's other campaigns are the fan-out steps of translator scripts. A role file of the stand lies in a folder
+  named as the role. The mock model does not draft scripts or propose campaigns yet, so under `-mock`
+  `/script` and `/rollout` do no real work; and every tenant copy has both commands, while on `standard` only the
+  tenants whose replicas name `translator` or `ops-operator` run a worker for them (elsewhere they wait out
+  `start_by`).
 
 ### The farm git and the hidden cases
 
@@ -306,6 +325,54 @@ little later a person asks about it; now and then a person of the lab asks a dat
 | `quit` | ends the run |
 
 Scenarios and the continuous mode combine: `-scenario` runs first.
+
+### The load generator (`-load`)
+
+`-load NAME|FILE` runs a load profile in the continuous mode instead of the faults of `-fault-every`
+(`internal/sim/load.go`; the embedded profiles are in `internal/sim/loads/`: `standard`, the load of the cloud
+load test, and `peak`, the same three times as fast for its first 15 minutes). It needs `-duration` or
+`-interactive`; `-seed` makes a run repeatable. A profile names, per kind of work, its rate per tenant and hour:
+
+```yaml
+name: standard
+warmup: 5m              # every rate ramps up from zero over the warm-up
+fault_life: 4m          # a fault of the load is healed after this
+peaks: [{at: 20m, for: 15m, factor: 3}]
+caps: {analyses_per_hour: 2, proposals_per_run: 4, manager_tasks_per_hour: 6}
+works:
+  - {code: R-04, per_hour: 6}                  # every tenant
+  - {code: R-06, per_hour: 4, tenants: [lab-dept]}
+```
+
+Each second the generator draws, per tenant and work, a Poisson number of arrivals with the rate of that moment.
+A work a tenant cannot take (no worker of the role it needs, no machine of the kind it needs, its fault still on
+that machine) or that a cap stops is skipped. `analyses_per_hour` counts the analysis turns the generator ran in a
+tenant in the last hour and those waiting for their turn (the store's own count cannot serve: each turn dates the
+analyses of the last hour back, INS-4); `proposals_per_run` counts every proposal of the farm in the store, the
+commission's and the farm manager's alike, before each analysis, so one analysis that writes several may pass it;
+`manager_tasks_per_hour` counts the larger of the farm manager's tasks of a tenant in the store in the last hour
+and the works of the load that open an incident there (`R-03`, `R-17`) in that hour. Zero is no cap. A home tenant
+analysis is skipped while the console or a scenario has the home analysis on (`insights_on`). The manager cap
+counts one task per incident; an incident that also brings the analysis after it (`manager.postmortem.v1`) costs
+up to two. Every started and skipped work is an event of the kind `LOAD` with its code
+and tenant; at the end the run writes `load.json` (the counts by code and tenant, the skipped ones by reason)
+and prints the counts by code. The codes are those of the load test brief:
+
+| Code | Work | Needs |
+|---|---|---|
+| `R-01` | nginx fails on the tenant's first web machine, `bob` asks `/logs` | `ops-reader`, a web machine |
+| `R-02` | the site gets slow, `alice` asks `/logs` | `ops-reader`, a web machine |
+| `R-03` | the data disk fills to 10% free and keeps filling, `bob` asks for a cleanup; below 15% free the monitoring opens the incident `disk_full`, so it counts toward `manager_tasks_per_hour` | `ops-reader`, a db machine |
+| `R-04` | `alice` asks `/health` | `ops-reader` |
+| `R-05` | `bob` asks `/logs` about the last hour | `ops-reader` |
+| `R-06` | `alice` asks `/geo` about a raster and a layer | `geo-reader` |
+| `R-08` | `bob` asks `/pipeline` why the last run failed | `pipeline-reader` |
+| `R-17` | the data disk fills to 3% free: the incident `disk_full` (capped by `manager_tasks_per_hour`) | a db machine |
+| `R-19` | the analysis schedule of `ops-reader` runs for one turn, one tenant at a time (capped by `analyses_per_hour` and `proposals_per_run`) | `ops-reader` |
+
+An analysis turn switches its tenant's schedule `ops-insight` on until the first new analysis is in the store, at
+most 75 seconds, and off again; each switch is a commit of
+the farm git. Every rate is per tenant, so the farm sees the sum over its tenants.
 
 ## The money fuse
 

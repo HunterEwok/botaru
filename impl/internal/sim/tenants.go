@@ -403,3 +403,31 @@ func copyID(tenant, name string) string {
 	sum := sha256.Sum256([]byte("botaru-sim principal " + tenant + "/" + name))
 	return "human:" + ids.Principal + "_" + ulid.MustNew(0, bytes.NewReader(sum[:])).String()
 }
+
+// TenantHost is a tenant's first machine of a kind, "" when it has none.
+func (s *Stand) TenantHost(tenant, kind string) string {
+	if s.farm == nil {
+		if tenant == s.Home() {
+			return templateHosts[kind]
+		}
+		return ""
+	}
+	if t := s.farm.Tenant(tenant); t != nil {
+		return t.First(kind)
+	}
+	return ""
+}
+
+// TenantWorkers is the number of workers of a bot role in a tenant.
+func (s *Stand) TenantWorkers(tenant, role string) int {
+	if s.farm == nil {
+		if tenant == s.Home() {
+			return 1
+		}
+		return 0
+	}
+	if t := s.farm.Tenant(tenant); t != nil {
+		return t.Workers(role)
+	}
+	return 0
+}

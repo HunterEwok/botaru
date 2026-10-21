@@ -1,0 +1,43 @@
+# The operator of the stand: a functionary manager that proposes campaigns over the catalog
+# selectors, read campaigns of ops.health.v1 and action campaigns of the pipeline cleanup
+# (ORC-1, ORC-5). The examples have no campaign role; this one is the stand's own.
+apiVersion: botaru/v1alpha1
+kind: Role
+metadata: {name: ops-operator}
+spec:
+  profile: manager
+  worker_kind: agent
+  claims: [ops.rollout.v1]
+  may_enqueue: [ops.health.v1]
+  actions_may_request: [cleanup_pipeline_tmp]
+  campaigns: {propose: action}
+  models: {base: base-std}
+  memory: none
+---
+apiVersion: botaru/v1alpha1
+kind: TaskType
+metadata: {name: ops.rollout.v1}
+spec:
+  title: "Work over several machines"
+  summary_for_managers: "Proposes one campaign over a catalog selector and reports its outcome"
+  worker_kind: agent
+  purpose: work
+  tier: 1
+  data_class: internal
+  instruction: |
+    Do the request over the machines of one catalog selector with propose_campaign: a read campaign of
+    ops.health.v1, or the cleanup action when the request asks for it. Then report the campaign's state.
+  params_schema: {type: object, additionalProperties: false, properties: {}}
+  result_schema:
+    type: object
+    additionalProperties: false
+    required: [answer]
+    properties:
+      answer: {type: string, maxLength: 2000}
+  interactive: true
+  timeouts: {start_by: 10m, lease: 120s, heartbeat: 30s, attempt: 5m, deadline: 2h}
+  retry: {max_attempts: 2, max_runs: 2}
+  tree_budget_eur: 0.40
+  max_children: 20
+  goal_trust: untrusted
+  proposable: false

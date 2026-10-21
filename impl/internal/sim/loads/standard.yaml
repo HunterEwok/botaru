@@ -1,0 +1,19 @@
+# The load of the cloud load test (the load test brief, "Kinds of work"): the rate of each kind of
+# work per tenant and hour. A tenant without the role or the machine a work needs skips it; the
+# events count it as skipped. The costly analysis is capped hard: at most 2 analyses per tenant
+# in any hour and 4 proposals for the whole farm in a run.
+name: standard
+warmup: 5m
+fault_life: 4m
+peaks: []
+caps: {analyses_per_hour: 2, proposals_per_run: 4, manager_tasks_per_hour: 6}
+works:
+  - {code: R-01, per_hour: 2}
+  - {code: R-02, per_hour: 2}
+  - {code: R-03, per_hour: 1}
+  - {code: R-04, per_hour: 6}
+  - {code: R-05, per_hour: 6}
+  - {code: R-06, per_hour: 4}
+  - {code: R-08, per_hour: 4}
+  - {code: R-17, per_hour: 1}
+  - {code: R-19, per_hour: 2}

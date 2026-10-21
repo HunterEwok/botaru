@@ -76,7 +76,8 @@ type BenchConfig struct {
 	// impl/SIM.md); the eval runner leaves them empty.
 
 	// Roles are further role folders of examples/roles the bench applies beside hello and
-	// ops-reader; an agent worker starts for each one of worker_kind agent.
+	// ops-reader, or role files under the root (a .yaml path, which may hold the role's task
+	// types too); an agent worker starts for each role of worker_kind agent.
 	Roles []string
 	// Edit changes the bench set before apply, while tenant demo is the template of the bench
 	// tenants (Tenants); EditTenants changes it after each bench tenant got its copy.
@@ -269,6 +270,12 @@ func StartBench(ctx context.Context, cfg BenchConfig) (_ *Bench, err error) {
 		b.roles[r] = files
 	}
 	for _, r := range cfg.Roles {
+		// A path names a role file of the caller's own (its folder is the role); a name, the
+		// role folder of examples/roles.
+		if strings.HasSuffix(r, ".yaml") {
+			b.roles[filepath.Base(filepath.Dir(r))] = []string{r}
+			continue
+		}
 		b.roles[r] = []string{"examples/roles/" + r + "/role.yaml"}
 	}
 	defer func() {
