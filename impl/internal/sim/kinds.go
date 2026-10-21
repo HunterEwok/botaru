@@ -426,9 +426,12 @@ func erasure(ctx context.Context, d *Director, sc string) error {
 	if err != nil {
 		return err
 	}
-	if _, _, _, err := d.taskEnd(ctx, key); err != nil {
+	// The watch needs that task to reach the model, else I-8 has nothing to look for.
+	hello, why, _, err := d.taskEnd(ctx, key)
+	if err != nil {
 		return err
 	}
+	d.check(sc, "canary_told", hello == "completed", "the task of his /hello: %s %s", hello, why)
 	if _, err := d.S.Say(leaver, leaver+"-dm", "/forget"); err != nil {
 		return err
 	}

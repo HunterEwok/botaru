@@ -76,12 +76,15 @@ type watch struct {
 	// people whose erasure is done, with the time it closed.
 	since  time.Time
 	erased map[string]time.Time
+	// lastSent is the last time a model request held each person canary, so a request sent
+	// between the close of an erasure and the sweep that reads it is still checked.
+	lastSent map[string]time.Time
 	// canaries are the canaries of each tenant: its own and its people's.
 	canaries map[string][]string
 }
 
 func newWatch(s *Stand, halt bool, file string) *watch {
-	w := &watch{s: s, halt: halt, file: file, seen: map[string]bool{}, erased: map[string]time.Time{}, canaries: map[string][]string{}}
+	w := &watch{s: s, halt: halt, file: file, seen: map[string]bool{}, erased: map[string]time.Time{}, lastSent: map[string]time.Time{}, canaries: map[string][]string{}}
 	// Only the tenants of the farm: the seed also names tenants the farm does not run, whose
 	// canary the planted injection reuses.
 	farm := s.TenantNames()
@@ -157,11 +160,19 @@ func (w *watch) model(tenant string, body []byte) {
 	if t, c := w.foreign(tenant, text); c != "" {
 		w.add("I-2", "model "+tenant+" "+c, fmt.Sprintf("a model request of %s holds the canary of %s", tenant, t), excerpt(text, c))
 	}
+	now := time.Now()
 	w.mu.Lock()
 	var gone []string
 	for c := range w.erased {
 		if strings.Contains(text, c) {
 			gone = append(gone, c)
+		}
+	}
+	if w.s.seed != nil {
+		for _, p := range w.s.seed.People {
+			if p.Canary != "" && strings.Contains(text, p.Canary) {
+				w.lastSent[p.Canary] = now
+			}
 		}
 	}
 	w.mu.Unlock()
@@ -361,12 +372,18 @@ func (w *watch) sweep(ctx context.Context) error {
 			if strings.TrimPrefix(p.ID, "human:") == id && p.Canary != "" {
 				w.mu.Lock()
 				_, known := w.erased[p.Canary]
+				sent := w.lastSent[p.Canary]
 				if !known {
 					w.erased[p.Canary] = closed
 				}
 				w.mu.Unlock()
 				if !known {
 					w.s.log.Addf(KindWatch, "the erasure of %s in %s is done: the watch looks for their data from now on", subject, tenant)
+					// A request since the close, sent before this sweep read it.
+					if sent.After(closed) {
+						w.add("I-8", "model "+p.Canary, fmt.Sprintf("a model request of %s at %s held the canary of %s after the erasure closed at %s",
+							tenant, sent.UTC().Format(time.RFC3339), subject, closed.UTC().Format(time.RFC3339)), p.Canary)
+					}
 				}
 			}
 		}
@@ -480,10 +497,12 @@ func (w *watch) final(ctx context.Context) error {
 		// The tenants are held: tasks wait for the hold, which is no owner lost.
 		return nil
 	}
-	// An action task waits for its write call, not for an attempt.
+	// An action task waits for its write call, not for an attempt. A task waiting for a free
+	// worker is not lost: the bound is two terms of the longest lease (120 s) and the delay of
+	// the slow provider (F-4, 30 s).
 	r, err := db.Query(ctx, `SELECT t.id, t.tenant, t.type, t.state FROM tasks t WHERE t.state IN ('submitted', 'working') AND t.reason IS NULL AND t.type NOT LIKE 'action.%'
 		AND NOT EXISTS (SELECT 1 FROM leases l WHERE l.work_id = t.id AND l.kind = 'attempt' AND l.state = 'active')
-		AND (t.run_at IS NULL OR t.run_at <= now()) AND t.updated_at < now() - interval '2 minutes'`)
+		AND (t.run_at IS NULL OR t.run_at <= now()) AND t.updated_at < now() - interval '270 seconds'`)
 	if err != nil {
 		return err
 	}
@@ -550,9 +569,10 @@ func (h logWatch) Handle(ctx context.Context, r slog.Record) error {
 	if r.Level >= slog.LevelError && h.s.watch != nil {
 		text := r.Message
 		r.Attrs(func(a slog.Attr) bool { text += " " + a.String(); return true })
-		// Go's own words, in lower case: the severities FATAL and PANIC of PostgreSQL name a
-		// connection the store ended (F-7), not a crash of this process.
-		if strings.Contains(text, "panic") || strings.Contains(text, "fatal error") {
+		// Go's own words: a handler panic the HTTP server recovered, a runtime error, a fatal
+		// error. The severities FATAL and PANIC of PostgreSQL name a connection the store ended
+		// (F-7), and a tool output or a model text the core logs may say "panic" in passing.
+		if strings.Contains(text, "panic serving") || strings.Contains(text, "runtime error") || strings.Contains(text, "fatal error") {
 			h.s.watch.add("I-11", text, "the log of the process holds a panic or a fatal error", text)
 		}
 	}

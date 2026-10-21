@@ -104,6 +104,10 @@ func TestWatchErased(t *testing.T) {
 	if v := s.watch.Violations(); len(v) != 0 {
 		t.Fatalf("before the erasure: %+v", v)
 	}
+	// The request is remembered, for an erasure that closes before the sweep reads it.
+	if s.watch.lastSent["CANARY-NOT-A-SECRET-P-bob-04"].IsZero() {
+		t.Fatal("the request with the canary is not remembered")
+	}
 	s.watch.erased["CANARY-NOT-A-SECRET-P-bob-04"] = time.Now()
 	s.watch.model("b", []byte(`{"messages":[{"content":"note CANARY-NOT-A-SECRET-P-bob-04"}]}`))
 	if v := s.watch.Violations(); len(v) != 1 || v[0].Code != "I-8" {
