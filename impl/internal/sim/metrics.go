@@ -1082,8 +1082,8 @@ func (s *Stand) observed(ctx context.Context, in metricsInput, tasks []peopleTas
 	}
 	o.DecidedInTime = share(decided, o.Approvals)
 	o.CPU = cpuSummary(in.samples)
-	if s.front.limit != nil {
-		st := s.front.limit.stats()
+	if s.limit != nil {
+		st := s.limit.stats()
 		o.Limiter = &st
 	}
 	return o, nil

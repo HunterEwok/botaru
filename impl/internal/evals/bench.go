@@ -107,6 +107,9 @@ type BenchConfig struct {
 	// spend cap) without calling the provider: the simulator's money fuse stops the calls of the
 	// attempts that run on until their next heartbeat.
 	ModelGate func() bool
+	// WrapP4, when set, wraps P4's handler on the P1 listener: the simulator holds the agents'
+	// model calls to its limits there, before P4 reserves any money for them.
+	WrapP4 func(http.Handler) http.Handler
 	// Commit, when set, keeps each applied set in the stand's own git: it gets the set the bench
 	// is about to apply and returns the commit and its message to apply it with, and the set read
 	// back from that commit. Without it each apply names a commit of its own that no git holds.
@@ -381,7 +384,11 @@ func StartBench(ctx context.Context, cfg BenchConfig) (_ *Bench, err error) {
 		b.personOps[name] = tok
 		creds = append(creds, api.OperatorCred{TokenSHA256: hashHex(tok), Principal: p.ID, Tenant: p.Tenant})
 	}
-	srv, err := api.New(b.c, api.Config{Operators: creds, Logger: cfg.Logger}, gw)
+	var p4 http.Handler = gw
+	if cfg.WrapP4 != nil {
+		p4 = cfg.WrapP4(gw)
+	}
+	srv, err := api.New(b.c, api.Config{Operators: creds, Logger: cfg.Logger}, p4)
 	if err != nil {
 		return nil, err
 	}

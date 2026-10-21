@@ -20,6 +20,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/HunterEwok/botaru/impl/internal/core"
@@ -130,6 +131,10 @@ type Stand struct {
 	// maxOut their output limit (the worst call of the plan).
 	profiles map[string]int
 	maxOut   map[string]float64
+	// limit holds the model calls to the limits of the run before P4 (nil: none); maxReq is
+	// the largest model request the front saw, in bytes (the worst call of the plan).
+	limit  *limiter
+	maxReq atomic.Int64
 	// faultRuns are the farm faults put on, in order (the metrics: M-5).
 	faultRuns []FaultRun
 	// closing is set once Close begins: no new background work starts (spawn).
@@ -240,16 +245,18 @@ func Start(ctx context.Context, cfg Config) (_ *Stand, err error) {
 		return nil, err
 	}
 	s.front.observe = func(tenant string, body []byte) {
+		for n := int64(len(body)); ; {
+			cur := s.maxReq.Load()
+			if n <= cur || s.maxReq.CompareAndSwap(cur, n) {
+				break
+			}
+		}
 		if s.watch != nil {
 			s.watch.model(tenant, body)
 		}
 	}
-	s.front.halted = func() bool { return s.Halted() != "" }
-	s.front.limit = newLimiter(cfg.MaxCallsPerMin, cfg.MaxParallelCalls)
-	s.front.held = func(tenant string, wait time.Duration) {
-		s.log.Add(KindModel, fmt.Sprintf("the limiter held a model call of %s for %s", orDash(tenant), wait.Round(time.Millisecond)),
-			map[string]any{"tenant": tenant, "limiter_wait_ms": wait.Milliseconds()})
-	}
+	s.front.halted = func() bool { return s.Halted() != "" || s.Tripped() }
+	s.limit = newLimiter(cfg.MaxCallsPerMin, cfg.MaxParallelCalls)
 	fu, stopFront, err := serve(s.front)
 	if err != nil {
 		return nil, err
@@ -316,6 +323,7 @@ func Start(ctx context.Context, cfg Config) (_ *Stand, err error) {
 		OnBotAPI:    s.onBotAPI,
 		OnModelCall: s.onModelCall,
 		ModelGate:   s.gate,
+		WrapP4:      s.wrapP4,
 		// The first apply commits the stand set to the farm git; later changes are commits of
 		// their own (SetInsights, Realize, RevertProposal).
 		Commit: func(ms []map[string]any) (string, string, []map[string]any, error) {
@@ -1423,6 +1431,17 @@ func (s *Stand) checkFuseNow() {
 	if err := s.CheckFuse(ctx); err != nil {
 		s.log.Addf(KindFuse, "the fuse check failed: %v", err)
 	}
+}
+
+// wrapP4 puts the limiter of the model calls before P4, when the run has one (D-11).
+func (s *Stand) wrapP4(next http.Handler) http.Handler {
+	if s.limit == nil {
+		return next
+	}
+	return limitP4(s.limit, func() bool { return s.Halted() != "" || s.Tripped() }, func(wait time.Duration) {
+		s.log.Add(KindModel, fmt.Sprintf("the limiter held a model call for %s", wait.Round(time.Millisecond)),
+			map[string]any{"limiter_wait_ms": wait.Milliseconds()})
+	})(next)
 }
 
 // gate lets a model call reach the provider only below the cap. P4 reserved the call's worst

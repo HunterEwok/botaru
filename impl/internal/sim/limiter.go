@@ -4,20 +4,31 @@ package sim
 
 import (
 	"context"
+	"errors"
+	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
 
-// limiter holds the model calls of the stand to a rate per minute and a number in flight, before
-// they reach the provider (the load test brief, D-11): a run then stays inside the provider's
-// limits however the load is drawn, and the wait it adds is measured apart from the farm's own.
+// limiter holds the model calls of the stand to a rate per minute and a number in flight (the
+// load test brief, D-11): a run then stays inside the provider's limits however the load is drawn,
+// and the wait it adds is measured apart from the farm's own.
+//
+// It stands before P4, on the agents' way to the gateway: a waiting call has no reserve yet and
+// P4's deadline of the call has not begun, so waiting makes a call slower and costs nothing, and
+// the provider never sees more than the limits. The calls start in the order they came; a call
+// waits until a slot is free, its agent gives up (its client's timeout) or the run stops.
 type limiter struct {
 	perMin, parallel int
 
 	mu       sync.Mutex
 	starts   []time.Time
 	inFlight int
-	queued   int
+	// queue holds the tickets of the waiting calls in the order they came: only the first may
+	// start.
+	queue  []uint64
+	ticket uint64
 	// The waits of every call, for the metrics.
 	calls, held, maxQueued int
 	waits                  []time.Duration
@@ -39,6 +50,9 @@ type LimiterStats struct {
 // limiterPoll is how often a waiting call looks again.
 const limiterPoll = 50 * time.Millisecond
 
+// errLimiterStopped is the end of a wait when the run stopped.
+var errLimiterStopped = errors.New("the run stopped while the call waited")
+
 func newLimiter(perMin, parallel int) *limiter {
 	if perMin <= 0 && parallel <= 0 {
 		return nil
@@ -46,45 +60,78 @@ func newLimiter(perMin, parallel int) *limiter {
 	return &limiter{perMin: perMin, parallel: parallel}
 }
 
-// acquire waits until a call may start, or the context ends; it returns the wait. A call that
-// acquired must release.
-func (l *limiter) acquire(ctx context.Context) (time.Duration, error) {
+// free says whether a call may start now; l.mu is held.
+func (l *limiter) free(now time.Time) bool {
+	cut := 0
+	for cut < len(l.starts) && now.Sub(l.starts[cut]) >= time.Minute {
+		cut++
+	}
+	l.starts = l.starts[cut:]
+	return (l.parallel <= 0 || l.inFlight < l.parallel) && (l.perMin <= 0 || len(l.starts) < l.perMin)
+}
+
+// start takes a slot for a call that waited wait; l.mu is held.
+func (l *limiter) start(now time.Time, wait time.Duration) {
+	l.inFlight++
+	l.starts = append(l.starts, now)
+	l.calls++
+	if wait >= time.Millisecond {
+		l.held++
+		l.waits = append(l.waits, wait)
+	}
+}
+
+// leave takes a ticket out of the queue; l.mu is held.
+func (l *limiter) leave(t uint64) {
+	for i, q := range l.queue {
+		if q == t {
+			l.queue = append(l.queue[:i], l.queue[i+1:]...)
+			return
+		}
+	}
+}
+
+// acquire waits until a call may start, in the order the calls came, and returns the wait; it
+// gives up with errLimiterStopped when stop says the run stopped, and with the context's error.
+// A call that acquired must release.
+func (l *limiter) acquire(ctx context.Context, stop func() bool) (time.Duration, error) {
 	begin := time.Now()
 	l.mu.Lock()
-	l.queued++
-	l.maxQueued = max(l.maxQueued, l.queued)
+	if len(l.queue) == 0 && l.free(begin) {
+		l.start(begin, 0)
+		l.mu.Unlock()
+		return 0, nil
+	}
+	l.ticket++
+	t := l.ticket
+	l.queue = append(l.queue, t)
+	l.maxQueued = max(l.maxQueued, len(l.queue))
 	l.mu.Unlock()
-	defer func() {
-		l.mu.Lock()
-		l.queued--
-		l.mu.Unlock()
-	}()
+	tick := time.NewTicker(limiterPoll)
+	defer tick.Stop()
 	for {
-		now := time.Now()
-		l.mu.Lock()
-		cut := 0
-		for cut < len(l.starts) && now.Sub(l.starts[cut]) >= time.Minute {
-			cut++
-		}
-		l.starts = l.starts[cut:]
-		if (l.parallel <= 0 || l.inFlight < l.parallel) && (l.perMin <= 0 || len(l.starts) < l.perMin) {
-			l.inFlight++
-			l.starts = append(l.starts, now)
-			wait := now.Sub(begin)
-			l.calls++
-			if wait >= time.Millisecond {
-				l.held++
-				l.waits = append(l.waits, wait)
-			}
-			l.mu.Unlock()
-			return wait, nil
-		}
-		l.mu.Unlock()
 		select {
 		case <-ctx.Done():
+			l.mu.Lock()
+			l.leave(t)
+			l.mu.Unlock()
 			return time.Since(begin), ctx.Err()
-		case <-time.After(limiterPoll):
+		case <-tick.C:
 		}
+		now := time.Now()
+		l.mu.Lock()
+		switch {
+		case stop != nil && stop():
+			l.leave(t)
+			l.mu.Unlock()
+			return now.Sub(begin), errLimiterStopped
+		case l.queue[0] == t && l.free(now):
+			l.queue = l.queue[1:]
+			l.start(now, now.Sub(begin))
+			l.mu.Unlock()
+			return now.Sub(begin), nil
+		}
+		l.mu.Unlock()
 	}
 }
 
@@ -103,4 +150,32 @@ func (l *limiter) stats() LimiterStats {
 		st.TotalS += w.Seconds()
 	}
 	return st
+}
+
+// limitP4 holds the model calls of the agents to the limits before P4 sees them; held sees
+// each call that waited. Other requests of P4 pass.
+func limitP4(l *limiter, stop func() bool, held func(time.Duration)) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodPost || !strings.HasSuffix(r.URL.Path, "/messages") {
+				next.ServeHTTP(w, r)
+				return
+			}
+			wait, err := l.acquire(r.Context(), stop)
+			switch {
+			case errors.Is(err, errLimiterStopped):
+				writeHalted(w)
+				return
+			case err != nil:
+				// The agent gave up on the call while it waited.
+				http.Error(w, "the call was abandoned", http.StatusServiceUnavailable)
+				return
+			}
+			defer l.release()
+			if wait >= time.Millisecond && held != nil {
+				held(wait)
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }

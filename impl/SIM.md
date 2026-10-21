@@ -512,6 +512,37 @@ manager that is 2.00 EUR per manager tree and 4.00 EUR a day, with Opus 5.5 0.56
 EUR (a little more than it costs); an id the table does not know counts at the highest price its family had, and
 any other id needs `-price-in` and `-price-out`, the EUR per million tokens of that model.
 
+### The money plan (`-dry-plan`)
+
+`-dry-plan` runs the same flags on the mock (no key, no money) and prints the money plan of a real run of them:
+
+- the calls and the tokens of each rank, priced at the stand's price of the rank's model (the one the fuse counts)
+  and at the provider's price (Haiku below 100K tokens of prompt is a fifth of the stand's price);
+- the estimate: the mock's tokens times `PlanFactor` (3.7), what the seven scenarios of the first real runs spent
+  against the mock's tokens of the same work (1.39 and 1.22 EUR against 0.35 EUR); correct it after each real run;
+- the recommended `-max-eur`: the estimate times 1.5 and a reserve for the calls in flight, the worst call times the
+  calls the limiter lets run at once. The worst call is the gateway's reserve of the dearest profile of the set (its
+  output limit, and the largest request of the mock run with half again, at least 60000 bytes, at the cache write
+  price), since a real model may hand work to a rank the mock never called.
+
+The plan goes to `plan.json` in the run's folder and to `plan-<key>.json` in `-out` (a long key is named by its
+hash). The key names the farm, the scenarios, the load, its length and the one model of `-model`; a real run of
+the same key prints the plan at its start and warns when `-max-eur` is below the recommendation or the plan was made
+for another number of calls at once. A plan of a mock run that did not run to its end (the fuse, a halt, an
+interrupt, a failed check) says so and stays in its run's folder only. A continuous run (`-load`, `-duration`)
+plans as long as it runs. `-dry-plan` needs a bound of the calls at once: `-max-parallel-calls 0` is refused.
+
+### The limiter of the model calls
+
+`-max-calls-per-min` and `-max-parallel-calls` (30 and 8 with `-real`, none on the mock; 0 is none) hold the model
+calls of the agents to a rate and a number in flight, so a load stays inside the provider's limits. The limiter
+stands before P4, on the agents' way to the gateway: a waiting call has no reserve yet and P4's deadline of it has
+not begun, so waiting makes a call slower and costs nothing, and the provider never sees more calls than the limits.
+The calls start in the order they came; a call waits until a slot is free, its agent gives up (its client waits
+10 minutes) or the run stops (the fuse or a halt), which refuses the waiting calls at once. Each wait is a model
+event with `limiter_wait_ms`, and the metrics count the calls, the waits and the most calls waiting at once
+(`metrics.json` `observed.limiter`). The wait falls inside the attempt, so it is not in M-2's queue wait.
+
 ## Output
 
 The console prints each event as it happens, and `<out>/run-<time>/sim-events.jsonl` keeps every event as a JSON

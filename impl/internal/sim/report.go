@@ -332,7 +332,7 @@ func reportMD(m *Metrics, results []Result, viol []Violation) string {
 	fmt.Fprintf(&b, "- Processor: the stand process %.0f%% on average, %.0f%% at most (100%% is one processor); the host %.0f%% on average, %.0f%% at most.\n",
 		o.CPU.ProcessMean, o.CPU.ProcessMax, o.CPU.HostMean, o.CPU.HostMax)
 	if l := o.Limiter; l != nil {
-		fmt.Fprintf(&b, "- The stand's limiter (%d calls a minute, %d at once): %d calls, %d held, %.0f s in all, median %.1f s, 95th percentile %.1f s; at most %d waiting.\n",
+		fmt.Fprintf(&b, "- The stand's limiter (%d calls a minute, %d at once): %d calls, %d held, %.0f s in all, median %.1f s, 95th percentile %.1f s; at most %d waiting (before P4, which reserves no money for a waiting call).\n",
 			l.PerMinute, l.Parallel, l.Calls, l.Held, l.TotalS, l.Wait.P50, l.Wait.P95, l.MaxQueued)
 	}
 	p := m.Process

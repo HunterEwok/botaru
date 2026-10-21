@@ -3,6 +3,8 @@
 package sim
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -32,12 +34,17 @@ type Plan struct {
 	// StandEUR and ProviderEUR are the estimate at the two prices.
 	StandEUR    float64 `json:"stand_eur"`
 	ProviderEUR float64 `json:"provider_eur"`
-	// WorstCallEUR is what the gateway reserves for the dearest call at the stand's price;
-	// Parallel the calls the limiter lets run at once.
+	// WorstCallEUR is what the gateway reserves for the dearest call of any profile of the set
+	// (a real model may hand work to a rank the mock never called), at the stand's price;
+	// Parallel the calls the limiter lets run at once, which are the calls that hold a reserve
+	// (the limiter stands before P4, so a waiting call holds none).
 	WorstCallEUR float64 `json:"worst_call_eur"`
 	Parallel     int     `json:"parallel"`
 	// MaxEUR is the recommended -max-eur.
 	MaxEUR float64 `json:"max_eur"`
+	// Partial says the mock run of the plan did not run to its end (the fuse, a halt, an
+	// interrupt or a failed check): the estimate is then too low.
+	Partial string `json:"partial,omitempty"`
 }
 
 // PlanRank is the estimate of the calls of one rank.
@@ -58,11 +65,21 @@ type PlanRank struct {
 // after each real run.
 const PlanFactor = 3.7
 
-// PlanKey names a run for its plan: the farm, the scenarios, the load and its length.
-func PlanKey(farm, scenarios, load string, duration time.Duration) string {
+// PlanKey names a run for its plan: the farm, the scenarios, the load and its length, and the
+// one model of a run that names one.
+func PlanKey(farm, scenarios, load string, duration time.Duration, model string) string {
 	k := "farm=" + farm
+	if model != "" {
+		k += " model=" + model
+	}
 	if scenarios != "" {
-		k += " scenarios=" + scenarios
+		var names []string
+		for n := range strings.SplitSeq(scenarios, ",") {
+			if n = strings.TrimSpace(n); n != "" {
+				names = append(names, n)
+			}
+		}
+		k += " scenarios=" + strings.Join(names, ",")
 	}
 	if load != "" {
 		k += " load=" + load
@@ -75,9 +92,15 @@ func PlanKey(farm, scenarios, load string, duration time.Duration) string {
 
 var reUnsafe = regexp.MustCompile(`[^a-z0-9.-]+`)
 
-// PlanFile is the file of the plan of a key in a folder.
+// PlanFile is the file of the plan of a key in a folder; a long key is named by its hash (the
+// file holds the key).
 func PlanFile(dir, key string) string {
-	return filepath.Join(dir, "plan-"+strings.Trim(reUnsafe.ReplaceAllString(strings.ToLower(key), "-"), "-")+".json")
+	name := strings.Trim(reUnsafe.ReplaceAllString(strings.ToLower(key), "-"), "-")
+	if len(name) > 100 {
+		sum := sha256.Sum256([]byte(key))
+		name = name[:60] + "-" + hex.EncodeToString(sum[:8])
+	}
+	return filepath.Join(dir, "plan-"+name+".json")
 }
 
 // MakePlan prices the tokens of the run so far at the stand's and the provider's prices of the
@@ -109,12 +132,15 @@ func (s *Stand) MakePlan(m *Metrics, key string, rankModels map[int]string, stan
 		p.ProviderEUR += pr.ProviderEUR
 		p.Ranks = append(p.Ranks, *pr)
 	}
-	// The worst call: the reserve of the gateway (the output limit and a request of 60000
-	// tokens) at the stand's price of the profile's rank model.
+	// The worst call: the reserve of the gateway (the output limit, and the request's bytes and
+	// 1024 as tokens) at the stand's price of the profile's rank model; the request is the
+	// largest of the run with half again, at least 60000 bytes (a real conversation grows
+	// longer than the mock's).
+	in := float64(max(60000, s.maxReq.Load()*3/2) + 1024)
 	s.mu.Lock()
 	for name, rank := range s.profiles {
 		pr := stand[rankModel(rankModels, rank)]
-		p.WorstCallEUR = max(p.WorstCallEUR, (s.maxOut[name]*pr[1]+60000*pr[0])/1e6)
+		p.WorstCallEUR = max(p.WorstCallEUR, (s.maxOut[name]*pr[1]+in*1.25*pr[0])/1e6)
 	}
 	s.mu.Unlock()
 	p.MaxEUR = math.Ceil((1.5*p.StandEUR+p.WorstCallEUR*float64(max(parallel, 1)))*100) / 100
@@ -131,6 +157,9 @@ func (p Plan) String() string {
 	}
 	fmt.Fprintf(&b, "  estimate %.2f EUR at the stand's price (the fuse counts it), %.2f EUR at the provider's\n", p.StandEUR, p.ProviderEUR)
 	fmt.Fprintf(&b, "  recommended -max-eur %.2f = %.2f x 1.5 + the worst call %.2f x %d calls at once", p.MaxEUR, p.StandEUR, p.WorstCallEUR, max(p.Parallel, 1))
+	if p.Partial != "" {
+		fmt.Fprintf(&b, "\n  the mock run did not run to its end (%s): the estimate is too low", p.Partial)
+	}
 	return b.String()
 }
 
