@@ -287,7 +287,7 @@ func (s *Stand) computeMetrics(ctx context.Context, in metricsInput) (*Metrics, 
 	rows, err := db.Query(ctx, `SELECT t.id, t.tenant, t.type, t.state, coalesce(t.reason, ''), t.created_at, t.updated_at,
 		(SELECT min(l.created_at) FROM leases l WHERE l.work_id = t.id AND l.kind = 'attempt'),
 		(SELECT count(*) FROM leases l WHERE l.work_id = t.id AND l.kind = 'attempt'),
-		EXISTS (SELECT 1 FROM holds h WHERE h.state = 'active' AND 'no_claim' = ANY(h.effects) AND (h.scope_kind = 'farm' OR h.scope_tenant = t.tenant))
+		EXISTS (SELECT 1 FROM holds h WHERE h.state = 'active' AND 'no_claim' = ANY(h.effects) AND (h.scope_kind = 'farm' OR h.scope_kind = 'tenant' AND h.scope_tenant = t.tenant))
 		FROM tasks t WHERE t.record->>'enqueued_by' LIKE 'channel:%' AND t.created_at >= $1`, in.start)
 	if err != nil {
 		return nil, err
@@ -378,8 +378,9 @@ func (s *Stand) computeMetrics(ctx context.Context, in metricsInput) (*Metrics, 
 		return nil, err
 	}
 	limitedTasks := map[string]bool{}
-	lr, err := db.Query(ctx, `SELECT DISTINCT record->'actor'->>'task' FROM audit WHERE record->>'ok' = 'false'
-		AND record->>'reason' = 'service_rate_limited' AND record->'actor'->>'task' IS NOT NULL AND at >= $1`, in.start)
+	// A refusal in a child task counts for the person's task at the root of its tree.
+	lr, err := db.Query(ctx, `SELECT DISTINCT coalesce(k.record->>'root', k.id) FROM audit a JOIN tasks k ON k.id = a.record->'actor'->>'task'
+		WHERE a.record->>'ok' = 'false' AND a.record->>'reason' = 'service_rate_limited' AND a.at >= $1`, in.start)
 	if err != nil {
 		return nil, err
 	}
@@ -549,8 +550,9 @@ func inPeak(in metricsInput, at time.Time) bool {
 
 // m3 is the share of scheduled tasks taken within their start window: the first attempt lease
 // before start_by_at (the core sets it from timeouts.start_by of the type). A task not taken whose
-// window has not passed yet is pending; a slot skipped for another reason than a pause is not on
-// time. How the task ended does not count here (M-1 and the checks read that).
+// window has not passed yet is pending; a slot skipped for another reason than a rule is not on
+// time, and so is a slot the enqueue refused. How the task ended does not count here (M-1 and
+// the checks read that).
 func (s *Stand) m3(ctx context.Context, start, now time.Time) (Metric, error) {
 	mt := Metric{Code: "M-3", Name: "scheduled work started on time (start_by)", Threshold: ">= 99%"}
 	db := s.Bench.Store().Pool
@@ -562,11 +564,12 @@ func (s *Stand) m3(ctx context.Context, start, now time.Time) (Metric, error) {
 		WHERE t.record->>'enqueued_by' LIKE 'schedule:%' AND t.created_at >= $1`, start, now).Scan(&onTime, &late); err != nil {
 		return mt, err
 	}
-	// A slot skipped for any reason but a pause is not on time; the reasons are shown, since a
+	// A slot skipped for any reason but a rule's is not on time: a pause, the analysis limit
+	// (INS-4) and a clock gap (dst_gap) skip slots by design; the reasons are shown, since a
 	// fault of the run (an open provider circuit, a hold) skips slots too.
 	reasons := map[string]int{}
 	rows, err := db.Query(ctx, `SELECT coalesce(data->>'reason', ''), count(*)::int FROM events WHERE type = 'schedule.skipped'
-		AND coalesce(data->>'reason', '') <> 'paused' AND time >= $1 GROUP BY 1`, start)
+		AND coalesce(data->>'reason', '') NOT IN ('paused', 'insight_limit', 'dst_gap') AND time >= $1 GROUP BY 1`, start)
 	if err != nil {
 		return mt, err
 	}
@@ -583,6 +586,17 @@ func (s *Stand) m3(ctx context.Context, start, now time.Time) (Metric, error) {
 	rows.Close()
 	if err := rows.Err(); err != nil {
 		return mt, err
+	}
+	// A slot the enqueue refused for another reason (a permission of system-ops, money) leaves no
+	// task and no skip, only the schedule's alarm, which counts each refused slot (TIM-3).
+	var refused int
+	if err := db.QueryRow(ctx, `SELECT coalesce(sum(1 + repeat_count), 0)::int FROM alarm_episodes
+		WHERE alarm = 'alarm.schedule.refused.v1' AND opened_at >= $1`, start).Scan(&refused); err != nil {
+		return mt, err
+	}
+	if refused > 0 {
+		reasons["refused"] = refused
+		skipped += refused
 	}
 	all := onTime + late + skipped
 	if all == 0 {
@@ -758,7 +772,8 @@ func m7(tasks []peopleTask, peopleLimited int, limitedTasks map[string]bool) Met
 
 // m8m9 are the farm manager's answers to the incidents of the tenants with a manager (within
 // 5 minutes of the opening) and the notices of an incident in a tenant without one, delivered
-// within 2 minutes. An incident opened less than the bound ago without an answer yet is pending,
+// within 2 minutes. An incident of the farm itself (store_low) goes to the farm's admins, outside
+// both bounds. An incident opened less than the bound ago without an answer yet is pending,
 // not late.
 func (s *Stand) m8m9(ctx context.Context, start, now time.Time) (Metric, Metric, error) {
 	m8 := Metric{Code: "M-8", Name: "the farm manager answered an incident", Threshold: "within 5 min of the opening (tenants with a manager)"}
@@ -772,7 +787,7 @@ func (s *Stand) m8m9(ctx context.Context, start, now time.Time) (Metric, Metric,
 			AND t.idempotency_key LIKE 'system:incident:' || i.id || ':%'),
 		(SELECT min(d.updated_at) FROM deliveries d WHERE d.tenant = i.tenant AND d.kind = 'manager_notice' AND d.subject_kind = 'incident'
 			AND d.subject_id = i.id AND d.state = 'delivered')
-		FROM incidents i WHERE i.opened_at >= $1`, start)
+		FROM incidents i WHERE i.opened_at >= $1 AND i.subject_kind <> 'farm'`, start)
 	if err != nil {
 		return m8, m9, err
 	}

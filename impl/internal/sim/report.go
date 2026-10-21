@@ -310,7 +310,7 @@ func reportMD(m *Metrics, results []Result, viol []Violation) string {
 		fmt.Fprintf(&b, "- %s %s\n", v.Code, mdCell(v.What))
 	}
 	fmt.Fprintf(&b, "\n## Spend\n\nThe stand price is what the core charged at the prices of the profiles (the fuse and results.json read it); "+
-		"the provider price is the tokens at the provider's price of the model. Over %.2f h.\n\n", m.Spend.Hours)
+		"the provider price is the tokens at the provider's price of the model, so it leaves out the costs of tools (rank 0). Over %.2f h.\n\n", m.Spend.Hours)
 	b.WriteString("| Tenant | Rank | Model | Calls | Input tokens | Output tokens | Stand EUR | Provider EUR | Stand EUR/h | Provider EUR/h |\n|---|---|---|---|---|---|---|---|---|---|\n")
 	for _, r := range m.Spend.Rows {
 		fmt.Fprintf(&b, "| %s | %d | %s | %d | %d | %d | %s | %s | %s | %s |\n", r.Tenant, r.Rank, r.Model, r.Calls, r.InputTokens, r.OutputTokens,
