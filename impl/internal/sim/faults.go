@@ -206,6 +206,11 @@ type FaultRun struct {
 // with none, a replica of the tenant's role with the most replicas); F-8 returns once the core
 // started again.
 func (s *Stand) InjectFault(ctx context.Context, code, tenant string) (*FaultRun, error) {
+	return s.injectFault(ctx, code, tenant, "")
+}
+
+// injectFault is InjectFault; for F-1 a task names the attempt whose replica goes silent.
+func (s *Stand) injectFault(ctx context.Context, code, tenant, task string) (*FaultRun, error) {
 	f := FarmFaultOf(code)
 	if f == nil {
 		return nil, fmt.Errorf("no farm fault %s (known: %s)", code, strings.Join(FaultCodes(), ", "))
@@ -220,7 +225,7 @@ func (s *Stand) InjectFault(ctx context.Context, code, tenant string) (*FaultRun
 	var err error
 	switch f.Code {
 	case "F-1":
-		err = s.silenceReplica(ctx, tenant, run)
+		err = s.silenceReplica(ctx, tenant, task, run)
 	case "F-2":
 		if err = os.MkdirAll(filepath.Dir(crashFile(s.cfg.Work)), 0o755); err == nil {
 			err = os.WriteFile(crashFile(s.cfg.Work), []byte("armed\n"), 0o644)
@@ -250,16 +255,36 @@ func (s *Stand) InjectFault(ctx context.Context, code, tenant string) (*FaultRun
 
 // silenceReplica stops the replica of F-1 as a crash would and starts it again after
 // replicaDown, under the stand's run.
-func (s *Stand) silenceReplica(ctx context.Context, tenant string, run *FaultRun) error {
-	var id, task string
-	err := s.Bench.Store().Pool.QueryRow(ctx, `SELECT worker_id, work_id FROM leases WHERE tenant = $1 AND kind = 'attempt' AND state = 'active'
-		ORDER BY created_at DESC LIMIT 1`, tenant).Scan(&id, &task)
-	name := ""
-	if err == nil {
-		name = s.Bench.WorkerName(id)
+func (s *Stand) silenceReplica(ctx context.Context, tenant, want string, run *FaultRun) error {
+	// The newest lease of a replica that still runs (a silent one keeps its lease until it
+	// expires), or the lease of the task asked for.
+	running := map[string]bool{}
+	for _, n := range s.Bench.Workers() {
+		running[n] = true
+	}
+	rows, err := s.Bench.Store().Pool.Query(ctx, `SELECT worker_id, work_id FROM leases WHERE tenant = $1 AND kind = 'attempt' AND state = 'active'
+		AND ($2 = '' OR work_id = $2) ORDER BY created_at DESC`, tenant, want)
+	if err != nil {
+		return err
+	}
+	name, task := "", ""
+	for rows.Next() {
+		var id, t string
+		if err := rows.Scan(&id, &t); err != nil {
+			rows.Close()
+			return err
+		}
+		if n := s.Bench.WorkerName(id); running[n] {
+			name, task = n, t
+			break
+		}
+	}
+	rows.Close()
+	if want != "" && name == "" {
+		return fmt.Errorf("no running replica holds the lease of %s", want)
 	}
 	if name == "" {
-		name, task = s.busiestReplica(tenant), ""
+		name = s.busiestReplica(tenant)
 	}
 	if name == "" {
 		return errors.New("no agent worker to stop")
@@ -354,9 +379,12 @@ func (s *Stand) rollCore(ctx context.Context, run *FaultRun) error {
 	if err != nil && !errors.Is(err, context.DeadlineExceeded) {
 		return err
 	}
+	// A drain once begun always ends, also when the run ends during the wait.
+	sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer cancel()
 	var req core.ProcessStopRequest
 	req.Process.Kind, req.Mode = "core", "graceful"
-	if _, err := s.Bench.Core().TestProcessStop(ctx, req); err != nil {
+	if _, err := s.Bench.Core().TestProcessStop(sctx, req); err != nil {
 		return fmt.Errorf("the core start: %w", err)
 	}
 	s.log.Addf(KindFault, "F-8: the core started again (%d attempts still held their leases)", running)
@@ -410,6 +438,7 @@ func farmFaults(ctx context.Context, d *Director, sc string) error {
 	}
 
 	// F-3: errors of the provider on the next model call and a share of the others.
+	errs0, delayed0 := s.front.counts()
 	if _, err := s.InjectFault(ctx, "F-3", home); err != nil {
 		return err
 	}
@@ -422,12 +451,16 @@ func farmFaults(ctx context.Context, d *Director, sc string) error {
 		return err
 	}
 	errs, _ := s.front.counts()
+	for c := range errs {
+		errs[c] -= errs0[c]
+	}
 	var provReason string
 	_ = s.Bench.Store().Pool.QueryRow(ctx, `SELECT coalesce(record->>'provider_reason', '') FROM tasks WHERE tenant = $1 AND idempotency_key = $2`, home, key).Scan(&provReason)
-	// The run cap may end a task of several calls while the fault lasts (expected); a provider
-	// failure never ends it any other way.
-	d.check(sc, "provider_errors_survived", errs[500]+errs[529]+errs[429] > 0 &&
-		(state == "completed" || state == "failed" && reason == "runs_exhausted" && provReason != ""),
+	// The task itself met the fault (its last provider reason is kept); the run cap may end a
+	// task of several calls while the fault lasts (expected), and a provider failure never ends
+	// it any other way.
+	d.check(sc, "provider_errors_survived", errs[500]+errs[529]+errs[429] > 0 && provReason != "" &&
+		(state == "completed" || state == "failed" && reason == "runs_exhausted"),
 		"state %s %s (last provider reason %q); answered by the front: 500 %d, 529 %d, 429 %d; attempts %d", state, reason, provReason, errs[500], errs[529], errs[429], attempts(key))
 	s.HealFarm()
 	if key, err = ask(); err != nil {
@@ -452,6 +485,7 @@ func farmFaults(ctx context.Context, d *Director, sc string) error {
 		return err
 	}
 	_, delayed := s.front.counts()
+	delayed -= delayed0
 	took := time.Since(start)
 	d.check(sc, "provider_slow_survived", state == "completed" && delayed > 0 && took >= providerDelay,
 		"state %s %s; %d calls delayed; the task took %s", state, reason, delayed, took.Round(time.Second))
@@ -486,10 +520,11 @@ func farmFaults(ctx context.Context, d *Director, sc string) error {
 	if err != nil {
 		return fmt.Errorf("the task of F-1 got no attempt lease: %w", err)
 	}
-	run, err := s.InjectFault(ctx, "F-1", home)
+	run, err := s.injectFault(ctx, "F-1", home, task)
 	if err != nil {
 		return err
 	}
+	refused0, _ := s.Mon.FaultCounts()
 	if _, err := s.InjectFault(ctx, "F-5", home); err != nil {
 		return err
 	}
@@ -507,9 +542,12 @@ func farmFaults(ctx context.Context, d *Director, sc string) error {
 	}
 	var ended time.Time
 	_ = s.Bench.Store().Pool.QueryRow(ctx, `SELECT updated_at FROM tasks WHERE id = $1`, task).Scan(&ended)
+	// The lease term from the expired lease itself (its end less its start, at least the term).
 	var expired int
-	_ = s.Bench.Store().Pool.QueryRow(ctx, `SELECT count(*) FROM leases WHERE work_id = $1 AND kind = 'attempt' AND state = 'expired'`, task).Scan(&expired)
-	leaseTerm := 60 * time.Second
+	var termS float64
+	_ = s.Bench.Store().Pool.QueryRow(ctx, `SELECT count(*), coalesce(max(extract(epoch FROM lease_until - created_at)), 60)::float8
+		FROM leases WHERE work_id = $1 AND kind = 'attempt' AND state = 'expired'`, task).Scan(&expired, &termS)
+	leaseTerm := time.Duration(termS * float64(time.Second))
 	inTime := others == 0 || ended.Sub(run.At) <= 2*leaseTerm+10*time.Second
 	d.check(sc, "replica_silent_task_done", state == "completed" && run.Task == task && expired > 0 && inTime,
 		"stopped %s holding %s; state %s %s; expired leases %d; ended %s after the stop (other replicas %d)",
@@ -528,6 +566,7 @@ func farmFaults(ctx context.Context, d *Director, sc string) error {
 	d.check(sc, "replica_back_alarm_resolved", err == nil, "%s runs again", run.Worker)
 
 	refused, _ := s.Mon.FaultCounts()
+	refused -= refused0
 	var stalled int
 	_ = s.Bench.Store().Pool.QueryRow(ctx, `SELECT count(*) FROM alarm_episodes WHERE tenant = $1 AND alarm LIKE 'alarm.monitor.export_stalled.%' AND opened_at >= $2`,
 		home, run.At).Scan(&stalled)

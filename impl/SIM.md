@@ -414,14 +414,15 @@ front and the monitor counted (`fault_counts`):
 
 ```yaml
 faults:
-  - {code: F-1, at: 10m}
-  - {code: F-3, at: 20m, every: 30m, tenant: lab-dept}
+  - {code: F-1, at: 10m, tenant: lab-dept}   # tenant counts for F-1 only
+  - {code: F-3, at: 20m, every: 30m}
 ```
 
 ### Farm faults (`F-1` to `F-8`)
 
-Besides the world the bots look after, the stand breaks the farm itself (`internal/sim/faults.go`). Each fault
-heals itself; the table gives what the core is to show for it. `F-1` acts in one tenant; the others act on the
+Besides the world the bots look after, the stand breaks the farm itself (`internal/sim/faults.go`). `F-1`, `F-3`, `F-4`, `F-5`
+and `F-8` end on their own; `F-2` and `F-6` stay armed until the next tool call or problem webhook takes them, or
+`heal`. The table gives what the core is to show for each. `F-1` acts in one tenant; the others act on the
 whole farm (one provider front, one monitoring system, one store, one core), so the events and `load.json` count
 them as `farm`. They come from the console (`fault F-3`), a load
 profile (`faults`) and the scenario `farm-faults`, which plays them all on the mock model.
@@ -498,7 +499,7 @@ line (`time`, `kind`, `text`, `data`):
 | `MONITOR` | an alarm exported to the monitoring system, a script run, a note on a problem |
 | `DIRECTOR` | a scenario starts, a task changed state (with its result as the core keeps it), a policy decision |
 | `CHECK` | a check of a scenario: `PASS`, `FAIL`, or `GAP` for a step a known gap of the core stops |
-| `FAULT` | a farm fault put on (`F-1` to `F-8`) with its expected outcome, and its healing |
+| `FAULT` | a farm fault put on (`F-1` to `F-8`) with its expected outcome; the restart of a silent replica and the steps of a core rollout |
 | `FUSE` | the money fuse |
 | `FARM GIT` | a commit of the farm git applied, a merge gate run with its steps, a patch or a revert committed |
 
