@@ -326,6 +326,47 @@ little later a person asks about it; now and then a person of the lab asks a dat
 
 Scenarios and the continuous mode combine: `-scenario` runs first.
 
+### The load generator (`-load`)
+
+`-load NAME|FILE` runs a load profile in the continuous mode instead of the faults of `-fault-every`
+(`internal/sim/load.go`; the embedded profiles are in `internal/sim/loads/`: `standard`, the load of the cloud
+load test, and `peak`, the same three times as fast for its first 15 minutes). It needs `-duration` or
+`-interactive`; `-seed` makes a run repeatable. A profile names, per kind of work, its rate per tenant and hour:
+
+```yaml
+name: standard
+warmup: 5m              # every rate ramps up from zero over the warm-up
+fault_life: 4m          # a fault of the load is healed after this
+peaks: [{at: 20m, for: 15m, factor: 3}]
+caps: {analyses_per_hour: 2, proposals_per_run: 4, manager_tasks_per_hour: 6}
+works:
+  - {code: R-04, per_hour: 6}                  # every tenant
+  - {code: R-06, per_hour: 4, tenants: [lab-dept]}
+```
+
+Each second the generator draws, per tenant and work, a Poisson number of arrivals with the rate of that moment.
+A work a tenant cannot take (no worker of the role it needs, no machine of the kind it needs) or that a cap stops
+is skipped: `analyses_per_hour` counts the analyses of `ops-reader` of a tenant in the last hour,
+`proposals_per_run` the proposals of the whole farm, `manager_tasks_per_hour` the farm manager's tasks of a tenant
+in the last hour (zero is no cap). Every started and skipped work is an event of the kind `LOAD` with its code
+and tenant; at the end the run writes `load.json` (the counts by code and tenant, the skipped ones by reason)
+and prints the counts by code. The codes are those of the load test brief:
+
+| Code | Work | Needs |
+|---|---|---|
+| `R-01` | nginx fails on the tenant's first web machine, `bob` asks `/logs` | `ops-reader`, a web machine |
+| `R-02` | the site gets slow, `alice` asks `/logs` | `ops-reader`, a web machine |
+| `R-03` | the data disk fills to 10% free, `bob` asks for a cleanup | `ops-reader`, a db machine |
+| `R-04` | `alice` asks `/health` | `ops-reader` |
+| `R-05` | `bob` asks `/logs` about the last hour | `ops-reader` |
+| `R-06` | `alice` asks `/geo` about a raster and a layer | `geo-reader` |
+| `R-08` | `bob` asks `/pipeline` why the last run failed | `pipeline-reader` |
+| `R-17` | the data disk fills to 3% free: the incident `disk_full` (capped by `manager_tasks_per_hour`) | a db machine |
+| `R-19` | the analysis schedule of `ops-reader` runs for one turn, one tenant at a time (capped by `analyses_per_hour` and `proposals_per_run`) | `ops-reader` |
+
+The analysis turns its tenant's schedule `ops-insight` on for 75 seconds and off again; each switch is a commit of
+the farm git. Every rate is per tenant, so the farm sees the sum over its tenants.
+
 ## The money fuse
 
 `-max-eur` is a hard cap on the spend in the store (table `spend`: reserved and settled lines with their

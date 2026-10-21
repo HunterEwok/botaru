@@ -963,9 +963,21 @@ func (s *Stand) Insights() bool {
 // analysis within an hour of the last one), since a run of the stand plays weeks in minutes:
 // the analyses of the last hour are dated back by that hour.
 func (s *Stand) SetInsights(ctx context.Context, on bool) error {
+	if err := s.SetInsightsIn(ctx, s.Home(), on); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.insights = on
+	s.mu.Unlock()
+	return nil
+}
+
+// SetInsightsIn turns the analysis schedule of ops-reader on or off in one tenant, dating its
+// analyses of the last hour back when it turns on (the merge window of INS-4).
+func (s *Stand) SetInsightsIn(ctx context.Context, tenant string, on bool) error {
 	if on {
 		if _, err := s.Bench.Store().Pool.Exec(ctx, `UPDATE tasks SET created_at = created_at - interval '61 minutes'
-			WHERE tenant = $1 AND type = 'ops.insight.v1' AND created_at > now() - interval '61 minutes'`, s.Home()); err != nil {
+			WHERE tenant = $1 AND type = 'ops.insight.v1' AND created_at > now() - interval '61 minutes'`, tenant); err != nil {
 			return err
 		}
 	}
@@ -973,18 +985,16 @@ func (s *Stand) SetInsights(ctx context.Context, on bool) error {
 	if on {
 		msg = "Resume the analysis schedule of ops-reader"
 	}
-	commit, err := s.repo.setField(ctx, "Schedule", s.Home(), "ops-insight", "spec.paused", !on, msg)
+	if tenant != s.Home() {
+		msg += " in " + tenant
+	}
+	commit, err := s.repo.setField(ctx, "Schedule", tenant, "ops-insight", "spec.paused", !on, msg)
 	if err != nil {
 		return err
 	}
 	if commit != "" {
-		if err := s.applyOrDrop(ctx, commit); err != nil {
-			return err
-		}
+		return s.applyOrDrop(ctx, commit)
 	}
-	s.mu.Lock()
-	s.insights = on
-	s.mu.Unlock()
 	return nil
 }
 

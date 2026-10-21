@@ -105,11 +105,13 @@ func priceOf(model string) ([2]float64, bool) {
 }
 
 type options struct {
-	root, dsn, out, scenario, approve, model, keyFile, providerURL, farm string
-	mock, real, interactive, keepDB, verbose, showVersion                bool
-	maxEUR, priceIn, priceOut                                            float64
-	duration, faultEvery, step, timeout                                  time.Duration
-	seed                                                                 int64
+	root, dsn, out, scenario, approve, model, keyFile, providerURL, farm, load string
+	mock, real, interactive, keepDB, verbose, showVersion                      bool
+	maxEUR, priceIn, priceOut                                                  float64
+	duration, faultEvery, step, timeout                                        time.Duration
+	seed                                                                       int64
+	// loadProfile is the load profile of -load, read by check.
+	loadProfile *sim.LoadProfile
 }
 
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
@@ -132,6 +134,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	fs.Float64Var(&o.priceOut, "price-out", 0, "the output price in EUR per million tokens (default: the list price of -model)")
 	fs.BoolVar(&o.interactive, "interactive", false, "the continuous mode with commands on the standard input (approve N, reject N, say, fault, status, quit)")
 	fs.DurationVar(&o.duration, "duration", 0, "how long the continuous mode runs (0 with -interactive: until quit, Ctrl+C or the fuse)")
+	fs.StringVar(&o.load, "load", "", "the load profile of the continuous mode: "+strings.Join(sim.LoadNames(), ", ")+" or a YAML file; it replaces the faults of -fault-every")
 	fs.DurationVar(&o.faultEvery, "fault-every", 3*time.Minute, "the continuous mode breaks the world this often")
 	fs.DurationVar(&o.step, "step", 5*time.Second, "the period of the world physics")
 	fs.DurationVar(&o.timeout, "timeout", 3*time.Minute, "how long a scenario waits for each step")
@@ -233,6 +236,16 @@ func (o *options) check() (int, error) {
 		if n != "all" && sim.Find(n) == nil {
 			return 2, fmt.Errorf("no scenario %s (%s)", n, strings.Join(scenarioNames(), ", "))
 		}
+	}
+	if o.load != "" {
+		if !o.interactive && o.duration == 0 {
+			return 2, errors.New("-load runs in the continuous mode: give -duration or -interactive")
+		}
+		p, err := sim.LoadLoad(o.load)
+		if err != nil {
+			return 2, err
+		}
+		o.loadProfile = p
 	}
 	if o.scenario == "" && !o.interactive && o.duration == 0 {
 		o.scenario = "all"
@@ -345,7 +358,14 @@ func runWith(o options, stdin io.Reader, stdout, stderr io.Writer) (int, error) 
 		runErr = d.RunScenarios(dctx, names)
 	}
 	if runErr == nil && (o.interactive || o.duration > 0) {
-		runErr = continuous(dctx, d, o, stdin, stdout)
+		var load *sim.LoadSummary
+		load, runErr = continuous(dctx, d, o, stdin, stdout)
+		if load != nil {
+			if err := writeJSON(filepath.Join(runDir, "load.json"), load); err != nil {
+				return 1, err
+			}
+			fmt.Fprintf(stdout, "\nload %s: %s\n", o.loadProfile.Name, loadLine(load))
+		}
 	}
 	_ = s.CheckFuse(context.Background())
 	res := d.Results()
@@ -418,7 +438,7 @@ var labAsks = []struct{ who, ask string }{
 
 // continuous runs the world until the duration ends, quit, Ctrl+C or the fuse: it breaks the
 // world every -fault-every, a person asks about it, and the console takes commands.
-func continuous(ctx context.Context, d *sim.Director, o options, stdin io.Reader, stdout io.Writer) error {
+func continuous(ctx context.Context, d *sim.Director, o options, stdin io.Reader, stdout io.Writer) (*sim.LoadSummary, error) {
 	if o.duration > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, o.duration)
@@ -444,13 +464,28 @@ func continuous(ctx context.Context, d *sim.Director, o options, stdin io.Reader
 	r := rand.New(rand.NewPCG(uint64(o.seed), 13))
 	t := time.NewTicker(o.faultEvery)
 	defer t.Stop()
+	var load chan sim.LoadSummary
+	if o.loadProfile != nil {
+		// The load profile brings its own faults; the ticker of -fault-every stays quiet.
+		t.Stop()
+		load = make(chan sim.LoadSummary, 1)
+		go func() { load <- d.RunLoad(ctx, o.loadProfile, o.seed) }()
+	}
+	end := func(err error) (*sim.LoadSummary, error) {
+		cancel()
+		if load == nil {
+			return nil, err
+		}
+		sum := <-load
+		return &sum, err
+	}
 	for {
 		select {
 		case <-ctx.Done():
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-				return nil
+				return end(nil)
 			}
-			return ctx.Err()
+			return end(ctx.Err())
 		case <-t.C:
 			// Now and then a question of the lab instead of a fault.
 			i := r.IntN(len(faults) + len(labAsks))
@@ -462,7 +497,7 @@ func continuous(ctx context.Context, d *sim.Director, o options, stdin io.Reader
 			}
 			f := faults[i]
 			if err := breakWorld(ctx, d, f.name); err != nil {
-				return err
+				return end(err)
 			}
 			go func() {
 				// The person notices a little later.
@@ -475,7 +510,7 @@ func continuous(ctx context.Context, d *sim.Director, o options, stdin io.Reader
 			}()
 		case l := <-lines:
 			if quit := command(ctx, d, l, stdout); quit {
-				return nil
+				return end(nil)
 			}
 		}
 	}
@@ -724,4 +759,37 @@ func redactDSN(dsn string) string {
 		kept = append(kept, f)
 	}
 	return strings.Join(kept, " ")
+}
+
+func writeJSON(path string, v any) error {
+	raw, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, append(raw, '\n'), 0o644)
+}
+
+// loadLine sums the load by code: started, and skipped when any.
+func loadLine(l *sim.LoadSummary) string {
+	byCode := map[string][2]int{}
+	for k, n := range l.Started {
+		c := byCode[strings.Fields(k)[0]]
+		c[0] += n
+		byCode[strings.Fields(k)[0]] = c
+	}
+	for k, n := range l.Skipped {
+		c := byCode[strings.Fields(k)[0]]
+		c[1] += n
+		byCode[strings.Fields(k)[0]] = c
+	}
+	var out []string
+	for _, code := range slices.Sorted(maps.Keys(byCode)) {
+		c := byCode[code]
+		if c[1] > 0 {
+			out = append(out, fmt.Sprintf("%s %d (%d skipped)", code, c[0], c[1]))
+		} else {
+			out = append(out, fmt.Sprintf("%s %d", code, c[0]))
+		}
+	}
+	return strings.Join(out, ", ")
 }

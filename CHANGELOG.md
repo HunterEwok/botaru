@@ -33,6 +33,10 @@ Entries are grouped by area; within a group the newest entry comes first.
 
 ### Reference Implementation (impl/)
 
+- `botaru-sim -load NAME|FILE` (impl/SIM.md, "The load generator"): a load profile sends each tenant its kinds of
+  work as Poisson streams per tenant and work, with a warm-up, peaks and hard caps on analyses and farm manager
+  tasks per tenant and hour and on proposals per run; every work is a `LOAD` event with its code, and the run
+  writes `load.json`. Embedded profiles `standard` and `peak`.
 - The stand's own roles (impl/SIM.md, "What runs"): the script translator `translator` with the task type
   `script.translate.v1` on `/script`, and the campaign operator `ops-operator` (profile `manager`, read and action
   campaigns) with `ops.rollout.v1` on `/rollout`; `alice` runs scripts (`script.run` through the seed group

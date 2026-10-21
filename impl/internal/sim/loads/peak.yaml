@@ -1,0 +1,17 @@
+# The peak of stage P3 of the cloud load test: the standard load, three times as fast for the first
+# 15 minutes and as usual for the next 15.
+name: peak
+warmup: 0s
+fault_life: 4m
+peaks: [{at: 0s, for: 15m, factor: 3}]
+caps: {analyses_per_hour: 2, proposals_per_run: 4, manager_tasks_per_hour: 6}
+works:
+  - {code: R-01, per_hour: 2}
+  - {code: R-02, per_hour: 2}
+  - {code: R-03, per_hour: 1}
+  - {code: R-04, per_hour: 6}
+  - {code: R-05, per_hour: 6}
+  - {code: R-06, per_hour: 4}
+  - {code: R-08, per_hour: 4}
+  - {code: R-17, per_hour: 1}
+  - {code: R-19, per_hour: 2}
