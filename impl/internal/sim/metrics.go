@@ -74,6 +74,8 @@ type Observed struct {
 	Approvals         int     `json:"approvals"`
 	// CPU is the processor load of the stand process and of the host, in percent.
 	CPU CPUSummary `json:"cpu"`
+	// Limiter is the wait of the model calls in the stand's limiter, nil without one.
+	Limiter *LimiterStats `json:"limiter,omitempty"`
 }
 
 // TypeTimes are the answer times of one task type.
@@ -1080,6 +1082,10 @@ func (s *Stand) observed(ctx context.Context, in metricsInput, tasks []peopleTas
 	}
 	o.DecidedInTime = share(decided, o.Approvals)
 	o.CPU = cpuSummary(in.samples)
+	if s.limit != nil {
+		st := s.limit.stats()
+		o.Limiter = &st
+	}
 	return o, nil
 }
 

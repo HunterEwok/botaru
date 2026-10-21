@@ -120,8 +120,8 @@ type providerFront struct {
 	answered map[int]int
 	// observe sees each model request with the tenant its key names (the invariant watch).
 	observe func(tenant string, body []byte)
-	// halted says the run is halted: a model request is then refused, the one that caused the
-	// halt included, so it never reaches the provider.
+	// halted says the run is halted or the fuse tripped: a model request is then refused, the
+	// one that caused the halt included, so it never reaches the provider.
 	halted func() bool
 }
 
@@ -189,6 +189,24 @@ var providerErrors = map[int]struct{ typ, msg string }{
 	429: {"rate_limit_error", "Number of requests has exceeded your rate limit"},
 }
 
+// writeProviderError answers an error of the provider.
+func writeProviderError(w http.ResponseWriter, code int) {
+	e := providerErrors[code]
+	w.Header().Set("Content-Type", "application/json")
+	if code == http.StatusTooManyRequests {
+		w.Header().Set("retry-after", "5")
+	}
+	w.WriteHeader(code)
+	fmt.Fprintf(w, `{"type":"error","error":{"type":%q,"message":%q}}`, e.typ, e.msg)
+}
+
+// writeHalted refuses a model call of a halted run.
+func writeHalted(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusServiceUnavailable)
+	fmt.Fprint(w, `{"type":"error","error":{"type":"api_error","message":"the stand halted the run"}}`)
+}
+
 func (p *providerFront) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	model := isModelCall(r)
 	tenant := ""
@@ -209,9 +227,7 @@ func (p *providerFront) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		p.observe(tenant, body)
 	}
 	if model && p.halted != nil && p.halted() {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusServiceUnavailable)
-		fmt.Fprint(w, `{"type":"error","error":{"type":"api_error","message":"the stand halted the run"}}`)
+		writeHalted(w)
 		return
 	}
 	p.mu.Lock()
@@ -227,13 +243,7 @@ func (p *providerFront) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	p.mu.Unlock()
 	if code != 0 {
-		e := providerErrors[code]
-		w.Header().Set("Content-Type", "application/json")
-		if code == http.StatusTooManyRequests {
-			w.Header().Set("retry-after", "5")
-		}
-		w.WriteHeader(code)
-		fmt.Fprintf(w, `{"type":"error","error":{"type":%q,"message":%q}}`, e.typ, e.msg)
+		writeProviderError(w, code)
 		return
 	}
 	if delay > 0 {

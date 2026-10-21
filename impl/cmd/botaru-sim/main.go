@@ -117,7 +117,8 @@ func priceOf(model string) ([2]float64, bool) {
 
 type options struct {
 	root, dsn, out, scenario, approve, model, keyFile, providerURL, farm, load, halt, export string
-	mock, real, interactive, keepDB, verbose, showVersion                                    bool
+	mock, real, interactive, keepDB, verbose, showVersion, dryPlan                           bool
+	maxCallsPerMin, maxParallel, planParallel                                                int
 	maxEUR, priceIn, priceOut                                                                float64
 	duration, faultEvery, step, timeout                                                      time.Duration
 	seed                                                                                     int64
@@ -151,6 +152,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	fs.DurationVar(&o.timeout, "timeout", 3*time.Minute, "how long a scenario waits for each step")
 	fs.Int64Var(&o.seed, "seed", 42, "the seed of the generated logs, faults and random decisions")
 	fs.StringVar(&o.export, "export", "", "a folder the results (results.json, metrics.json, report.md, load.json) and the compressed events are copied to every 5 minutes and after each scenario, in a folder of the run's name")
+	fs.BoolVar(&o.dryPlan, "dry-plan", false, "run the same flags on the mock and print the money plan of a real run: the estimate at the stand's and the provider's prices and the recommended -max-eur; a real run of the same flags prints it at its start")
+	fs.IntVar(&o.maxCallsPerMin, "max-calls-per-min", -1, "hold the model calls to this many a minute before the provider (default 30 with -real, none on the mock; 0: none)")
+	fs.IntVar(&o.maxParallel, "max-parallel-calls", -1, "hold the model calls to this many at once (default 8 with -real, none on the mock; 0: none)")
 	fs.BoolVar(&o.keepDB, "keep-db", false, "keep the run's database for a look afterwards")
 	fs.StringVar(&o.halt, "halt-on-violation", "auto", "halt the run at a breach of a security invariant (I-1 to I-8): yes, no, or auto (yes with -real)")
 	fs.BoolVar(&o.verbose, "v", false, "log the bench to the standard error")
@@ -208,6 +212,35 @@ func (o *options) check() (int, error) {
 	if o.mock && o.real {
 		return 2, errors.New("-mock and -real exclude each other")
 	}
+	if o.dryPlan && o.real {
+		return 2, errors.New("-dry-plan runs on the mock: leave out -real")
+	}
+	if o.dryPlan && o.maxEUR == 0 {
+		// The mock's spend is no money; the plan wants the whole run.
+		o.maxEUR = 1000
+	}
+	if o.maxCallsPerMin < -1 || o.maxParallel < -1 {
+		return 2, errors.New("-max-calls-per-min and -max-parallel-calls must not be negative")
+	}
+	if o.dryPlan {
+		// The plan is of a real run, whose limiter lets this many calls run at once; the mock run
+		// of the plan itself runs without a limiter.
+		switch o.maxParallel {
+		case 0:
+			return 2, errors.New("-dry-plan plans a real run with a bound of the calls at once: -max-parallel-calls 0 has none")
+		case -1:
+			o.planParallel = 8
+		default:
+			o.planParallel = o.maxParallel
+		}
+		o.maxCallsPerMin, o.maxParallel = 0, 0
+	}
+	if o.maxCallsPerMin == -1 {
+		o.maxCallsPerMin = map[bool]int{true: 30}[o.real]
+	}
+	if o.maxParallel == -1 {
+		o.maxParallel = map[bool]int{true: 8}[o.real]
+	}
 	if !slices.Contains([]string{"auto", "yes", "no"}, o.halt) {
 		return 2, errors.New("-halt-on-violation is yes, no or auto")
 	}
@@ -217,10 +250,10 @@ func (o *options) check() (int, error) {
 	if o.maxEUR < 0 || math.IsNaN(o.maxEUR) || math.IsInf(o.maxEUR, 0) {
 		return 2, errors.New("-max-eur must be a positive amount")
 	}
-	if o.real {
-		if o.maxEUR == 0 {
-			return 2, errors.New("-real needs -max-eur: the money fuse is not optional")
-		}
+	if o.real && o.maxEUR == 0 {
+		return 2, errors.New("-real needs -max-eur: the money fuse is not optional")
+	}
+	if o.real || o.dryPlan {
 		if o.model == "" || o.model == "rank" {
 			if o.priceIn != 0 || o.priceOut != 0 {
 				return 2, errors.New("-price-in and -price-out need one -model: a rank run counts the list price of each rank's model")
@@ -238,7 +271,8 @@ func (o *options) check() (int, error) {
 				return 2, fmt.Errorf("no list price of %s: give -price-in and -price-out", o.model)
 			}
 		}
-	} else if o.maxEUR == 0 {
+	}
+	if !o.real && o.maxEUR == 0 {
 		o.maxEUR = 1
 	}
 	// A cap that rounds to nothing, or one past any real budget, would leave no fuse.
@@ -341,8 +375,46 @@ func runWith(o options, stdin io.Reader, stdout, stderr io.Writer) (int, error) 
 		mode = fmt.Sprintf("real model %s at %.2f/%.2f EUR per million tokens in/out", o.model, o.priceIn, o.priceOut)
 	}
 	log.Addf(sim.KindDirector, "botaru-sim %s: %s, money fuse %s EUR, auto-approve %s, world in %s", version.Version, mode, sim.EUR(capMicros), o.approve, work)
+	planModel := ""
+	if (o.real || o.dryPlan) && o.model != "rank" {
+		planModel = o.model
+	}
+	// The settings that change the work and differ from their defaults name the plan too; the
+	// limiter's do not, since a real run has one and the mock none.
+	var planExtra []string
+	if o.approve != "safe" {
+		planExtra = append(planExtra, "approve="+o.approve)
+	}
+	if o.seed != 42 {
+		planExtra = append(planExtra, fmt.Sprintf("seed=%d", o.seed))
+	}
+	if o.scenario == "" && o.load == "" && o.faultEvery != 3*time.Minute {
+		planExtra = append(planExtra, "fault-every="+o.faultEvery.String())
+	}
+	planKey := sim.PlanKey(o.farm, o.scenario, o.load, o.duration, planModel, planExtra...)
+	if o.real {
+		// The plan of the same flags, from a -dry-plan run.
+		switch p, err := sim.LoadPlan(sim.PlanFile(o.out, planKey)); {
+		case errors.Is(err, os.ErrNotExist):
+			log.Addf(sim.KindDirector, "no money plan of %s in %s: run the same flags with -dry-plan first", planKey, o.out)
+		case err != nil:
+			log.Addf(sim.KindDirector, "the money plan of %s could not be read: %v", planKey, err)
+		default:
+			log.Addf(sim.KindDirector, "%s", p)
+			if o.maxEUR < p.MaxEUR {
+				log.Addf(sim.KindDirector, "-max-eur %.2f is below the recommended %.2f: the fuse may stop the run", o.maxEUR, p.MaxEUR)
+			}
+			switch {
+			case p.Parallel != o.maxParallel && o.maxParallel == 0:
+				log.Addf(sim.KindDirector, "the plan was made for %d calls at once and the run lets any number: the reserve of the calls in flight has no bound", p.Parallel)
+			case p.Parallel != o.maxParallel:
+				log.Addf(sim.KindDirector, "the plan was made for %d calls at once and the run lets %d: run -dry-plan with -max-parallel-calls %d", p.Parallel, o.maxParallel, o.maxParallel)
+			}
+		}
+	}
 	s, err := sim.Start(ctx, sim.Config{Root: root, DSN: dsn, Work: work, Exe: exe, Real: o.real, Key: key, BaseURL: o.providerURL,
-		Model: single, RankModels: ranks, Prices: models, ProviderPrices: providerPriceTable(single, o), EstimateModels: rankModels, MaxMicros: capMicros, Seed: o.seed, Step: o.step, Log: log, Farm: farm,
+		Model: single, RankModels: ranks, Prices: models, ProviderPrices: providerPriceTable(single, o), EstimateModels: rankModels,
+		MaxCallsPerMin: o.maxCallsPerMin, MaxParallelCalls: o.maxParallel, MaxMicros: capMicros, Seed: o.seed, Step: o.step, Log: log, Farm: farm,
 		HaltOnViolation: o.halt == "yes" || o.halt == "auto" && o.real, ViolationsFile: sim.WatchFile(runDir),
 		Logger: slog.New(slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: level}))})
 	if err != nil {
@@ -425,6 +497,9 @@ func runWith(o options, stdin io.Reader, stdout, stderr io.Writer) (int, error) 
 			failed++
 		}
 	}
+	if o.dryPlan {
+		writePlan(stdout, stderr, s, m, o, planKey, planModel, runDir, partialRun(s, runErr, failed))
+	}
 	gapNote := ""
 	if gaps > 0 {
 		gapNote = fmt.Sprintf(", %d stopped at a known gap of the core", gaps)
@@ -445,6 +520,51 @@ func runWith(o options, stdin io.Reader, stdout, stderr io.Writer) (int, error) 
 		return 1, nil
 	}
 	return 0, nil
+}
+
+// partialRun says why a run did not run to its end, or "" when it did.
+func partialRun(s *sim.Stand, runErr error, failed int) string {
+	switch {
+	case s.Halted() != "":
+		return "halted"
+	case s.Tripped():
+		return "the money fuse"
+	case runErr != nil:
+		return runErr.Error()
+	case failed > 0:
+		return fmt.Sprintf("%d failed checks", failed)
+	}
+	return ""
+}
+
+// writePlan prints and saves the money plan of a -dry-plan run; a plan that cannot be made or
+// saved is reported and does not change the run's exit code.
+func writePlan(stdout, stderr io.Writer, s *sim.Stand, m *sim.Metrics, o options, key, model, runDir, partial string) {
+	if m == nil {
+		fmt.Fprintln(stderr, "botaru-sim: no money plan: the metrics of the run could not be read")
+		return
+	}
+	ranks, stand := rankModels, prices
+	if model != "" {
+		// One model for every rank, at the run's price of it.
+		ranks, stand = map[int]string{}, maps.Clone(prices)
+		for r := range rankModels {
+			ranks[r] = model
+		}
+		stand[model] = [2]float64{o.priceIn, o.priceOut}
+	}
+	p := s.MakePlan(m, key, ranks, stand, providerPriceTable(model, o), o.planParallel)
+	p.Partial = partial
+	fmt.Fprintf(stdout, "\n%s\n", p)
+	for _, path := range []string{filepath.Join(runDir, "plan.json"), sim.PlanFile(o.out, key)} {
+		if partial != "" && path != filepath.Join(runDir, "plan.json") {
+			// A plan of a partial run stays with its run: a real run must not take it.
+			continue
+		}
+		if err := p.Save(path); err != nil {
+			fmt.Fprintln(stderr, "botaru-sim: the money plan was not saved:", err)
+		}
+	}
 }
 
 // providerPriceTable is the provider's prices for the metrics; a single model of the run that

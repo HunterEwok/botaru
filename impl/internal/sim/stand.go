@@ -20,6 +20,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/HunterEwok/botaru/impl/internal/core"
@@ -56,6 +57,10 @@ type Config struct {
 	// model the metrics price a mock run's tokens at.
 	ProviderPrices map[string][2]float64
 	EstimateModels map[int]string
+	// MaxCallsPerMin and MaxParallelCalls hold the model calls before the provider (0: no
+	// limit).
+	MaxCallsPerMin   int
+	MaxParallelCalls int
 	// MaxMicros is the money fuse: the spend of the store at which every tenant is held.
 	MaxMicros int64
 	// HaltOnViolation halts the run at a breach of a security invariant (I-1 to I-8), as the
@@ -122,8 +127,14 @@ type Stand struct {
 	// for the farm faults F-3 and F-4.
 	runCtx context.Context
 	front  *providerFront
-	// profiles are the model profiles of the applied set by name: their rank (the metrics).
+	// profiles are the model profiles of the applied set by name: their rank (the metrics), and
+	// maxOut their output limit (the worst call of the plan).
 	profiles map[string]int
+	maxOut   map[string]float64
+	// limit holds the model calls to the limits of the run before P4 (nil: none); maxReq is
+	// the largest model request the front saw, in bytes (the worst call of the plan).
+	limit  *limiter
+	maxReq atomic.Int64
 	// faultRuns are the farm faults put on, in order (the metrics: M-5).
 	faultRuns []FaultRun
 	// closing is set once Close begins: no new background work starts (spawn).
@@ -234,11 +245,18 @@ func Start(ctx context.Context, cfg Config) (_ *Stand, err error) {
 		return nil, err
 	}
 	s.front.observe = func(tenant string, body []byte) {
+		for n := int64(len(body)); ; {
+			cur := s.maxReq.Load()
+			if n <= cur || s.maxReq.CompareAndSwap(cur, n) {
+				break
+			}
+		}
 		if s.watch != nil {
 			s.watch.model(tenant, body)
 		}
 	}
-	s.front.halted = func() bool { return s.Halted() != "" }
+	s.front.halted = func() bool { return s.Halted() != "" || s.Tripped() }
+	s.limit = newLimiter(cfg.MaxCallsPerMin, cfg.MaxParallelCalls)
 	fu, stopFront, err := serve(s.front)
 	if err != nil {
 		return nil, err
@@ -305,6 +323,7 @@ func Start(ctx context.Context, cfg Config) (_ *Stand, err error) {
 		OnBotAPI:    s.onBotAPI,
 		OnModelCall: s.onModelCall,
 		ModelGate:   s.gate,
+		WrapP4:      s.wrapP4,
 		// The first apply commits the stand set to the farm git; later changes are commits of
 		// their own (SetInsights, Realize, RevertProposal).
 		Commit: func(ms []map[string]any) (string, string, []map[string]any, error) {
@@ -1352,19 +1371,22 @@ func (s *Stand) onModelCall(req, resp []byte, status int) {
 
 // noteProfiles keeps the rank of each model profile of a set the stand applies.
 func (s *Stand) noteProfiles(ms []map[string]any) {
-	ranks := map[string]int{}
+	ranks, maxOut := map[string]int{}, map[string]float64{}
 	for _, m := range ms {
 		if m["kind"] == "ModelProfile" {
 			name, _ := mapOf(m["metadata"])["name"].(string)
-			ranks[name] = int(num(mapOf(m["spec"])["rank"]))
+			sp := mapOf(m["spec"])
+			ranks[name] = int(num(sp["rank"]))
+			maxOut[name] = num(sp["max_output_tokens"])
 		}
 	}
 	// Merged, not replaced: the spend of a profile a later set left out is still priced.
 	s.mu.Lock()
 	if s.profiles == nil {
-		s.profiles = map[string]int{}
+		s.profiles, s.maxOut = map[string]int{}, map[string]float64{}
 	}
 	maps.Copy(s.profiles, ranks)
+	maps.Copy(s.maxOut, maxOut)
 	s.mu.Unlock()
 }
 
@@ -1409,6 +1431,17 @@ func (s *Stand) checkFuseNow() {
 	if err := s.CheckFuse(ctx); err != nil {
 		s.log.Addf(KindFuse, "the fuse check failed: %v", err)
 	}
+}
+
+// wrapP4 puts the limiter of the model calls before P4, when the run has one (D-11).
+func (s *Stand) wrapP4(next http.Handler) http.Handler {
+	if s.limit == nil {
+		return next
+	}
+	return limitP4(s.limit, func() bool { return s.Halted() != "" || s.Tripped() }, func(wait time.Duration) {
+		s.log.Add(KindModel, fmt.Sprintf("the limiter held a model call for %s", wait.Round(time.Millisecond)),
+			map[string]any{"limiter_wait_ms": wait.Milliseconds()})
+	})(next)
 }
 
 // gate lets a model call reach the provider only below the cap. P4 reserved the call's worst
