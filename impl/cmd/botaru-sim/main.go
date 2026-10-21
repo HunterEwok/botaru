@@ -321,6 +321,14 @@ func runWith(o options, stdin io.Reader, stdout, stderr io.Writer) (int, error) 
 	if err != nil {
 		return 2, err
 	}
+	// A scenario named on its own must fit the farm; all runs those that fit.
+	for _, n := range split(o.scenario) {
+		if sc := sim.Find(n); sc != nil {
+			if why := sc.Unfit(farm); why != "" {
+				return 2, fmt.Errorf("scenario %s does not fit the farm %s: %s", n, farm.Name, why)
+			}
+		}
+	}
 	var key string
 	if o.real {
 		if key, err = providerKey(o.keyFile); err != nil {
@@ -456,7 +464,12 @@ func runWith(o options, stdin io.Reader, stdout, stderr io.Writer) (int, error) 
 	if o.scenario != "" {
 		names := split(o.scenario)
 		if slices.Contains(names, "all") {
-			names = scenarioNames()
+			names = sim.FitScenarios(s.Farm())
+			for _, sc := range sim.Scenarios {
+				if why := sc.Unfit(s.Farm()); why != "" {
+					log.Addf(sim.KindDirector, "scenario %s left out: %s", sc.Name, why)
+				}
+			}
 		}
 		runErr = d.RunScenarios(dctx, names)
 	}

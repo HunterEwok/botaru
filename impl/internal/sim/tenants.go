@@ -134,6 +134,16 @@ func tenantManifests(ms []map[string]any, f *Farm, work string) ([]map[string]an
 			if t := f.Tenant(name); t != nil {
 				tenantSwitches(mapOf(m["spec"]), t)
 			}
+		case "Group":
+			// The on-call people of a stand tenant take on its incidents: the notice of an
+			// incident goes to the holders of incident.manage, which no example group holds, so a
+			// tenant without the farm manager would tell nobody (MGR-6, M-9).
+			name, _ := md["name"].(string)
+			tenant, _ := md["tenant"].(string)
+			sp := mapOf(m["spec"])
+			if caps, ok := sp["caps"].([]any); ok && name == "ops-oncall" && f.Tenant(tenant) != nil && !slices.Contains(caps, any("incident.manage")) {
+				sp["caps"] = append(caps, "incident.manage")
+			}
 		}
 	}
 	return ms, nil
@@ -255,8 +265,29 @@ func catalogFor(sp map[string]any, t *FarmTenant) (map[string]any, error) {
 		hosts = append(hosts, entry)
 	}
 	out["hosts"], out["resources"] = hosts, resources
+	// The selectors of the stand's campaigns: every machine of the tenant, and its machines of
+	// one kind (ORC-5).
+	sel := mapOf(out["selectors"])
+	if sel == nil {
+		sel = map[string]any{}
+	}
+	kinds := map[string][]any{}
+	var all []any
+	for _, h := range t.Hosts {
+		all = append(all, h.ID)
+		kinds[h.Kind] = append(kinds[h.Kind], h.ID)
+	}
+	sel[SelectorAll] = map[string]any{"hosts": all}
+	for kind, ids := range kinds {
+		sel[kind+"-hosts"] = map[string]any{"hosts": ids}
+	}
+	out["selectors"] = sel
 	return out, nil
 }
+
+// SelectorAll is the catalog selector of every machine of a tenant; <kind>-hosts selects the
+// machines of one kind.
+const SelectorAll = "all-hosts"
 
 // tenantSwitches sets the switches of a tenant's profile: the farm manager, and for a tenant with
 // evolution the analysis presented to the deciders, the scaffold evolution with its merge gate

@@ -129,8 +129,15 @@ var (
 	reHealthTask   = regexp.MustCompile(`(?i)whether the sites and services`)
 	reParamsTask   = regexp.MustCompile(`(?i)numbers only from params`)
 	reSummaryTask  = regexp.MustCompile(`(?i)answer briefly from the summaries`)
-	reSensorAsk    = regexp.MustCompile(`(?i)\bsensors?\b`)
-	reFragment     = regexp.MustCompile(`"fragment": ?"([a-z]{1,8}_[0-9A-HJKMNP-TV-Z]{26}:[0-9]{1,4})"`)
+	reRolloutTask  = regexp.MustCompile(`(?i)over the machines of one catalog selector`)
+	reCleanup      = regexp.MustCompile(`(?i)clean`)
+	// reExact marks a goal whose machine the bot names as the goal does, outside its enum: the
+	// stand's model that tries another tenant's machine (tenant-wall).
+	reExact = regexp.MustCompile(`(?i)exactly as named`)
+	// reProblems asks for the monitoring problems of a machine and the comments on them.
+	reProblems  = regexp.MustCompile(`(?i)monitoring problems`)
+	reSensorAsk = regexp.MustCompile(`(?i)\bsensors?\b`)
+	reFragment  = regexp.MustCompile(`"fragment": ?"([a-z]{1,8}_[0-9A-HJKMNP-TV-Z]{26}:[0-9]{1,4})"`)
 )
 
 func dataUsedPct(seen string) int {
@@ -150,6 +157,9 @@ func plan(system, goal string) []step {
 	switch {
 	case reParamsTask.MatchString(system):
 		return nil
+	case reRolloutTask.MatchString(system):
+		// One campaign over a selector of the stand's catalog, then the answer (ORC-1).
+		return []step{{plugin: "", tool: "propose_campaign", input: campaignPlan(goal)}}
 	case reDescribeTask.MatchString(system):
 		return []step{{plugin: "data", tool: "describe", input: map[string]any{"file": ""}}}
 	case reSummaryTask.MatchString(system):
@@ -159,6 +169,11 @@ func plan(system, goal string) []step {
 		return []step{
 			{plugin: "checks", tool: "latest", input: map[string]any{"check": "www-health"}},
 			{plugin: "checks", tool: "latest", input: map[string]any{"check": "api-health"}},
+		}
+	case reProblems.MatchString(g):
+		return []step{
+			{plugin: "monitor", tool: "problems", input: map[string]any{"host": "web1"}},
+			{plugin: "monitor", tool: "problem_comments", input: map[string]any{"host": "web1"}},
 		}
 	case reKB.MatchString(g):
 		return []step{
@@ -207,6 +222,26 @@ func plan(system, goal string) []step {
 		{plugin: "logs", tool: "tail", input: map[string]any{"source": "nginx-access", "lines": 80}},
 		{plugin: "logs", tool: "tail", input: map[string]any{"source": "nginx-error", "lines": 100}},
 	}
+}
+
+// campaignPlan is the campaign a rollout asks for: the cleanup action over the database machines
+// when the goal asks to clean, else a read campaign of the availability summary over the machines
+// of the kind the goal names (all of them by default).
+func campaignPlan(goal string) map[string]any {
+	g := strings.ToLower(firstLine(goal))
+	sel := SelectorAll
+	switch {
+	case strings.Contains(g, "database"):
+		sel = KindDB + "-hosts"
+	case strings.Contains(g, "web"):
+		sel = KindWeb + "-hosts"
+	}
+	if reCleanup.MatchString(g) {
+		return map[string]any{"template": map[string]any{"kind": "action", "action": "cleanup_pipeline_tmp", "args": map[string]any{"older_than_days": 7}},
+			"items": map[string]any{"selector": KindDB + "-hosts"}}
+	}
+	return map[string]any{"template": map[string]any{"kind": "task", "type": "ops.health.v1", "goal": "Say whether the services of this machine are up."},
+		"items": map[string]any{"selector": sel}}
 }
 
 // toolName finds the offered tool of a plugin's tool: <plugin>_<tool> as P3 lists it, or a
@@ -285,6 +320,22 @@ func enumPick(enum []any, v, goal string) string {
 		}
 	}
 	return ""
+}
+
+// kbAnswer is what a fragment says about the word of the question: its sentences that hold the
+// word, else the fragment.
+func kbAnswer(text, word string) string {
+	text = strings.Join(strings.Fields(text), " ")
+	var out []string
+	for _, s := range regexp.MustCompile(`[^.!?]+[.!?]?`).FindAllString(text, -1) {
+		if strings.Contains(strings.ToLower(s), word) {
+			out = append(out, strings.TrimSpace(s))
+		}
+	}
+	if len(out) == 0 {
+		return text
+	}
+	return strings.Join(out, " ")
 }
 
 // kbQuery is the word a knowledge search looks for: the longest word of the question.
@@ -436,6 +487,9 @@ func (b *Brain) next(system, goal, seen string, names []string, offered map[stri
 			continue
 		}
 		in, ok := fits(offered[n], adapt(offered[n], input, goal))
+		if reExact.MatchString(goal) {
+			in, ok = input, true
+		}
 		if !ok {
 			continue
 		}
@@ -464,7 +518,7 @@ var reSchema = regexp.MustCompile(`(?s)matches this JSON Schema, and nothing els
 
 // answer is the final answer: a JSON object of the result schema, or plain text without one.
 func answer(system, goal, seen string) string {
-	f := findings(seen)
+	f := findings(goal, seen)
 	summary := "From what the tools show: " + strings.Join(f.lines, " ")
 	// A short answer about the sensors offers to look further and waits for the person
 	// (need_input opens the follow-up window, CNT-5).
@@ -596,7 +650,7 @@ var (
 	reSlowApp = regexp.MustCompile(`slow request (/[^ ]*) [0-9]+ms`)
 )
 
-func findings(seen string) found {
+func findings(goal, seen string) found {
 	f := found{nums: map[string]float64{}}
 	var kbText string
 	for _, o := range jsonObjects(seen) {
@@ -632,7 +686,7 @@ func findings(seen string) found {
 		f.lines = append(f.lines, fmt.Sprintf("The file has %d records down to %.2f m; %d of them are flagged.", int(n), f.nums["depth_max_m"], int(f.nums["flagged_records"])))
 	}
 	if kbText != "" {
-		f.lines = append(f.lines, "The knowledge base says: "+clip(strings.Join(strings.Fields(kbText), " "), 300))
+		f.lines = append(f.lines, "The knowledge base says: "+clip(kbAnswer(kbText, kbQuery(goal)), 300))
 	}
 	slowURLs := map[string]int{}
 	for _, l := range strings.Split(seen, "\n") {

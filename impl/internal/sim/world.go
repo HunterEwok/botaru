@@ -91,6 +91,10 @@ type Problem struct {
 	Values    map[string]any `json:"values,omitempty"`
 	// Reason names the world condition the problem stands for (service:<unit>, disk:<mount>).
 	Reason string `json:"reason"`
+	// Name is the problem's name as a monitoring user wrote the trigger, and Comments the
+	// messages of its acknowledgements: text the farm does not trust (kb-and-injection).
+	Name     string   `json:"name,omitempty"`
+	Comments []string `json:"comments,omitempty"`
 }
 
 // Sample is one value of a series.

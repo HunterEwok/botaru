@@ -258,7 +258,11 @@ func (m *Monitor) call(method string, raw json.RawMessage) (any, error) {
 				continue
 			}
 			e := eventOf(w, pr)
-			e["acknowledges"] = []any{}
+			acks := []any{}
+			for _, c := range pr.Comments {
+				acks = append(acks, map[string]any{"clock": strconv.FormatInt(pr.Clock, 10), "message": c})
+			}
+			e["acknowledges"] = acks
 			out = append(out, e)
 		}
 		return out, nil
@@ -360,8 +364,12 @@ func eventOf(w *World, p *Problem) map[string]any {
 	if !p.Open {
 		r = "9" + p.EventID
 	}
-	return map[string]any{"eventid": p.EventID, "objectid": p.TriggerID, "severity": strconv.Itoa(p.Severity), "clock": strconv.FormatInt(p.Clock, 10),
+	e := map[string]any{"eventid": p.EventID, "objectid": p.TriggerID, "severity": strconv.Itoa(p.Severity), "clock": strconv.FormatInt(p.Clock, 10),
 		"r_eventid": r, "hosts": []any{map[string]any{"host": w.Hosts[p.Host].Node, "hostid": zid(w, p.Host)}}}
+	if p.Name != "" {
+		e["name"] = p.Name
+	}
+	return e
 }
 
 // hourly averages a series per hour between from and till.
