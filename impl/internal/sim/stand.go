@@ -348,10 +348,11 @@ func editManifests(ms []map[string]any, cfg Config) []map[string]any {
 	return ms
 }
 
-// widenBudgets raises the budgets of the examples that one worst-case call of a real model
-// would not fit, as the apply lint counts them: the tree budget of a task type below twice the
-// worst call of the profiles of the roles that claim it (tree_budget_below_call), and a manager
-// line below the seat's worst day (manager_line_too_small, MGR-20). The examples are priced for
+// widenBudgets raises the budgets of the examples that the reserve of a real model's call would
+// not fit: the tree budget of a task type below twice the reserve of one call of the profiles of
+// the roles that claim it (the apply lint wants one call's output, tree_budget_below_call; the
+// gateway reserves the input as well before each call), and a manager line below the seat's
+// worst day (manager_line_too_small, MGR-20) or four reserves of the seat. The examples are priced for
 // their own illustrative models; the money fuse of the run still caps the spend. Nothing is
 // lowered.
 func widenBudgets(ms []map[string]any) {
@@ -361,7 +362,7 @@ func widenBudgets(ms []map[string]any) {
 			sp := mapOf(m["spec"])
 			name, _ := mapOf(m["metadata"])["name"].(string)
 			prices[name] = sp
-			worst[name] = num(sp["max_output_tokens"]) * num(mapOf(sp["price"])["output"]) / 1e6
+			worst[name] = callReserve(sp)
 		}
 	}
 	purpose := map[string]string{}
@@ -388,13 +389,17 @@ func widenBudgets(ms []map[string]any) {
 		}
 	}
 	var seat map[string]any
+	reviews := 1.0 // how much the tree budgets of the review types rose
 	for _, m := range ms {
 		switch m["kind"] {
 		case "TaskType":
 			name, _ := mapOf(m["metadata"])["name"].(string)
 			sp := mapOf(m["spec"])
-			if w := cents(2 * need[name]); w > num(sp["tree_budget_eur"]) {
+			if w, cur := cents(2*need[name]), num(sp["tree_budget_eur"]); w > cur {
 				sp["tree_budget_eur"] = w
+				if purpose[name] == "review" && cur > 0 {
+					reviews = max(reviews, w/cur)
+				}
 			}
 		case "Governance":
 			if p, _ := mapOf(mapOf(m["spec"])["farm_manager"])["model_profile"].(string); p != "" {
@@ -402,12 +407,24 @@ func widenBudgets(ms []map[string]any) {
 			}
 		}
 	}
+	// The review line holds the reviews of the role's proposals a month (BUD-13): it rises with
+	// their price.
+	for _, m := range ms {
+		if m["kind"] != "Tenant" || reviews == 1 {
+			continue
+		}
+		line := mapOf(mapOf(mapOf(mapOf(m["spec"])["budgets"])["lines"])["review"])
+		if line != nil && num(line["month_eur"]) > 0 {
+			line["month_eur"] = cents(reviews * num(line["month_eur"]))
+		}
+	}
 	if seat == nil {
 		return
 	}
 	// Three readings of one worst-case incident, 60000 tokens in, three answers at the
 	// profile's max_output_tokens, with the default daily review and post-mortem ceilings.
-	day := cents(1.5 * ((60000*num(mapOf(seat["price"])["input"])+3*num(seat["max_output_tokens"])*num(mapOf(seat["price"])["output"]))/1e6 + 0.8))
+	day := cents(max(1.5*((60000*num(mapOf(seat["price"])["input"])+3*num(seat["max_output_tokens"])*num(mapOf(seat["price"])["output"]))/1e6+0.8),
+		4*callReserve(seat)))
 	for _, m := range ms {
 		if m["kind"] != "Tenant" {
 			continue
@@ -421,6 +438,14 @@ func widenBudgets(ms []map[string]any) {
 			line["month_eur"] = month
 		}
 	}
+}
+
+// callReserve is what the gateway reserves for one call of a profile in EUR (gateway.Reserve):
+// the output limit at the output price, and a request of 60000 bytes, which an agent with a few
+// tool results reaches, at the input price.
+func callReserve(profile map[string]any) float64 {
+	pr := mapOf(profile["price"])
+	return (num(profile["max_output_tokens"])*num(pr["output"]) + 60000*num(pr["input"])) / 1e6
 }
 
 // num reads a number of a manifest, whatever number type the reader gave.

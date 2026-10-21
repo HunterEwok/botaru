@@ -18,7 +18,7 @@ spec:
   skills:
     - name: pipeline-tmp-cleanup
       description: How to decide whether the temporary files of the CTD pipeline may be cleaned up, and how to ask for the cleanup.
-      sha256: 9b2518778bc49b1d156181bc8e93dcddef42abeedffc6765ae2ab99e39455b47
+      sha256: 8b30414bae406338275c45c6f1c0f3225845e834022404a6f20295f7462f1639
   insight:                                 # weekly analysis of its own results (INS-1, INS-2, INS-4)
     types: [ops.insight.v1]
     observes: [farm.task.outcome, farm.task.attempts, farm.attempt.duration]

@@ -287,10 +287,11 @@ A real run gives each model profile the model of its `spec.rank` (`-model rank`,
 | 4 | `manager-std` (the farm manager) | `claude-fable-5-1` | 10 / 50 |
 
 `-model ID` puts that one model in every profile instead. The example budgets are priced for their illustrative
-models, so a real run raises, never lowers, those one worst-case call would not fit as the apply lint counts it:
-a task type's `tree_budget_eur` to twice the worst call of the profiles of the roles that claim it, and a manager
-line to one and a half the seat's worst day (MGR-20). With Fable 5.1 on the farm manager that is about 0.80 EUR per
-incident tree and 3.90 EUR a day; `-max-eur` still caps the run. The run counts the list price of each model in USD as
+models, so a real run raises, never lowers, those the reserve of a real model's call would not fit: a task type's
+`tree_budget_eur` to twice the reserve of one call (the output limit and a request of 60000 bytes) of the profiles
+of the roles that claim it, the review line in the same proportion as the review types (BUD-13), and a manager
+line to the larger of one and a half the seat's worst day (MGR-20) and four reserves. With Fable 5.1 on the farm
+manager that is 2.00 EUR per manager tree and 4.00 EUR a day, with Opus 5.5 0.56 EUR per lens review; `-max-eur` still caps the run. The run counts the list price of each model in USD as
 EUR (a little more than it costs); an id the table does not know counts at the highest price its family had, and
 any other id needs `-price-in` and `-price-out`, the EUR per million tokens of that model.
 

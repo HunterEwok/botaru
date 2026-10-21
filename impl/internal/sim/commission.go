@@ -244,46 +244,52 @@ func scaffoldEvolution(ctx context.Context, d *Director, sc string) error {
 	d.S.log.Addf(KindDirector, "the analysis schedule of ops-reader runs, in the evolution mode (the load check)")
 
 	// 1. The manifest change and its variant. An analysis that ends without one is printed, and
-	// the schedule runs it once more before the check fails.
+	// the schedule runs it once more before the check fails, after the open proposals of the bot,
+	// which hold its one slot (PRP-5), have ended.
 	var prop, pstate, last string
-	seen, retried := map[string]bool{}, false
-	err := d.S.waitFor(ctx, 2*d.Timeout+time.Minute, func() (bool, error) {
-		if e := db.QueryRow(ctx, `SELECT id, state FROM proposals WHERE tenant = 'demo' AND kind = 'manifest_change' AND created_at >= $1
-			ORDER BY created_at LIMIT 1`, start).Scan(&prop, &pstate); e == nil {
-			return true, nil
+	seen := map[string]bool{}
+	errEnded := errors.New("the analysis ended without a manifest change")
+	var err error
+	for try := 0; ; try++ {
+		err = d.S.waitFor(ctx, 2*d.Timeout+time.Minute, func() (bool, error) {
+			if e := db.QueryRow(ctx, `SELECT id, state FROM proposals WHERE tenant = 'demo' AND kind = 'manifest_change' AND created_at >= $1
+				ORDER BY created_at LIMIT 1`, start).Scan(&prop, &pstate); e == nil {
+				return true, nil
+			}
+			var id, state string
+			var ended time.Time
+			var raw []byte
+			if e := db.QueryRow(ctx, `SELECT id, state, updated_at, result FROM tasks WHERE tenant = 'demo' AND type = $1
+				AND created_at >= $2 AND state IN ('completed', 'failed', 'canceled') ORDER BY created_at DESC LIMIT 1`, insightType, start).
+				Scan(&id, &state, &ended, &raw); e != nil || seen[id] || time.Since(ended) < 3*time.Second {
+				return false, nil
+			}
+			seen[id] = true
+			last = fmt.Sprintf("analysis %s %s without a manifest change: %s", id, state, clip(string(raw), 400))
+			d.S.log.Addf(KindDirector, "%s", last)
+			return false, errEnded
+		})
+		if !errors.Is(err, errEnded) || try == 1 {
+			break
 		}
-		var id, state string
-		var ended time.Time
-		var raw []byte
-		if e := db.QueryRow(ctx, `SELECT id, state, coalesce(reason, ''), updated_at, result FROM tasks WHERE tenant = 'demo' AND type = $1
-			AND created_at >= $2 AND state IN ('completed', 'failed', 'canceled') ORDER BY created_at DESC LIMIT 1`, insightType, start).
-			Scan(&id, &state, new(string), &ended, &raw); e != nil || seen[id] || time.Since(ended) < 3*time.Second {
-			return false, nil
+		rows, qerr := db.Query(ctx, `SELECT id FROM proposals WHERE tenant = 'demo' AND role = 'ops-reader' AND state = ANY($1)`, openStates)
+		if qerr != nil {
+			return qerr
 		}
-		seen[id] = true
-		last = fmt.Sprintf("analysis %s %s without a manifest change: %s", id, state, clip(string(raw), 400))
-		d.S.log.Addf(KindDirector, "%s", last)
-		if retried {
-			return false, errors.New(last)
-		}
-		retried = true
-		// A proposal of another kind holds the bot's one open slot (PRP-5): it ends first.
-		rows, err := db.Query(ctx, `SELECT id FROM proposals WHERE tenant = 'demo' AND created_at >= $1 AND state = ANY($2)`, start, openStates)
-		if err != nil {
-			return false, err
-		}
-		open, err := pgx.CollectRows(rows, pgx.RowTo[string])
-		if err != nil {
-			return false, err
+		open, qerr := pgx.CollectRows(rows, pgx.RowTo[string])
+		if qerr != nil {
+			return qerr
 		}
 		for _, p := range open {
 			d.settle(ctx, p)
 		}
 		if err := d.S.SetInsights(ctx, false); err != nil {
-			return false, err
+			return fmt.Errorf("pausing the analysis schedule: %w", err)
 		}
-		return false, d.S.SetInsights(ctx, true)
-	})
+		if err := d.S.SetInsights(ctx, true); err != nil {
+			return fmt.Errorf("starting the analysis schedule: %w", err)
+		}
+	}
 	if err != nil {
 		msg := err.Error()
 		if last != "" && msg != last {

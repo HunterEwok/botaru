@@ -329,6 +329,9 @@ nothing_found is not an answer: change.kind manifest_change with the single op {
 {"kind": "Tenant", "name": "demo"}, "field": "spec.limits.max_queued", "value": %d} (the current value
 is 5000), with benefit.metric farm.task.attempts, benefit.subject task_type:ops.investigate.v1 and
 benefit.direction down, a cost, a risk, and the values you read as its evidence.
+
+The operator tries the change on this stand and measures it there: a low confidence and no measured
+expected change are fine, and a change of the kind none in its place is not.
 `, EvolveQueued)
 
 // SetEvolve turns the evolution mode on or off: the mock model proposes the manifest change,
