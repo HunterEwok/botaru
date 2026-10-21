@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/HunterEwok/botaru/impl/internal/kbjob"
@@ -87,6 +88,9 @@ func (s *Stand) jobOnce(ctx context.Context, c *p1client.Client, tenant string) 
 		// The numbers go to the reporter in params; the code of the core draws the table (flow 5).
 		if err := enqueueChild(ctx, c, lease, p.Task.ID, "report.sensor.v1", "Morning sensor summary for the lab chat. 2-3 sentences. Numbers only from params.",
 			map[string]any{"sensors": sensors, "date": time.Now().UTC().Format(time.DateOnly)}); err != nil {
+			if strings.Contains(err.Error(), "type_not_allowed") {
+				s.childRefused.Add(1)
+			}
 			return failJob(ctx, c, lease, err)
 		}
 		result = map[string]any{"sensors_checked": len(sensors), "sensors_with_issues": issues}
@@ -141,7 +145,7 @@ func (s *Stand) sensorNotes(ctx context.Context, c *p1client.Client, lease, tena
 	}
 	silent := 0
 	for _, id := range catalogList(s.cfg.Work, tenant, "sensors") {
-		if !w.Faults[FaultSensorSilent+":"+id] {
+		if !w.Faults[SensorFault(tenant, id)] {
 			continue
 		}
 		silent++

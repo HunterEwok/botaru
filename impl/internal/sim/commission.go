@@ -73,13 +73,11 @@ func incidentAndCommission(ctx context.Context, d *Director, sc string) error {
 	})
 	d.check(sc, "incident_resolved", err == nil, "incident %s %s", incident, istate)
 	// The reading the manager asked for (MGR-25) and the analysis after the incident (MGR-53).
+	// A missing reading fails its own check and the scenario goes on to the commission.
 	rstate, rreason, _, err := d.typeEnd(ctx, d.S.Home(), "manager.inspect.v1", start)
-	if err != nil {
-		return err
-	}
 	var findings int
-	_ = db.QueryRow(ctx, `SELECT count(*) FROM findings WHERE tenant = $1 AND incident = $2`, d.S.Home(), incident).Scan(&findings)
-	d.check(sc, "manager_read", rstate == "completed" && findings > 0, "reading %s %s, %d findings", rstate, rreason, findings)
+	_ = db.QueryRow(ctx, `SELECT count(*) FROM findings WHERE tenant = $1 AND incident = $2 AND created_at >= $3`, d.S.Home(), incident, start).Scan(&findings)
+	d.check(sc, "manager_read", err == nil && rstate == "completed" && findings > 0, "reading %s %s, %d findings %v", rstate, rreason, findings, err)
 	// One analysis per incident: an incident an earlier scenario left that opened again keeps the
 	// analysis of its first resolution (IDM-2).
 	var astate, areason string

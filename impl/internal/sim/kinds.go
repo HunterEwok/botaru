@@ -16,13 +16,13 @@ import (
 // the free question (R-04), the monthly and the nightly sensor reports (R-09), a CTD file a
 // person sends (R-07) and the knowledge of a tenant (R-21).
 
-// typeEnd waits for the latest task of a type in a tenant created since a time to end, and
+// typeEnd waits for the first task of a type in a tenant created since a time to end, and
 // returns its state, reason and result.
 func (d *Director) typeEnd(ctx context.Context, tenant, typ string, since time.Time) (state, reason string, result map[string]any, err error) {
 	err = d.S.waitFor(ctx, d.Timeout, func() (bool, error) {
 		var raw []byte
 		e := d.S.Bench.Store().Pool.QueryRow(ctx, `SELECT state, coalesce(reason, ''), result FROM tasks WHERE tenant = $1 AND type = $2
-			AND created_at >= $3 ORDER BY created_at DESC LIMIT 1`, tenant, typ, since).Scan(&state, &reason, &raw)
+			AND created_at >= $3 ORDER BY created_at LIMIT 1`, tenant, typ, since).Scan(&state, &reason, &raw)
 		if e != nil {
 			return false, nil
 		}
@@ -92,9 +92,12 @@ func reports(ctx context.Context, d *Director, sc string) error {
 		return err
 	}
 	text := fmt.Sprint(result["text"])
-	d.check(sc, "month_report", state == "completed" && strings.Contains(text, month), "state %s %s: %s", state, reason, clip(text, 200))
+	runs := fmt.Sprint(nums["ctd_qc_runs"])
+	d.check(sc, "month_report", state == "completed" && strings.Contains(text, month) && strings.Contains(text, runs),
+		"state %s %s, %s CTD QC runs: %s", state, reason, runs, clip(text, 200))
 
 	start = time.Now().UTC()
+	refused := d.S.childRefused.Load()
 	if err := d.S.SetSchedule(ctx, home, SensorSchedule, true); err != nil {
 		return err
 	}
@@ -105,10 +108,15 @@ func reports(ctx context.Context, d *Director, sc string) error {
 	if err != nil {
 		return err
 	}
-	d.checkGap(sc, "sensor_check", GapSystemChild, state == "completed" && jsonNum(checked["sensors_checked"]) > 0, "state %s %s, result %v", state, reason, checked)
+	// A failure is the known gap only when the core refused the check's child as such.
+	gap := ""
+	if d.S.childRefused.Load() > refused {
+		gap = GapSystemChild
+	}
+	d.checkGap(sc, "sensor_check", gap, state == "completed" && jsonNum(checked["sensors_checked"]) > 0, "state %s %s, result %v", state, reason, checked)
 	if state != "completed" {
 		// The report is the child the check enqueues: without the check there is none to wait for.
-		d.checkGap(sc, "sensor_report", GapSystemChild, false, "no sensor check completed")
+		d.checkGap(sc, "sensor_report", gap, false, "no sensor check completed")
 		return nil
 	}
 	state, reason, result, err = d.typeEnd(ctx, home, "report.sensor.v1", start)
@@ -126,6 +134,7 @@ const ctdFile = "ctd-st-05.csv"
 // reads it with the data plugin and copies the plugin's numbers into the result.
 func describeFile(ctx context.Context, d *Director, sc string) error {
 	lab := d.S.LabTenant()
+	unnamed := d.S.Brain.NoAttachments()
 	key, err := d.S.SayWithFile(ctx, d.S.PersonIn(lab, "bob"), d.S.PersonIn(lab, "bob-dm"), "/describe What is in this CTD profile?", ctdFile)
 	if err != nil {
 		return err
@@ -135,7 +144,12 @@ func describeFile(ctx context.Context, d *Director, sc string) error {
 		return err
 	}
 	missing := d.toolsNotDone(ctx, lab, key, []string{"data/describe"})
-	d.checkGap(sc, "ctd_described", GapAttachments, state == "completed" && len(missing) == 0 && jsonNum(result["rows"]) > 0,
+	// A failure is the known gap only when the bot found no attachment to name.
+	gap := ""
+	if d.S.Brain.NoAttachments() > unnamed {
+		gap = GapAttachments
+	}
+	d.checkGap(sc, "ctd_described", gap, state == "completed" && len(missing) == 0 && jsonNum(result["rows"]) > 0,
 		"state %s %s, tools not called %v, rows %v, depth_max_m %v", state, reason, missing, result["rows"], result["depth_max_m"])
 	return nil
 }
@@ -274,7 +288,7 @@ func botNotes(ctx context.Context, d *Director, sc string) error {
 		return fmt.Errorf("tenant %s has no sensors in its catalog", home)
 	}
 	sensor := sensors[len(sensors)-1]
-	fault := FaultSensorSilent + ":" + sensor
+	fault := SensorFault(home, sensor)
 	start := time.Now().UTC()
 	if err := d.world("sensor "+sensor+" falls silent (the director's fault)", func(w *World) { w.Faults[fault] = true }); err != nil {
 		return err
@@ -294,6 +308,8 @@ func botNotes(ctx context.Context, d *Director, sc string) error {
 	if err != nil {
 		return nil
 	}
+	// The fault ends once the note is out, so the watch sends no more (the deferred heal is a
+	// safety net for an early return).
 	if err := d.world("sensor "+sensor+" sends again", func(w *World) { delete(w.Faults, fault) }); err != nil {
 		return err
 	}
@@ -379,11 +395,12 @@ func erasure(ctx context.Context, d *Director, sc string) error {
 		return fmt.Errorf("no seed person %s", leaver)
 	}
 	db := d.S.Bench.Store().Pool
-	ended := func(reason string) (string, []string, error) {
-		var id, state string
+	// ended waits for the latest erasure request of dave other than one already seen to end.
+	ended := func(seen string) (string, string, []string, error) {
+		var id, reason, state string
 		err := d.S.waitFor(ctx, d.Timeout, func() (bool, error) {
-			e := db.QueryRow(ctx, `SELECT id, state FROM erasure_requests WHERE tenant = $1 AND subject = $2 AND reason = $3
-				ORDER BY created_at DESC LIMIT 1`, home, p.ID, reason).Scan(&id, &state)
+			e := db.QueryRow(ctx, `SELECT id, reason, state FROM erasure_requests WHERE tenant = $1 AND subject = $2 AND id <> $3
+				ORDER BY created_at DESC LIMIT 1`, home, p.ID, seen).Scan(&id, &reason, &state)
 			return e == nil && (state == "done" || state == "failed"), nil
 		})
 		var open []string
@@ -397,13 +414,13 @@ func erasure(ctx context.Context, d *Director, sc string) error {
 			}
 			rows.Close()
 		}
-		return state, open, err
+		return id, reason + " " + state, open, err
 	}
 	if _, err := d.S.Say(leaver, leaver+"-dm", "/forget"); err != nil {
 		return err
 	}
-	state, open, err := ended("forget")
-	d.check(sc, "forgotten", err == nil && state == "done" && len(open) == 0, "erasure %s, steps not done %v %v", state, open, err)
+	first, state, open, err := ended("")
+	d.check(sc, "forgotten", err == nil && state == "forget done" && len(open) == 0, "erasure %s, steps not done %v %v", state, open, err)
 
 	var out map[string]any
 	err = d.S.Bench.P2(ctx, home, "principal.offboard", map[string]any{"subject": p.ID}, &out)
@@ -413,10 +430,9 @@ func erasure(ctx context.Context, d *Director, sc string) error {
 	}
 	var pstate string
 	_ = db.QueryRow(ctx, `SELECT state FROM principals WHERE tenant = $1 AND id = $2`, home, p.ID).Scan(&pstate)
-	reason := ""
-	_ = db.QueryRow(ctx, `SELECT reason FROM erasure_requests WHERE tenant = $1 AND subject = $2 ORDER BY created_at DESC LIMIT 1`, home, p.ID).Scan(&reason)
-	state, open, err = ended(reason)
-	d.check(sc, "offboarded", pstate == "offboarded" && err == nil && state == "done" && len(open) == 0,
-		"principal %s, erasure %s %s, steps not done %v %v", pstate, reason, state, open, err)
+	// The offboarding opens a request of its own, not the one of /forget.
+	_, state, open, err = ended(first)
+	d.check(sc, "offboarded", pstate == "offboarded" && err == nil && state == "offboarding done" && len(open) == 0,
+		"principal %s, erasure %s, steps not done %v %v", pstate, state, open, err)
 	return nil
 }

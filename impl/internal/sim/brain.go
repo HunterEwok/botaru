@@ -30,7 +30,14 @@ type Brain struct {
 	Home   string
 	calls  atomic.Int64
 	evolve atomic.Bool
+	// noAttachments counts the planned data/describe calls whose file had no values to pick
+	// from: the sign of the known gap GapAttachments.
+	noAttachments atomic.Int64
 }
+
+// NoAttachments is the number of data/describe calls the mock could not make for want of an
+// attachment to name.
+func (b *Brain) NoAttachments() int64 { return b.noAttachments.Load() }
 
 // Calls is the number of answered calls.
 func (b *Brain) Calls() int64 { return b.calls.Load() }
@@ -431,6 +438,11 @@ func (b *Brain) next(system, goal, seen string, names []string, offered map[stri
 				continue
 			}
 		}
+		if s.plugin == "data" && s.tool == "describe" && noValues(offered[n], "file") {
+			// No attachment to name: no value of file passes the schema.
+			b.noAttachments.Add(1)
+			continue
+		}
 		in, ok := fits(offered[n], adapt(offered[n], input, goal))
 		if !ok {
 			continue
@@ -445,6 +457,14 @@ func (b *Brain) next(system, goal, seen string, names []string, offered map[stri
 		return map[string]any{"type": "tool_use", "name": n, "input": in}
 	}
 	return nil
+}
+
+// noValues says whether a property of a tool's input schema takes no value: the core writes
+// an enum_from that resolved to no values as not: {}.
+func noValues(schema map[string]any, prop string) bool {
+	p, _ := mapOf(schema["properties"])[prop].(map[string]any)
+	not, ok := p["not"].(map[string]any)
+	return ok && len(not) == 0
 }
 
 // reSchema finds the result schema the runtime puts at the end of the system prompt.
@@ -686,6 +706,24 @@ func findings(seen string) found {
 	return f
 }
 
+// enumObserved is the value of an enum that something the bot saw points to: the verdict of
+// the site checks it read or the state of a run it saw fail; unlike enumFact, no default.
+func enumObserved(enum []any, f found) (any, bool) {
+	var wants []string
+	if f.runFailed {
+		wants = append(wants, "failed")
+	}
+	if f.checks > 0 {
+		wants = append(wants, map[bool]string{true: "degraded", false: "up"}[f.checksBad > 0])
+	}
+	for _, want := range wants {
+		if slices.Contains(enum, any(want)) {
+			return want, true
+		}
+	}
+	return nil, false
+}
+
 // enumFact is the value of an enum the found facts point to, if any.
 func enumFact(enum []any, f found) (any, bool) {
 	wants := []string{map[bool]string{true: "cause_found", false: "no_cause"}[f.cause], "ok", "done", "approve", "keep"}
@@ -736,7 +774,7 @@ func fill(schema map[string]any, name, summary string, f found) any {
 				continue
 			}
 			if enum, _ := p["enum"].([]any); len(enum) > 0 {
-				if pick, ok := enumFact(enum, f); ok {
+				if pick, ok := enumObserved(enum, f); ok {
 					out[k] = pick
 				}
 			} else if k == "need_input" && p["type"] == "boolean" && f.needsYou {

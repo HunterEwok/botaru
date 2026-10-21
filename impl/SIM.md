@@ -148,12 +148,12 @@ stand changes the example set in a few places so that a scenario sees the whole 
   `/rollout` does no real work; and every tenant copy has both commands, while on `standard` only the tenants
   whose replicas name `translator` or `ops-operator` run a worker for them (elsewhere they wait out `start_by`);
 - the everyday kinds of work (D-6): `alice` is also in the group `lead` (the monthly report), `bob` may direct
-  the farm manager (`manager.direct` in `deciders`) and upload to the corpus `vendor-manuals` (`kb.write` in
-  `staff`); the group `system-ops` may enqueue the nightly sensor check, its report and the ingest of a knowledge
+  the farm manager (`manager.direct` in `deciders`), and `staff` may upload to the corpus `vendor-manuals`
+  (`kb.write`); the group `system-ops` may enqueue the nightly sensor check, its report and the ingest of a knowledge
   document, and send the sensor note; `farm-manager-ops` may enqueue the farm manager's readings and directives.
   The paused schedule `sensor-nightly` runs the sensor check every minute while a scenario has it on. The sensor
   watch runs every minute and sends a sensor note (`report.sensor_note.v1`, of the example set) to the inbox of
-  `ops-reader` for every sensor the world keeps silent; its type is `summary` instead of the example's
+  `ops-reader` for every sensor the world keeps silent in its tenant; its type is `summary` instead of the example's
   `internal`, since a note may not be below the mark of its attempt (MSG-6) and the watch reads no tool.
   `ops-reader` receives the note and the summary of the day (`ops.summary.v1`) reads its inbox. A bot group
   address cannot be a sender's address: a role is a global manifest and the lint of global manifests refuses any
