@@ -65,9 +65,10 @@ type PlanRank struct {
 // after each real run.
 const PlanFactor = 3.7
 
-// PlanKey names a run for its plan: the farm, the scenarios, the load and its length, and the
-// one model of a run that names one.
-func PlanKey(farm, scenarios, load string, duration time.Duration, model string) string {
+// PlanKey names a run for its plan: the farm, the scenarios, the load and its length, the one
+// model of a run that names one, and the other settings that change the work (extra, such as
+// approve=all), each as given.
+func PlanKey(farm, scenarios, load string, duration time.Duration, model string, extra ...string) string {
 	k := "farm=" + farm
 	if model != "" {
 		k += " model=" + model
@@ -86,6 +87,9 @@ func PlanKey(farm, scenarios, load string, duration time.Duration, model string)
 	}
 	if duration > 0 {
 		k += " duration=" + duration.String()
+	}
+	for _, e := range extra {
+		k += " " + e
 	}
 	return k
 }

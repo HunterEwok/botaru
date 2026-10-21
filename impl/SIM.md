@@ -526,10 +526,12 @@ any other id needs `-price-in` and `-price-out`, the EUR per million tokens of t
   price), since a real model may hand work to a rank the mock never called.
 
 The plan goes to `plan.json` in the run's folder and to `plan-<key>.json` in `-out` (a long key is named by its
-hash). The key names the farm, the scenarios, the load, its length and the one model of `-model`; a real run of
+hash). The key names the farm, the scenarios, the load, its length, the one model of `-model`, and `-auto-approve`,
+`-seed` and (in the continuous mode) `-fault-every` when they are not the defaults; a real run of
 the same key prints the plan at its start and warns when `-max-eur` is below the recommendation or the plan was made
 for another number of calls at once. A plan of a mock run that did not run to its end (the fuse, a halt, an
-interrupt, a failed check) says so and stays in its run's folder only. A continuous run (`-load`, `-duration`)
+interrupt, a failed check, among them a small `-max-eur` given to the mock run) says so and stays in its run's
+folder only. A continuous run (`-load`, `-duration`)
 plans as long as it runs. `-dry-plan` needs a bound of the calls at once: `-max-parallel-calls 0` is refused.
 
 ### The limiter of the model calls
@@ -539,7 +541,10 @@ calls of the agents to a rate and a number in flight, so a load stays inside the
 stands before P4, on the agents' way to the gateway: a waiting call has no reserve yet and P4's deadline of it has
 not begun, so waiting makes a call slower and costs nothing, and the provider never sees more calls than the limits.
 The calls start in the order they came; a call waits until a slot is free, its agent gives up (its client waits
-10 minutes) or the run stops (the fuse or a halt), which refuses the waiting calls at once. Each wait is a model
+10 minutes; the limiter itself gives up after 8 so a call it lets go still has P4's deadline left) or the run stops
+(the fuse or a halt), which refuses the waiting calls at once. A slot is one call of an agent: P4's fallback to
+another model of the profile after a provider error is a second provider call in the same slot, so in a chain of
+provider errors the provider sees more calls a minute than `-max-calls-per-min` (never more in flight). Each wait is a model
 event with `limiter_wait_ms`, and the metrics count the calls, the waits and the most calls waiting at once
 (`metrics.json` `observed.limiter`). The wait falls inside the attempt, so it is not in M-2's queue wait.
 

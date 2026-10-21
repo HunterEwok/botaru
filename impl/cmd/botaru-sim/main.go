@@ -379,7 +379,19 @@ func runWith(o options, stdin io.Reader, stdout, stderr io.Writer) (int, error) 
 	if (o.real || o.dryPlan) && o.model != "rank" {
 		planModel = o.model
 	}
-	planKey := sim.PlanKey(o.farm, o.scenario, o.load, o.duration, planModel)
+	// The settings that change the work and differ from their defaults name the plan too; the
+	// limiter's do not, since a real run has one and the mock none.
+	var planExtra []string
+	if o.approve != "safe" {
+		planExtra = append(planExtra, "approve="+o.approve)
+	}
+	if o.seed != 42 {
+		planExtra = append(planExtra, fmt.Sprintf("seed=%d", o.seed))
+	}
+	if o.scenario == "" && o.load == "" && o.faultEvery != 3*time.Minute {
+		planExtra = append(planExtra, "fault-every="+o.faultEvery.String())
+	}
+	planKey := sim.PlanKey(o.farm, o.scenario, o.load, o.duration, planModel, planExtra...)
 	if o.real {
 		// The plan of the same flags, from a -dry-plan run.
 		switch p, err := sim.LoadPlan(sim.PlanFile(o.out, planKey)); {
@@ -392,7 +404,10 @@ func runWith(o options, stdin io.Reader, stdout, stderr io.Writer) (int, error) 
 			if o.maxEUR < p.MaxEUR {
 				log.Addf(sim.KindDirector, "-max-eur %.2f is below the recommended %.2f: the fuse may stop the run", o.maxEUR, p.MaxEUR)
 			}
-			if p.Parallel != o.maxParallel {
+			switch {
+			case p.Parallel != o.maxParallel && o.maxParallel == 0:
+				log.Addf(sim.KindDirector, "the plan was made for %d calls at once and the run lets any number: the reserve of the calls in flight has no bound", p.Parallel)
+			case p.Parallel != o.maxParallel:
 				log.Addf(sim.KindDirector, "the plan was made for %d calls at once and the run lets %d: run -dry-plan with -max-parallel-calls %d", p.Parallel, o.maxParallel, o.maxParallel)
 			}
 		}

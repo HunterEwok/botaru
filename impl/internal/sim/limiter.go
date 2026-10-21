@@ -18,9 +18,13 @@ import (
 // It stands before P4, on the agents' way to the gateway: a waiting call has no reserve yet and
 // P4's deadline of the call has not begun, so waiting makes a call slower and costs nothing, and
 // the provider never sees more than the limits. The calls start in the order they came; a call
-// waits until a slot is free, its agent gives up (its client's timeout) or the run stops.
+// waits until a slot is free, its agent gives up (its client's timeout), the run stops or it has
+// waited maxWait.
 type limiter struct {
 	perMin, parallel int
+	// maxWait ends a wait that would leave the call too little of the agent's 10 minutes: a call
+	// that starts after it may be charged and then lost to the agent's timeout.
+	maxWait time.Duration
 
 	mu       sync.Mutex
 	starts   []time.Time
@@ -53,11 +57,18 @@ const limiterPoll = 50 * time.Millisecond
 // errLimiterStopped is the end of a wait when the run stopped.
 var errLimiterStopped = errors.New("the run stopped while the call waited")
 
+// errLimiterTooLong is the end of a wait of maxWait.
+var errLimiterTooLong = errors.New("the call waited too long for a slot")
+
+// limiterMaxWait is the longest wait: the agent's client gives a call 10 minutes, and P4's own
+// deadline of a call is a minute or more.
+const limiterMaxWait = 8 * time.Minute
+
 func newLimiter(perMin, parallel int) *limiter {
 	if perMin <= 0 && parallel <= 0 {
 		return nil
 	}
-	return &limiter{perMin: perMin, parallel: parallel}
+	return &limiter{perMin: perMin, parallel: parallel, maxWait: limiterMaxWait}
 }
 
 // free says whether a call may start now; l.mu is held.
@@ -92,7 +103,8 @@ func (l *limiter) leave(t uint64) {
 }
 
 // acquire waits until a call may start, in the order the calls came, and returns the wait; it
-// gives up with errLimiterStopped when stop says the run stopped, and with the context's error.
+// gives up with errLimiterStopped when stop says the run stopped, with errLimiterTooLong after
+// maxWait, and with the context's error.
 // A call that acquired must release.
 func (l *limiter) acquire(ctx context.Context, stop func() bool) (time.Duration, error) {
 	begin := time.Now()
@@ -125,6 +137,10 @@ func (l *limiter) acquire(ctx context.Context, stop func() bool) (time.Duration,
 			l.leave(t)
 			l.mu.Unlock()
 			return now.Sub(begin), errLimiterStopped
+		case l.maxWait > 0 && now.Sub(begin) >= l.maxWait:
+			l.leave(t)
+			l.mu.Unlock()
+			return now.Sub(begin), errLimiterTooLong
 		case l.queue[0] == t && l.free(now):
 			l.queue = l.queue[1:]
 			l.start(now, now.Sub(begin))
@@ -165,6 +181,9 @@ func limitP4(l *limiter, stop func() bool, held func(time.Duration)) func(http.H
 			switch {
 			case errors.Is(err, errLimiterStopped):
 				writeHalted(w)
+				return
+			case errors.Is(err, errLimiterTooLong):
+				http.Error(w, err.Error(), http.StatusServiceUnavailable)
 				return
 			case err != nil:
 				// The agent gave up on the call while it waited.

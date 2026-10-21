@@ -136,6 +136,9 @@ func TestPlanFile(t *testing.T) {
 	if got := PlanFile("/o", key); got != filepath.Join("/o", "plan-farm-standard-load-standard-duration-1h0m0s.json") {
 		t.Fatal(got)
 	}
+	if PlanKey("smoke", "", "", 0, "", "approve=all") == PlanKey("smoke", "", "", 0, "") {
+		t.Fatal("the key leaves out the approval policy")
+	}
 	if PlanKey("smoke", "a, b", "", 0, "") != PlanKey("smoke", "a,b", "", 0, "") {
 		t.Fatal("the key depends on the spaces of the list")
 	}
@@ -151,5 +154,61 @@ func TestPlanFile(t *testing.T) {
 	got, err := LoadPlan(path)
 	if err != nil || got.MaxEUR != 23.5 || got.Key != key || len(got.Ranks) != 1 {
 		t.Fatalf("%+v %v", got, err)
+	}
+}
+
+// A waiting head that gives up lets the next call start; a stop and maxWait end the waits.
+func TestLimiterEnds(t *testing.T) {
+	l := newLimiter(0, 1)
+	if _, err := l.acquire(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	head, cancel := context.WithCancel(context.Background())
+	headDone := make(chan error, 1)
+	go func() { _, err := l.acquire(head, nil); headDone <- err }()
+	next := make(chan error, 1)
+	time.Sleep(3 * limiterPoll)
+	go func() { _, err := l.acquire(context.Background(), nil); next <- err }()
+	time.Sleep(3 * limiterPoll)
+	cancel()
+	if err := <-headDone; !errors.Is(err, context.Canceled) {
+		t.Fatalf("head: %v", err)
+	}
+	l.release()
+	select {
+	case err := <-next:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the call behind a head that gave up did not start")
+	}
+	var stopped sync.WaitGroup
+	var stop sync.Mutex
+	halted := false
+	for range 3 {
+		stopped.Add(1)
+		go func() {
+			defer stopped.Done()
+			_, err := l.acquire(context.Background(), func() bool { stop.Lock(); defer stop.Unlock(); return halted })
+			if !errors.Is(err, errLimiterStopped) {
+				t.Errorf("a waiting call after the stop: %v", err)
+			}
+		}()
+	}
+	time.Sleep(3 * limiterPoll)
+	stop.Lock()
+	halted = true
+	stop.Unlock()
+	stopped.Wait()
+	l.mu.Lock()
+	queued := len(l.queue)
+	l.maxWait = 2 * limiterPoll
+	l.mu.Unlock()
+	if queued != 0 {
+		t.Fatalf("%d tickets left after the stop", queued)
+	}
+	if _, err := l.acquire(context.Background(), nil); !errors.Is(err, errLimiterTooLong) {
+		t.Fatalf("a wait past maxWait: %v", err)
 	}
 }
