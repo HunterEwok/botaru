@@ -24,6 +24,9 @@ func TestMain(m *testing.M) {
 	if ok, code := StubFromEnv(os.Args[1:], os.Stdout); ok {
 		os.Exit(code)
 	}
+	if len(os.Args) > 2 && (os.Args[1] == "plugin" || os.Args[1] == "simplugin") {
+		CrashOnCall()
+	}
 	if len(os.Args) > 2 && os.Args[1] == "plugin" {
 		pluginmain.Exit("plugin", pluginmain.Main(os.Args[2], os.Args[3:]))
 	}

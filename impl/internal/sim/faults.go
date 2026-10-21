@@ -3,6 +3,8 @@
 package sim
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -14,6 +16,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/HunterEwok/botaru/impl/internal/core"
@@ -492,7 +495,8 @@ func farmFaults(ctx context.Context, d *Director, sc string) error {
 	if key, err = ask(); err != nil {
 		return err
 	}
-	state, reason, _, err = d.taskEnd(ctx, key)
+	// Each model call of the task waits providerDelay, so the task takes minutes.
+	state, reason, _, err = d.taskEndWithin(ctx, key, max(d.Timeout, 4*time.Minute))
 	if err != nil {
 		return err
 	}
@@ -667,4 +671,36 @@ func farmFaults(ctx context.Context, d *Director, sc string) error {
 		"drain set %v with %d attempts running, ended %v; the task across the drain %s %s; a task after the start %s %s",
 		roll.Drained, roll.Running, drain == nil, state, reason, astate, areason)
 	return nil
+}
+
+// CrashOnCall is the farm fault F-2 in a plugin process: when a tool call comes in and the mark
+// is there, the process that removes the mark kills itself (SIGKILL), so the call is in flight
+// when it dies. A process that serves no tool call (a tool list) leaves the mark alone.
+func CrashOnCall() {
+	mark := os.Getenv(CrashEnv)
+	if mark == "" {
+		return
+	}
+	if _, err := os.Stat(mark); err != nil {
+		return
+	}
+	in := os.Stdin
+	r, w, err := os.Pipe()
+	if err != nil {
+		return
+	}
+	os.Stdin = r
+	go func() {
+		br := bufio.NewReader(in)
+		for {
+			line, err := br.ReadBytes('\n')
+			if bytes.Contains(line, []byte(`"tools/call"`)) && os.Remove(mark) == nil {
+				_ = syscall.Kill(os.Getpid(), syscall.SIGKILL)
+			}
+			if _, werr := w.Write(line); werr != nil || err != nil {
+				_ = w.Close()
+				return
+			}
+		}
+	}()
 }

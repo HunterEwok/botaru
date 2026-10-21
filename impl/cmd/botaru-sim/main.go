@@ -8,7 +8,6 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -50,7 +49,7 @@ func main() {
 	}
 	// The toolhosts start the own plugins as children of this binary (DEP-7).
 	if len(os.Args) > 1 && (os.Args[1] == "plugin" || os.Args[1] == "simplugin") {
-		crashOnCall()
+		sim.CrashOnCall()
 	}
 	if len(os.Args) > 1 && os.Args[1] == "plugin" {
 		if len(os.Args) < 3 {
@@ -812,36 +811,4 @@ func loadLine(l *sim.LoadSummary) string {
 		}
 	}
 	return strings.Join(out, ", ")
-}
-
-// crashOnCall is the farm fault F-2 in a plugin process: when a tool call comes in and the mark
-// is there, the process that removes the mark kills itself (SIGKILL), so the call is in flight
-// when it dies. A process that serves no tool call (a tool list) leaves the mark alone.
-func crashOnCall() {
-	mark := os.Getenv(sim.CrashEnv)
-	if mark == "" {
-		return
-	}
-	if _, err := os.Stat(mark); err != nil {
-		return
-	}
-	in := os.Stdin
-	r, w, err := os.Pipe()
-	if err != nil {
-		return
-	}
-	os.Stdin = r
-	go func() {
-		br := bufio.NewReader(in)
-		for {
-			line, err := br.ReadBytes('\n')
-			if bytes.Contains(line, []byte(`"tools/call"`)) && os.Remove(mark) == nil {
-				_ = syscall.Kill(os.Getpid(), syscall.SIGKILL)
-			}
-			if _, werr := w.Write(line); werr != nil || err != nil {
-				_ = w.Close()
-				return
-			}
-		}
-	}()
 }
