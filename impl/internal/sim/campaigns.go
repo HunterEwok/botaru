@@ -144,7 +144,8 @@ func campaignActionCanary(ctx context.Context, d *Director, sc string) error {
 	c, err := d.readCampaign(ctx, id)
 	d.check(sc, "waits_for_card", err == nil && kind == "action" && action == "cleanup_pipeline_tmp" && card && c.state == "proposed" && len(c.resources) == len(dbs),
 		"template %s %s, card %v, state %s, items %v over %v %v", kind, action, card, c.state, c.items, c.resources, err)
-	// The policy approves the card of this scenario's campaign, and then its Continue.
+	// The policy approves the card of this scenario's campaign, and its Continue once the check
+	// has seen the gate.
 	d.allow(id)
 	c, err = d.waitCampaign(ctx, id, d.Timeout, "paused", "completed", "failed", "canceled", "rejected")
 	d.check(sc, "canary_then_gate", err == nil && c.state == "paused" && c.pause == "gate" && c.items["ok"] == 1,
@@ -152,6 +153,7 @@ func campaignActionCanary(ctx context.Context, d *Director, sc string) error {
 	if err != nil || c.state != "paused" {
 		return nil
 	}
+	d.allow(id + ":gate")
 	c, err = d.waitCampaign(ctx, id, d.Timeout, "completed", "failed", "canceled")
 	d.check(sc, "threshold_stop", err == nil && c.state == "failed" && c.items["ok"] == 1 && c.items["failed"] >= 1 && strings.Contains(c.stop, "threshold"),
 		"state %s, stop %q, items %v %v", c.state, c.stop, c.items, err)

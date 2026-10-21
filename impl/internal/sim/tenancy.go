@@ -67,12 +67,11 @@ func tenantWall(ctx context.Context, d *Director, sc string) error {
 	_ = db.QueryRow(ctx, `SELECT count(*) FROM toolcalls WHERE tenant = $1 AND created_at >= $2 AND state = 'done'
 		AND (target_host = ANY($3) OR EXISTS (SELECT 1 FROM jsonb_each_text(args) a WHERE a.value = ANY($3)))`, t.Name, start, foreign).Scan(&crossed)
 	d.check(sc, "no_foreign_machine", crossed == 0, "%d calls of %s ran on or named a machine of %s %v", crossed, t.Name, home.Name, foreign)
-	// The model did ask for the machine: the call was refused, not left out by the mock.
-	var asked int
-	_ = db.QueryRow(ctx, `SELECT count(*) FROM audit WHERE tenant = $1 AND at >= $2 AND record->>'ok' = 'false'
-		AND record->'actor'->>'task' = (SELECT id FROM tasks WHERE tenant = $1 AND idempotency_key = $3)`, t.Name, start, key).Scan(&asked)
-	raw := fmt.Sprint(result)
-	d.check(sc, "refused", asked > 0 || state == "failed", "%d refusals in the task's audit, result %s", asked, clip(raw, 160))
+	// The model did ask for a machine of the home tenant, and the core refused that call.
+	var refused int
+	_ = db.QueryRow(ctx, `SELECT count(*) FROM toolcalls WHERE tenant = $1 AND created_at >= $2 AND state = 'denied'
+		AND (target_host = ANY($3) OR EXISTS (SELECT 1 FROM jsonb_each_text(args) a WHERE a.value = ANY($3)))`, t.Name, start, foreign).Scan(&refused)
+	d.check(sc, "refused", refused > 0, "%d calls of %s naming a machine of %s were refused; result %s", refused, t.Name, home.Name, clip(fmt.Sprint(result), 160))
 	if err := d.S.watch.sweep(ctx); err != nil {
 		return err
 	}
@@ -81,15 +80,16 @@ func tenantWall(ctx context.Context, d *Director, sc string) error {
 	return nil
 }
 
-// budgetTenant is the first tight-budget tenant with ops-reader, and another tenant with it.
+// budgetTenants are the first tight-budget tenant with ops-reader and another tenant with it, one
+// other than the home when there is one: the home's logs may hold what earlier scenarios planted.
 func budgetTenants(f *Farm) (*FarmTenant, *FarmTenant) {
 	var tight, other *FarmTenant
-	for _, t := range f.Tenants {
+	for i, t := range f.Tenants {
 		switch {
 		case t.Workers("ops-reader") == 0:
 		case t.TightBudget && tight == nil:
 			tight = t
-		case !t.TightBudget && other == nil:
+		case !t.TightBudget && (other == nil || other == f.Tenants[0] && i > 0):
 			other = t
 		}
 	}
@@ -142,7 +142,7 @@ func budgetExhaustion(ctx context.Context, d *Director, sc string) error {
 	}
 	var calls int
 	_ = db.QueryRow(ctx, `SELECT count(*) FROM spend WHERE tenant = $1 AND profile IS NOT NULL AND time >= $2 AND state = 'committed'`, tight.Name, start).Scan(&calls)
-	d.check(sc, "work_stopped", refusals > 0 || state == "failed" && reason == "budget_exhausted",
+	d.check(sc, "work_stopped", (refusals > 0 || state == "failed" && reason == "budget_exhausted") && calls == 0,
 		"the request in %s: %s %s, %d enqueue refusals, %d model calls charged", tight.Name, state, reason, refusals, calls)
 	key, err = d.S.Say(d.S.PersonIn(other.Name, "bob"), d.S.PersonIn(other.Name, "bob-dm"), "/logs Show the errors of the last hour")
 	if err != nil {
@@ -153,6 +153,19 @@ func budgetExhaustion(ctx context.Context, d *Director, sc string) error {
 		return err
 	}
 	d.check(sc, "other_tenant_works", state == "completed", "the request in %s: %s %s", other.Name, state, reason)
+	// The budget comes back, and the tenant works again.
+	if err := d.S.SetDayBudget(ctx, tight.Name, was); err != nil {
+		return err
+	}
+	key, err = d.S.Say(d.S.PersonIn(tight.Name, "bob"), d.S.PersonIn(tight.Name, "bob-dm"), "/logs Show the errors of the last hour again")
+	if err != nil {
+		return err
+	}
+	state, reason, _, err = d.taskEnd(ctx, key)
+	if err != nil {
+		return err
+	}
+	d.check(sc, "budget_back", state == "completed", "the request in %s after the budget came back: %s %s", tight.Name, state, reason)
 	return nil
 }
 
