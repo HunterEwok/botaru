@@ -18,6 +18,9 @@ var (
 	reReviewLens = regexp.MustCompile(`review-result for the lens ([a-z]+)`)
 	reInsight    = regexp.MustCompile(`(?i)propose one change, the one with the|load check of this stand`)
 	reIncident   = regexp.MustCompile(`(?i)read the incident`)
+	reTranslate  = regexp.MustCompile(`(?i)script draft with propose_script`)
+	reScriptOut  = regexp.MustCompile(`"run_ref": ?"([^"]+)"`)
+	reVague      = regexp.MustCompile(`(?i)\b(something|stuff|somehow|whatever|things?)\b`)
 )
 
 // governance is the next step of a governance task, or ok false for any other task. A step is
@@ -35,8 +38,23 @@ func governance(system, goal, seen string, names []string, offered map[string]ma
 			}
 		}
 		return nil, insightAnswer(seen, evolve), true
+	case reInspectTask.MatchString(system):
+		return nil, inspectAnswer(goal), true
 	case reIncident.MatchString(system):
+		// The manager asks the reading bot to read the tenant for the incident once, and
+		// fetches its findings once (MGR-25).
+		if n := toolName(names, "", "inspect_request"); n != "" {
+			if inc := reIncidentID.FindString(goal); called[n] == 0 && inc != "" {
+				return map[string]any{"type": "tool_use", "name": n, "input": map[string]any{"op": "request", "incident": inc}}, "", true
+			}
+			if m := reInspectID.FindStringSubmatch(seen); called[n] == 1 && m != nil {
+				return map[string]any{"type": "tool_use", "name": n, "input": map[string]any{"op": "findings", "inspect": m[1]}}, "", true
+			}
+		}
 		return nil, managerAnswer(goal), true
+	case reTranslate.MatchString(system):
+		call, answer := translate(goal, seen, names, called)
+		return call, answer, true
 	}
 	return nil, "", false
 }
@@ -144,8 +162,93 @@ func insightAnswer(seen string, evolve string) string {
 func managerAnswer(input string) string {
 	f := "The incident is open on the resource named in its block."
 	if l := strings.ToLower(input); strings.Contains(l, "disk") || strings.Contains(l, "free_pct") {
-		f = "The data volume of db1 is almost full; the pipeline temporary files fill it."
+		f = "The data volume of the db machine is almost full; the pipeline temporary files fill it."
 	}
 	raw, _ := json.Marshal(map[string]any{"summary": f + " I propose to keep the automatic hold and to ask the people of the tenant for the cleanup of the pipeline temporary files (cleanup_pipeline_tmp)."})
 	return string(raw)
 }
+
+// translate is the script translator (TRN-2, TRN-3): a request to check the disks and clean up
+// where they are full becomes an investigation and the cleanup action on its verdict; a request
+// about the sites becomes an availability summary. A vague request is ambiguous and anything else
+// unsupported, without a draft. After the draft it answers with the run the core made of it.
+func translate(goal, seen string, names []string, called map[string]int) (map[string]any, string) {
+	out := func(v map[string]any) string {
+		raw, _ := json.Marshal(v)
+		return string(raw)
+	}
+	n := toolName(names, "", "propose_script")
+	if n != "" && called[n] > 0 {
+		if m := reScriptOut.FindStringSubmatch(seen); m != nil && strings.Contains(seen, `"proposed"`) {
+			return nil, out(map[string]any{"outcome": "drafted", "run_ref": m[1]})
+		}
+		return nil, out(map[string]any{"outcome": "unsupported", "missing": []any{"action_unclear"}})
+	}
+	request, _, _ := strings.Cut(goal, "\n")
+	var steps []any
+	switch {
+	case reVague.MatchString(request):
+		return nil, out(map[string]any{"outcome": "ambiguous", "missing": []any{"resource_missing"}})
+	case rePipelineAsk.MatchString(request) && regexp.MustCompile(`(?i)clean`).MatchString(request):
+		// No condition on the run's state: the result field state of pipeline.status.v1 cannot
+		// be named in a condition, since <step>.state is the state of the step (SCR-3).
+		steps = []any{
+			map[string]any{"id": "check", "kind": "task", "type": "pipeline.status.v1", "goal": map[string]any{"assignment": true}},
+			map[string]any{"id": "clean", "kind": "action", "action": "cleanup_pipeline_tmp", "args": map[string]any{"older_than_days": 7},
+				"needs": []any{"check"}},
+		}
+	case reDisk.MatchString(request) && regexp.MustCompile(`(?i)clean|free`).MatchString(request):
+		steps = []any{
+			map[string]any{"id": "check", "kind": "task", "type": "ops.investigate.v1", "goal": map[string]any{"assignment": true}},
+			map[string]any{"id": "clean", "kind": "action", "action": "cleanup_pipeline_tmp", "args": map[string]any{"older_than_days": 7},
+				"needs": []any{"check"}, "when": map[string]any{"ref": "check.verdict", "op": "eq", "value": "cause_found"}},
+		}
+	case reHealthAsk.MatchString(request):
+		steps = []any{map[string]any{"id": "health", "kind": "task", "type": "ops.health.v1", "goal": map[string]any{"assignment": true}}}
+	}
+	if steps == nil || n == "" {
+		return nil, out(map[string]any{"outcome": "unsupported", "missing": []any{"action_unclear"}})
+	}
+	return map[string]any{"type": "tool_use", "name": n, "input": map[string]any{"script": map[string]any{"script": "v1", "steps": steps}}}, ""
+}
+
+// rePipelineAsk is a request about a run of the processing pipeline.
+var rePipelineAsk = regexp.MustCompile(`(?i)\bpipeline\b`)
+
+// reInspectTask is the reading a farm manager asks for (manager.inspect.v1).
+var reInspectTask = regexp.MustCompile(`(?i)hand in findings`)
+
+// inspectAnswer hands in one finding manager-finding/v1 on the subject of the incident in the
+// input block, the type of what it saw, without evidence ids, since the mock reads nothing
+// (MGR-25). The subject of a disk incident is a machine (resource db1), which the core does not
+// take as an object of the tenant, and its volume (db1:/data) does not fit the id pattern, so
+// a resource subject, like a kind a finding cannot name, becomes the task type of
+// investigations.
+func inspectAnswer(goal string) string {
+	subject := map[string]any{"kind": "tasktype", "id": "ops.investigate.v1"}
+	kind := "none"
+	for _, o := range jsonObjects(goal) {
+		in := mapOf(mapOf(o["params"])["input"])
+		if in == nil {
+			continue
+		}
+		if s := mapOf(in["subject"]); s != nil && slices.Contains([]string{"worker", "task", "role", "tasktype", "schedule"}, fmt.Sprint(s["kind"])) {
+			subject = map[string]any{"kind": s["kind"], "id": s["id"]}
+		}
+		if strings.Contains(fmt.Sprint(in["class"]), "disk") {
+			kind = "disk_growth"
+		}
+	}
+	raw, _ := json.Marshal(map[string]any{"findings": []any{map[string]any{"kind": kind, "subject": subject, "evidence": []any{}, "confidence": "medium"}}})
+	return string(raw)
+}
+
+// reIncidentID is an incident id in the input of a manager task; reInspectID the reading a
+// request of inspect_request enqueued.
+var (
+	reIncidentID = regexp.MustCompile(`\binc_[A-Za-z0-9]{1,60}\b`)
+	reInspectID  = regexp.MustCompile(`"inspect": ?"(t_[A-Za-z0-9]{1,60})"`)
+)
+
+// reHealthAsk is a request about whether the sites and services work.
+var reHealthAsk = regexp.MustCompile(`(?i)\b(sites?|services?)\b.*\b(up|working|available)\b|\bhealth\b`)

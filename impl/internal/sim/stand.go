@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/HunterEwok/botaru/impl/internal/core"
@@ -85,6 +86,13 @@ type Stand struct {
 	tripped bool
 	// watched is the number of done oneshot runs the last pipeline watch of each tenant saw.
 	watched map[string]int
+	// seed is the seed of the bench as the stand edited it; fileChans are the stand's file
+	// channel workers by tenant (SayWithFile).
+	seed      *evals.Seed
+	fileChans map[string]*p1client.Client
+	// childRefused counts the children of a system job the core refused as type_not_allowed:
+	// the sign of the known gap GapSystemChild.
+	childRefused atomic.Int64
 	// insights says whether the analysis schedule of ops-reader runs.
 	insights bool
 	// insightInstruction is the instruction of ops.insight.v1 before the evolution mode
@@ -141,7 +149,8 @@ func Start(ctx context.Context, cfg Config) (_ *Stand, err error) {
 	}
 	f := cfg.Farm
 	s := &Stand{cfg: cfg, farm: f, log: cfg.Log, Brain: &Brain{Home: f.Home().Name}, cardByID: map[string]*Card{}, chats: map[string]string{}, watched: map[string]int{},
-		stopped: make(chan struct{})}
+		fileChans: map[string]*p1client.Client{},
+		stopped:   make(chan struct{})}
 	if s.log == nil {
 		if s.log, err = NewLog(nil, ""); err != nil {
 			return nil, err
@@ -256,7 +265,7 @@ func Start(ctx context.Context, cfg Config) (_ *Stand, err error) {
 			}
 			return s.repo.writeSet(ctx, ms, "The stand set of botaru-sim")
 		},
-		PersonOperators: []string{Decider},
+		PersonOperators: deciders(f),
 	}
 	if err := os.MkdirAll(bcfg.WorkDir, 0o755); err != nil {
 		return nil, err
@@ -267,6 +276,7 @@ func Start(ctx context.Context, cfg Config) (_ *Stand, err error) {
 		return nil, err
 	}
 	editSeed(sd)
+	s.seed = sd
 	for _, c := range sd.Chats {
 		s.chats[c.ExternalID] = c.Name
 	}
@@ -989,6 +999,30 @@ func (s *Stand) SetInsightsIn(ctx context.Context, tenant string, on bool) error
 		msg += " in " + tenant
 	}
 	commit, err := s.repo.setField(ctx, "Schedule", tenant, "ops-insight", "spec.paused", !on, msg)
+	if err != nil {
+		return err
+	}
+	if commit != "" {
+		return s.applyOrDrop(ctx, commit)
+	}
+	return nil
+}
+
+// SensorSchedule is the schedule of the nightly sensor check, paused until SetSchedule turns
+// it on.
+const SensorSchedule = "sensor-nightly"
+
+// SetSchedule turns a schedule of the stand on or off in one tenant: the change of its paused
+// field is a commit of the farm git, applied.
+func (s *Stand) SetSchedule(ctx context.Context, tenant, name string, on bool) error {
+	msg := "Pause the schedule " + name
+	if on {
+		msg = "Resume the schedule " + name
+	}
+	if tenant != s.Home() {
+		msg += " in " + tenant
+	}
+	commit, err := s.repo.setField(ctx, "Schedule", tenant, name, "spec.paused", !on, msg)
 	if err != nil {
 		return err
 	}

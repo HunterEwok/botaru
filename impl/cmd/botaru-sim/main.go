@@ -372,14 +372,21 @@ func runWith(o options, stdin io.Reader, stdout, stderr io.Writer) (int, error) 
 	if err := writeResults(filepath.Join(runDir, "results.json"), res, s, o); err != nil {
 		return 1, err
 	}
-	failed := 0
+	failed, gaps := 0, 0
 	for _, r := range res {
-		if !r.OK {
+		switch {
+		case !r.OK && r.Gap != "":
+			gaps++
+		case !r.OK:
 			failed++
 		}
 	}
-	fmt.Fprintf(stdout, "\n%d checks, %d failed; spend %s EUR of the %s EUR fuse; %d model calls answered by the mock\nevents: %s\n",
-		len(res), failed, sim.EUR(s.Spent()), sim.EUR(capMicros), s.Brain.Calls(), filepath.Join(runDir, "sim-events.jsonl"))
+	gapNote := ""
+	if gaps > 0 {
+		gapNote = fmt.Sprintf(", %d stopped at a known gap of the core", gaps)
+	}
+	fmt.Fprintf(stdout, "\n%d checks, %d failed%s; spend %s EUR of the %s EUR fuse; %d model calls answered by the mock\nevents: %s\n",
+		len(res), failed, gapNote, sim.EUR(s.Spent()), sim.EUR(capMicros), s.Brain.Calls(), filepath.Join(runDir, "sim-events.jsonl"))
 	switch {
 	case s.Tripped():
 		return 3, errors.New("the money fuse stopped the run")

@@ -72,6 +72,21 @@ func incidentAndCommission(ctx context.Context, d *Director, sc string) error {
 		return e == nil && (istate == "resolved" || istate == "closed"), nil
 	})
 	d.check(sc, "incident_resolved", err == nil, "incident %s %s", incident, istate)
+	// The reading the manager asked for (MGR-25) and the analysis after the incident (MGR-53).
+	// A missing reading fails its own check and the scenario goes on to the commission.
+	rstate, rreason, _, err := d.typeEnd(ctx, d.S.Home(), "manager.inspect.v1", start)
+	var findings int
+	_ = db.QueryRow(ctx, `SELECT count(*) FROM findings WHERE tenant = $1 AND incident = $2 AND created_at >= $3`, d.S.Home(), incident, start).Scan(&findings)
+	d.check(sc, "manager_read", err == nil && rstate == "completed" && findings > 0, "reading %s %s, %d findings %v", rstate, rreason, findings, err)
+	// One analysis per incident: an incident an earlier scenario left that opened again keeps the
+	// analysis of its first resolution (IDM-2).
+	var astate, areason string
+	err = d.S.waitFor(ctx, d.Timeout, func() (bool, error) {
+		e := db.QueryRow(ctx, `SELECT state, coalesce(reason, '') FROM tasks WHERE tenant = $1 AND type = 'manager.postmortem.v1'
+			AND record->>'postmortem' = $2 ORDER BY created_at DESC LIMIT 1`, d.S.Home(), incident).Scan(&astate, &areason)
+		return e == nil && (astate == "completed" || astate == "failed" || astate == "canceled"), nil
+	})
+	d.check(sc, "postmortem", err == nil && astate == "completed", "analysis after the incident %s %s", astate, areason)
 
 	// 2. The commission. The world's history first: investigations with repeated and long
 	// attempts, so the analysis has series to read (one investigation alone gives too little).
@@ -218,7 +233,7 @@ func labRequests(ctx context.Context, d *Director, sc string) error {
 		return e == nil && checks > 0, nil
 	})
 	d.check(sc, "job_checks_ran", err == nil, "%d site check runs of data-job completed", checks)
-	return nil
+	return describeFile(ctx, d, sc)
 }
 
 // evolveField is the field the scaffold evolution changes, and evolveSignature its approach in the

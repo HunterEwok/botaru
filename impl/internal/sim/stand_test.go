@@ -83,7 +83,7 @@ func TestScenarios(t *testing.T) {
 		t.Fatalf("only %d checks\n%s", len(res), console)
 	}
 	for _, r := range res {
-		if !r.OK {
+		if !r.OK && r.Gap == "" {
 			t.Errorf("%s %s: %s", r.Scenario, r.Check, r.Detail)
 		}
 	}

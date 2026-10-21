@@ -28,7 +28,16 @@ const (
 	// FaultDiskFilling makes the pipeline temporary files on the data volume of the db machine
 	// grow every step.
 	FaultDiskFilling = "disk-filling"
+	// FaultSensorSilent, as sensor-silent:<tenant>:<sensor> (SensorFault), keeps a sensor of a
+	// tenant's catalog from sending: the sensor watch of data-job in that tenant sees a gap in it.
+	FaultSensorSilent = "sensor-silent"
 )
+
+// SensorFault is the fault that keeps a sensor of a tenant silent; the tenant copies of the
+// catalog name the same sensors.
+func SensorFault(tenant, sensor string) string {
+	return FaultSensorSilent + ":" + tenant + ":" + sensor
+}
 
 // Catalog triggers of the monitoring system (monitor_triggers of examples/tenants/demo/catalog.yaml).
 const (
