@@ -41,10 +41,12 @@ type Config struct {
 	Real    bool
 	Key     string
 	BaseURL string
-	// Model replaces the model of every model profile in a real run, with its prices in EUR
-	// per million tokens.
-	Model             string
-	PriceIn, PriceOut float64
+	// Model replaces the model of every model profile in a real run; else RankModels gives
+	// each profile the model of its spec.rank. Prices are the EUR per million tokens (input,
+	// output) of every model they name.
+	Model      string
+	RankModels map[int]string
+	Prices     map[string][2]float64
 	// MaxMicros is the money fuse: the spend of the store at which every tenant is held.
 	MaxMicros int64
 	// Seed makes the generated logs repeatable.
@@ -316,9 +318,10 @@ func editSeed(sd *evals.Seed) {
 	}
 }
 
-// editManifests sets the model and the prices of a real run in every model profile.
+// editManifests sets the model and the prices of a real run in every model profile: Model in
+// each, or the model of the profile's rank.
 func editManifests(ms []map[string]any, cfg Config) []map[string]any {
-	if !cfg.Real || cfg.Model == "" {
+	if !cfg.Real || cfg.Model == "" && len(cfg.RankModels) == 0 {
 		return ms
 	}
 	for _, m := range ms {
@@ -326,15 +329,37 @@ func editManifests(ms []map[string]any, cfg Config) []map[string]any {
 			continue
 		}
 		sp, _ := m["spec"].(map[string]any)
-		sp["model"] = cfg.Model
+		model := cfg.Model
+		if model == "" {
+			model = rankModel(cfg.RankModels, int(jsonNum(sp["rank"])))
+		}
+		sp["model"] = model
 		pr, _ := sp["price"].(map[string]any)
 		if pr == nil {
 			pr = map[string]any{}
 			sp["price"] = pr
 		}
-		pr["input"], pr["output"] = cfg.PriceIn, cfg.PriceOut
+		p := cfg.Prices[model]
+		pr["input"], pr["output"] = p[0], p[1]
 	}
 	return ms
+}
+
+// rankModel is the model of a rank: the one of the highest rank not above it, else the lowest.
+func rankModel(ranks map[int]string, rank int) string {
+	best, low := -1, -1
+	for r := range ranks {
+		if r <= rank && r > best {
+			best = r
+		}
+		if low < 0 || r < low {
+			low = r
+		}
+	}
+	if best < 0 {
+		best = low
+	}
+	return ranks[best]
 }
 
 // startAdapter enrolls and starts the monitoring adapter botaru-zabbix with its webhook.
@@ -790,6 +815,18 @@ func (s *Stand) SetInsights(ctx context.Context, on bool) error {
 	return nil
 }
 
+// AgeProposals moves the ended proposals of demo eight days back, out of the role's week; the
+// open ones keep their time.
+func (s *Stand) AgeProposals(ctx context.Context) error {
+	tag, err := s.Bench.Store().Pool.Exec(ctx, `UPDATE proposals SET created_at = created_at - interval '8 days'
+		WHERE tenant = 'demo' AND created_at > now() - interval '7 days' AND NOT (state = ANY($1))`,
+		[]string{"screened", "in_review", "recommended", "presented", "parked"})
+	if err == nil && tag.RowsAffected() > 0 {
+		s.log.Addf(KindDirector, "moved %d ended proposals of demo a week back (the role's week)", tag.RowsAffected())
+	}
+	return err
+}
+
 // Tripped says whether the fuse tripped.
 func (s *Stand) Tripped() bool {
 	s.mu.Lock()
@@ -967,7 +1004,8 @@ func (s *Stand) onModelCall(req, resp []byte, status int) {
 		return
 	}
 	in := r.Usage.In + r.Usage.CacheRead + r.Usage.CacheCreate
-	cost := int64(float64(in)*s.cfg.PriceIn + float64(r.Usage.Out)*s.cfg.PriceOut) // EUR per Mtok -> micro-euros
+	p := s.price(r.Model)
+	cost := int64(float64(in)*p[0] + float64(r.Usage.Out)*p[1]) // EUR per Mtok -> micro-euros
 	msg := fmt.Sprintf("%s: %d tokens in, %d out, stop %s", r.Model, in, r.Usage.Out, r.StopReason)
 	if s.cfg.Real {
 		msg += fmt.Sprintf(", about %d µEUR", cost)
@@ -993,6 +1031,21 @@ func (s *Stand) onModelCall(req, resp []byte, status int) {
 	}
 	s.log.Add(KindModel, msg, map[string]any{"model": r.Model, "input_tokens": in, "output_tokens": r.Usage.Out, "stop": r.StopReason,
 		"cost_micros": cost, "tools": tools})
+}
+
+// price is the price of the model of an answer; a provider that answers with another id than the
+// profile named is counted at the highest price of the run.
+func (s *Stand) price(model string) [2]float64 {
+	if p, ok := s.cfg.Prices[model]; ok {
+		return p
+	}
+	var top [2]float64
+	for _, p := range s.cfg.Prices {
+		if p[1] > top[1] {
+			top = p
+		}
+	}
+	return top
 }
 
 // checkFuseNow checks the fuse after a model call, answered or not.

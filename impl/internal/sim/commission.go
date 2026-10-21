@@ -5,7 +5,9 @@ package sim
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -46,13 +48,15 @@ func incidentAndCommission(ctx context.Context, d *Director, sc string) error {
 	if err != nil {
 		return nil
 	}
-	var mstate, summary string
+	// The people clean up only after the manager's task ended, so a quick close of the incident
+	// never cancels it; the reason of a task that did not complete is printed.
+	var mstate, mreason, summary string
 	err = d.S.waitFor(ctx, d.Timeout, func() (bool, error) {
-		e := db.QueryRow(ctx, `SELECT state, coalesce(result->>'summary', '') FROM tasks WHERE tenant = 'demo' AND type = 'manager.incident.respond.v1'
-			AND created_at >= $1 ORDER BY created_at LIMIT 1`, start).Scan(&mstate, &summary)
+		e := db.QueryRow(ctx, `SELECT state, coalesce(reason, ''), coalesce(result->>'summary', '') FROM tasks WHERE tenant = 'demo'
+			AND type = 'manager.incident.respond.v1' AND created_at >= $1 ORDER BY created_at LIMIT 1`, start).Scan(&mstate, &mreason, &summary)
 		return e == nil && (mstate == "completed" || mstate == "failed" || mstate == "canceled"), nil
 	})
-	d.check(sc, "manager_answered", err == nil && mstate == "completed", "farm manager task %s: %s", mstate, clip(summary, 200))
+	d.check(sc, "manager_answered", err == nil && mstate == "completed", "farm manager task %s %s: %s", mstate, mreason, clip(summary, 200))
 	// The people clean up as the manager proposed; the alarm resolves and the incident with it.
 	if err := d.world("the operators clean up the pipeline temporary files on db1 (the manager's proposal)", func(w *World) {
 		disk := w.Hosts["db1"].Disks["/data"]
@@ -98,34 +102,38 @@ func incidentAndCommission(ctx context.Context, d *Director, sc string) error {
 		return e == nil && reviews >= 2, nil
 	})
 	d.check(sc, "commission_reviewed", err == nil, "%d lens reviews completed", reviews)
-	// The proposal reaches a verdict; a recommended one goes to the deciders on a card. A real
-	// model may propose a manifest change, which the gate-required demo shows only after the
-	// merge gate: the director runs it once, as the operator would.
+	// The way of a proposal to a person and into the farm git is scaffold-evolution's to check;
+	// here the proposal only leaves the open states, so that it holds no slot of the bot (one
+	// open proposal per bot, PRP-5) when the next analysis hands in its change.
+	d.settle(ctx, prop)
+	return nil
+}
+
+// settle waits until a proposal leaves the open states: bob decides its card by the policy, and
+// a recommended manifest change, which the gate-required demo presents only after the merge
+// gate, goes through the gate once, as the operator would run it. It checks nothing.
+func (d *Director) settle(ctx context.Context, prop string) {
+	db := d.S.Bench.Store().Pool
 	gated := false
-	err = d.S.waitFor(ctx, d.Timeout+time.Minute, func() (bool, error) {
+	var state string
+	err := d.S.waitFor(ctx, 2*d.Timeout+time.Minute, func() (bool, error) {
 		var kind string
-		e := db.QueryRow(ctx, `SELECT state, kind FROM proposals WHERE id = $1`, prop).Scan(&pstate, &kind)
-		if e == nil && pstate == "recommended" && kind == "manifest_change" && !gated {
+		if e := db.QueryRow(ctx, `SELECT state, kind FROM proposals WHERE id = $1`, prop).Scan(&state, &kind); e != nil {
+			return false, nil
+		}
+		if state == "recommended" && kind == "manifest_change" && !gated {
 			gated = true
 			if _, _, err := d.S.GateProposal(ctx, prop); err != nil {
 				d.S.log.Addf(KindDirector, "the merge gate of %s: %v", prop, err)
 			}
 		}
-		return e == nil && pstate != "screened" && pstate != "in_review" && pstate != "recommended", nil
+		return !slices.Contains([]string{"screened", "in_review", "recommended", "presented", "parked"}, state), nil
 	})
-	d.check(sc, "presented", err == nil && pstate == "presented", "proposal %s", pstate)
-	if err != nil || pstate != "presented" {
-		return nil
+	if err != nil {
+		d.S.log.Addf(KindDirector, "proposal %s is still %s: it holds the bot's slot of an open proposal", prop, state)
+		return
 	}
-	// bob decides on the card by the policy (safe and all accept); then the proposal is noted.
-	err = d.S.waitFor(ctx, d.Timeout, func() (bool, error) {
-		e := db.QueryRow(ctx, `SELECT state FROM proposals WHERE id = $1`, prop).Scan(&pstate)
-		return e == nil && pstate != "presented", nil
-	})
-	// Accepted (a change of the kind none is noted at once) or declined on the card.
-	d.check(sc, "decided", err == nil && (pstate == "noted" || pstate == "realizing" || pstate == "declined"),
-		"proposal %s (needs a person's decision; policy %s)", pstate, d.Approve)
-	return nil
+	d.S.log.Addf(KindDirector, "proposal %s ended %s", prop, state)
 }
 
 // ensureInvestigation makes sure there is a completed investigation of ops-reader: the analysis
@@ -148,9 +156,16 @@ func (d *Director) ensureInvestigation(ctx context.Context) error {
 // geo-reader, a failed pipeline run to pipeline-reader; and the site checks the data-job
 // worker ran on its schedule.
 func labRequests(ctx context.Context, d *Director, sc string) error {
-	for _, ask := range []struct{ who, chat, text, want, check string }{
-		{"alice", "alice-dm", "/geo What is in the bathy-50m raster and the map-areas layer?", "GTiff|GeoTIFF", "geo_described"},
-		{"bob", "bob-dm", "/pipeline Why did the last CTD run fail?", "st-05", "pipeline_explained"},
+	for _, ask := range []struct {
+		who, chat, text, check string
+		tools                  []string
+		want                   *regexp.Regexp
+	}{
+		// The answer names a fact of the tools' output: the format, the coordinate system, the
+		// size, the deepest value, the band type or the layer's driver.
+		{"alice", "alice-dm", "/geo What is in the bathy-50m raster and the map-areas layer?", "geo_described",
+			[]string{"geo/describe", "geo/describe_vector"}, regexp.MustCompile(`GTiff|GeoTIFF|3857|4000|-312\.4|Float32|GeoJSON`)},
+		{"bob", "bob-dm", "/pipeline Why did the last CTD run fail?", "pipeline_explained", nil, regexp.MustCompile(`st-05`)},
 	} {
 		key, err := d.S.Say(ask.who, ask.chat, ask.text)
 		if err != nil {
@@ -161,10 +176,18 @@ func labRequests(ctx context.Context, d *Director, sc string) error {
 			return err
 		}
 		raw, _ := json.Marshal(result)
-		// want lists the words of which the answer names one: the driver's name GTiff, or
-		// GeoTIFF as a real model writes it.
-		named := slices.ContainsFunc(strings.Split(ask.want, "|"), func(w string) bool { return strings.Contains(string(raw), w) })
-		d.check(sc, ask.check, state == "completed" && named, "state %s %s: %s", state, reason, clip(string(raw), 200))
+		var missing []string
+		for _, tool := range ask.tools {
+			var done int
+			_ = d.S.Bench.Store().Pool.QueryRow(ctx, `SELECT count(*) FROM toolcalls t JOIN tasks k ON k.id = t.task
+				WHERE k.tenant = 'demo' AND k.idempotency_key = $1 AND t.tool = $2 AND t.state = 'done'`, key, tool).Scan(&done)
+			if done == 0 {
+				missing = append(missing, tool)
+			}
+		}
+		named := ask.want.Match(raw)
+		d.check(sc, ask.check, state == "completed" && len(missing) == 0 && named, "state %s %s, tools not called %v, a fact named %v: %s",
+			state, reason, missing, named, clip(string(raw), 200))
 	}
 	var checks int
 	err := d.S.waitFor(ctx, d.Timeout+5*time.Minute, func() (bool, error) {
@@ -187,6 +210,11 @@ func scaffoldEvolution(ctx context.Context, d *Director, sc string) error {
 	db := d.S.Bench.Store().Pool
 	if err := d.ensureInvestigation(ctx); err != nil {
 		return err
+	}
+	// The proposals of the earlier scenarios count to the role's week (max_per_week, INS-4):
+	// the stand moves the ended ones a week back, as if this scenario ran a week later.
+	if err := d.S.AgeProposals(ctx); err != nil {
+		return fmt.Errorf("ageing the proposals: %w", err)
 	}
 	// The world's history: investigations that took repeated and long attempts, so the
 	// analysis reads a load worth a lower queue limit.
@@ -211,15 +239,37 @@ func scaffoldEvolution(ctx context.Context, d *Director, sc string) error {
 	}()
 	d.S.log.Addf(KindDirector, "the analysis schedule of ops-reader runs, in the evolution mode (the load check)")
 
-	// 1. The manifest change and its variant.
-	var prop, pstate string
-	err := d.S.waitFor(ctx, d.Timeout+time.Minute, func() (bool, error) {
-		e := db.QueryRow(ctx, `SELECT id, state FROM proposals WHERE tenant = 'demo' AND kind = 'manifest_change' AND created_at >= $1
-			ORDER BY created_at LIMIT 1`, start).Scan(&prop, &pstate)
-		return e == nil, nil
+	// 1. The manifest change and its variant. An analysis that ends without one is printed, and
+	// the schedule runs it once more before the check fails.
+	var prop, pstate, last string
+	seen, retried := map[string]bool{}, false
+	err := d.S.waitFor(ctx, 2*d.Timeout+time.Minute, func() (bool, error) {
+		if e := db.QueryRow(ctx, `SELECT id, state FROM proposals WHERE tenant = 'demo' AND kind = 'manifest_change' AND created_at >= $1
+			ORDER BY created_at LIMIT 1`, start).Scan(&prop, &pstate); e == nil {
+			return true, nil
+		}
+		var id, state string
+		var ended time.Time
+		var raw []byte
+		if e := db.QueryRow(ctx, `SELECT id, state, coalesce(reason, ''), updated_at, result FROM tasks WHERE tenant = 'demo' AND type = $1
+			AND created_at >= $2 AND state IN ('completed', 'failed', 'canceled') ORDER BY created_at DESC LIMIT 1`, insightType, start).
+			Scan(&id, &state, new(string), &ended, &raw); e != nil || seen[id] || time.Since(ended) < 3*time.Second {
+			return false, nil
+		}
+		seen[id] = true
+		last = fmt.Sprintf("analysis %s %s without a manifest change: %s", id, state, clip(string(raw), 400))
+		d.S.log.Addf(KindDirector, "%s", last)
+		if retried {
+			return false, errors.New(last)
+		}
+		retried = true
+		if err := d.S.SetInsights(ctx, false); err != nil {
+			return false, err
+		}
+		return false, d.S.SetInsights(ctx, true)
 	})
 	if err != nil {
-		d.check(sc, "proposal_manifest_created", false, "no manifest change: %v", err)
+		d.check(sc, "proposal_manifest_created", false, "no manifest change: %v; %s", err, last)
 		return nil
 	}
 	// The gate runs at the applied commit: the schedule pauses first, so no apply comes between.
