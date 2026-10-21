@@ -140,10 +140,13 @@ stand changes the example set in a few places so that a scenario sees the whole 
   group `farm-manager-ops` holds its capability, so every incident that resolves in a tenant with the farm manager
   gets an analysis task too (one more model call in a real run); `alice` is in the group `runners` with the
   privileged `script.run` (active through her code from `/me`), so she may run the scripts the translator drafts
-  for her that hold an action, a gate or a step that may control services. A bot proposes a campaign through
+  for her that hold an action, a `confirm` step or a step that may control services. A bot proposes a campaign through
   `propose_campaign` only in a role of profile `manager`, so `ops-reader` (profile `worker`) proposes none; the
   stand's other campaigns are the fan-out steps of translator scripts. A role file of the stand lies in a folder
-  named as the role.
+  named as the role. The mock model does not draft scripts or propose campaigns yet, so under `-mock`
+  `/script` and `/rollout` do no real work; and every tenant copy has both commands, while on `standard` only the
+  tenants whose replicas name `translator` or `ops-operator` run a worker for them (elsewhere they wait out
+  `start_by`).
 
 ### The farm git and the hidden cases
 
