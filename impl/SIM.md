@@ -312,14 +312,10 @@ The Telegram channel of the reference takes no files, so a message with a file g
 of the stand's own in the person's tenant: it puts the file on the person's behalf (P1 `file.put`) and submits
 the message with the file attached, as the channel would for a document.
 
-Two steps run into gaps of the core, which the run prints as `GAP` with the gap instead of `FAIL` and does not
-count as failed, so a run shows them without hiding a new failure:
-
-- the file description (`ctd_described`): the core resolves `enum_from: task.attachments` to no values, so the
-  model cannot name the file a person sent to `data/describe`;
-- the nightly sensor check and its report (`sensor_check`, `sensor_report`): the check runs on a schedule for
-  `system`, and a child of a task of `system` is refused (`type_not_allowed`), since the core takes the child's
-  rights from the explicit memberships of the initiator and `system` has none.
+A step that runs into a known gap of the core is printed as `GAP` with the gap instead of `FAIL` and does not
+count as failed, but only when the run shows the gap's own sign, so a run shows a gap without hiding a new failure.
+The file description (`ctd_described`) and the sensor report (`sensor_check`, `sensor_report`) had such gaps until
+the core passed task attachments to tools and let a task of `system` enqueue the children of `system-ops`.
 
 `-scenario all` runs them in this order. Between scenarios the world is made healthy again, and a tenant admin
 releases the holds the incidents set (`contain_auto`; the core keeps them until they expire). A scenario waits at

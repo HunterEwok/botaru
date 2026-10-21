@@ -436,8 +436,22 @@ func (c *Core) FileGet(ctx context.Context, w *Worker, lease string, req FileGet
 		case "attempt":
 			task = l.WorkID
 		case "toolcall":
-			if err := tx.QueryRow(ctx, `SELECT task FROM toolcalls WHERE id = $1`, l.WorkID).Scan(&task); err != nil {
+			// A tool call reads only an attachment of its task that its arguments name
+			// (TEN-7, D-72).
+			var args []byte
+			if err := tx.QueryRow(ctx, `SELECT task, args FROM toolcalls WHERE id = $1`, l.WorkID).Scan(&task, &args); err != nil {
 				return err
+			}
+			var a map[string]any
+			if err := json.Unmarshal(args, &a); err != nil {
+				return err
+			}
+			named, err := callFiles(ctx, tx, task, a)
+			if err != nil {
+				return err
+			}
+			if !slices.Contains(named, f.Ref) {
+				return refuse("not_found", "no such file")
 			}
 		case "delivery":
 			var recipient, dmark, dtask *string

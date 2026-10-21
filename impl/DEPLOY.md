@@ -185,7 +185,7 @@ A bot reads a machine through a toolhost on that machine (E3): `botaru-toolhost`
    chown botaru-tools-demo: /etc/botaru/secrets/toolhost-demo
    ```
 
-4. **Settings** `/etc/botaru/toolhost-demo.yaml`: how each plugin starts. Which file a log source is on this machine is set here, never by a call:
+4. **Settings** `/etc/botaru/toolhost-demo.yaml`: how each plugin starts. Which file a log source is on this machine is set here, never by a call. A tool that takes a task attachment (`enum_from: task.attachments`) gets the toolhost's private copy of the file for the time of the call, in a directory under `files_dir` (optional, the system temporary directory by default) that only the toolhost's user can read:
 
    ```yaml
    placement: host

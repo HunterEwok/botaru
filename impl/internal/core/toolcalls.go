@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 
@@ -214,6 +215,15 @@ func (c *Core) claimToolcall(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 		payload := map[string]any{"target": target, "tool": name, "args": a, "approval_id": derefNil(approval), "grant_id": derefNil(grant), "args_hash": derefNil(argsHash)}
 		if campaignItem != nil {
 			payload["campaign_item"] = *campaignItem
+		}
+		// The attachments of the task the arguments name: the toolhost reads them with
+		// file.get under this lease and hands them to the plugin (D-72, TEN-7).
+		files, err := callFiles(ctx, tx, task, a)
+		if err != nil {
+			return nil, err
+		}
+		if len(files) > 0 {
+			payload["files"] = files
 		}
 		// Implementation extensions (MAN-3): the catalog fields a plugin needs, and the limits of
 		// the tool from the manifest, so the toolhost redacts and cuts without reading manifests.
@@ -633,4 +643,47 @@ func (c *Core) pluginHealth(ctx context.Context, tx pgx.Tx, now time.Time, w *Wo
 		}
 	}
 	return nil
+}
+
+// callFiles are the attachments of a task that the arguments of its tool call name, as a
+// whole string argument or an item of a list argument. The schema of the call allowed only
+// the task's own attachments (enum_from: task.attachments).
+func callFiles(ctx context.Context, tx pgx.Tx, task string, args map[string]any) ([]string, error) {
+	var body []byte
+	if err := tx.QueryRow(ctx, `SELECT body FROM tasks WHERE id = $1`, task).Scan(&body); err != nil {
+		return nil, err
+	}
+	if body == nil {
+		return nil, nil
+	}
+	var b map[string]any
+	if err := json.Unmarshal(body, &b); err != nil {
+		return nil, err
+	}
+	attached, err := attachedFiles(b)
+	if err != nil {
+		return nil, err
+	}
+	return namedFiles(attached, args), nil
+}
+
+// namedFiles are the attached files that the arguments name, sorted.
+func namedFiles(attached []string, args map[string]any) []string {
+	var out []string
+	add := func(v any) {
+		if s, ok := v.(string); ok && slices.Contains(attached, s) && !slices.Contains(out, s) {
+			out = append(out, s)
+		}
+	}
+	for _, v := range args {
+		if l, ok := v.([]any); ok {
+			for _, x := range l {
+				add(x)
+			}
+			continue
+		}
+		add(v)
+	}
+	sort.Strings(out)
+	return out
 }

@@ -54,6 +54,9 @@ type toolsGrant struct {
 	// (ORC-9). Scope is the resource scope of a campaign item (ORC-7).
 	CampaignCont string
 	Scope        []string
+	// Attachments are the file_refs of the task's attachments, the values of
+	// enum_from: task.attachments (TEN-7).
+	Attachments []string
 	// P1 marks a call over P1 under an attempt lease rather than a P3 tool call: P1 enqueue of a
 	// job or agent attempt takes the role's may_enqueue without the manager profile (PRM-6).
 	P1 bool
@@ -132,8 +135,22 @@ func (c *Core) resolveToolsHandle(ctx context.Context, q store.Querier, handle s
 
 func (c *Core) loadGrantTask(ctx context.Context, q store.Querier, g *toolsGrant) error {
 	var rec []byte
-	if err := q.QueryRow(ctx, `SELECT type, initiator, record FROM tasks WHERE id = $1`, g.Task).Scan(&g.Type, &g.Initiator, &rec); err != nil {
+	var body []byte
+	if err := q.QueryRow(ctx, `SELECT type, initiator, record, body FROM tasks WHERE id = $1`, g.Task).Scan(&g.Type, &g.Initiator, &rec, &body); err != nil {
 		return err
+	}
+	// A purged task has no body and so no attachments (RET-3).
+	g.Attachments = nil
+	if body != nil {
+		var b map[string]any
+		if err := json.Unmarshal(body, &b); err != nil {
+			return err
+		}
+		files, err := attachedFiles(b)
+		if err != nil {
+			return err
+		}
+		g.Attachments = files
 	}
 	var r struct {
 		MaxTier      int      `json:"max_tier"`
@@ -309,7 +326,17 @@ func (c *Core) modelSchema(cat *Catalog, g *toolsGrant, right string, t toolspec
 	schema := t.InputSchema()
 	names := map[string]bool{}
 	enumFromNames(schema, names)
-	return c.fullSchema(schema, scopeEnums(c.resolveEnumFor(cat, g.Tenant, g.Mark, right, names), g.Scope))
+	enums := c.resolveEnumFor(cat, g.Tenant, g.Mark, right, names)
+	if names["task.attachments"] {
+		// Only the files attached to this task, so a call cannot name a file of another task
+		// or tenant (TEN-7).
+		vals := make([]any, 0, len(g.Attachments))
+		for _, f := range g.Attachments {
+			vals = append(vals, f)
+		}
+		enums["task.attachments"] = vals
+	}
+	return c.fullSchema(schema, scopeEnums(enums, g.Scope))
 }
 
 // scopeEnums narrows the catalog lists of a task with a resource scope to that scope: a campaign

@@ -33,6 +33,15 @@ Entries are grouped by area; within a group the newest entry comes first.
 
 ### Reference Implementation (impl/)
 
+- Task attachments reach a tool (D-72, TEN-7, flow 12): `enum_from: task.attachments` in a tool schema of an
+  attempt now lists the `file_ref` of each attachment of the task, not nothing; the call handout names the
+  attachments its arguments name (`files`), and the toolhost reads each with `file.get` under the call lease into a
+  private directory (`files_dir`, the system temporary directory by default), passes the paths in
+  `_meta["botaru/files"]` and removes them after the call. Under a call lease `file.get` hands out only an
+  attachment of the call's task that its arguments name.
+- A task of `system` may enqueue the children its group `system-ops` lists (PRM-10, PRM-6, flow 5): the built-in
+  `enqueue_child` and P1 `enqueue` under an attempt lease took the child's rights from the memberships of the
+  initiator, which `system` does not have, and refused a scheduled sensor check its report (`type_not_allowed`).
 - `botaru-sim -load NAME|FILE` (impl/SIM.md, "The load generator"): a load profile sends each tenant its kinds of
   work as Poisson streams per tenant and work, with a warm-up, peaks and hard caps on analyses and farm manager
   tasks per tenant and hour and on proposals per run; every work is a `LOAD` event with its code, and the run

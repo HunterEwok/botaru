@@ -59,6 +59,10 @@ type Meta struct {
 	Resolved map[string]string `json:"botaru/resolved,omitempty"`
 	// WorkID is the id of the call, by which a plugin recognizes a repeated write (FEN-7).
 	WorkID string `json:"botaru/work_id,omitempty"`
+	// Files maps each attachment of the task that the arguments name (a file_ref) to the path
+	// of a private copy the toolhost made for this call; the copy is removed after the call
+	// (implementation extension, see impl/ARCHITECTURE.md).
+	Files map[string]string `json:"botaru/files,omitempty"`
 }
 
 // CallParams are the params of tools/call.
