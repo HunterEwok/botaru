@@ -19,7 +19,7 @@ tenants:
     manager: true
     evolution: true
     replicas: {hello: 1, ops-reader: 6, reporter: 1, reviewer-a: 1, reviewer-b: 1, farm-manager: 1, farm-manager-reader: 1, data-job: 1,
-      translator: 2, ops-operator: 1}
+      translator: 1, ops-operator: 1}
   - name: lab-dept
     hosts:
       - {id: db3, kind: db}
@@ -28,7 +28,7 @@ tenants:
       - {id: geo1, kind: geo}
     manager: true
     replicas: {hello: 1, ops-reader: 1, data-reader: 2, geo-reader: 1, pipeline-reader: 2, reporter: 1, reviewer-a: 1, reviewer-b: 1,
-      farm-manager: 1, farm-manager-reader: 1, data-job: 1, translator: 1}
+      farm-manager: 1, farm-manager-reader: 1, data-job: 1, translator: 2}
   - name: small-dept
     hosts:
       - {id: web5, kind: web}

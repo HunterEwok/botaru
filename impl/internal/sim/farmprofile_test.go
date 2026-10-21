@@ -33,7 +33,7 @@ func TestFarmProfiles(t *testing.T) {
 		hosts += len(tn.Hosts)
 	}
 	if len(std.Tenants) != 4 || hosts != 16 || std.Home().Workers("ops-reader") != 6 || std.Tenant("small-dept").Workers("farm-manager") != 0 ||
-		std.Home().Workers("translator") != 2 || std.Home().Workers("ops-operator") != 1 {
+		std.Home().Workers("translator") != 1 || std.Tenant("lab-dept").Workers("translator") != 2 || std.Home().Workers("ops-operator") != 1 {
 		t.Fatalf("standard: %d tenants, %d machines", len(std.Tenants), hosts)
 	}
 	if _, err := LoadFarm("nope"); err == nil {
