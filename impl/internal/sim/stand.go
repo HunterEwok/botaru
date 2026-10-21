@@ -53,6 +53,10 @@ type Config struct {
 	Prices     map[string][2]float64
 	// MaxMicros is the money fuse: the spend of the store at which every tenant is held.
 	MaxMicros int64
+	// HaltOnViolation halts the run at a breach of a security invariant (I-1 to I-8), as the
+	// fuse does; ViolationsFile receives every breach as a JSON line.
+	HaltOnViolation bool
+	ViolationsFile  string
 	// Seed makes the generated logs repeatable.
 	Seed int64
 	// Step is the period of the world physics, 5 seconds by default.
@@ -84,8 +88,13 @@ type Stand struct {
 	cardByID map[string]*Card
 	// chats maps a chat id of the fake Bot API to the seed chat name.
 	chats map[string]string
-	// tripped is set when the fuse held the tenants.
-	tripped bool
+	// tripped is set when the fuse held the tenants; halted when a breach of security did
+	// (Halt), with its reason. stopOnce closes stopped once for either.
+	tripped  bool
+	halted   string
+	stopOnce sync.Once
+	// watch is the invariant watch.
+	watch *watch
 	// watched is the number of done oneshot runs the last pipeline watch of each tenant saw.
 	watched map[string]int
 	// seed is the seed of the bench as the stand edited it; fileChans are the stand's file
@@ -121,6 +130,7 @@ type Stand struct {
 // Card is a message of the bot with buttons.
 type Card struct {
 	No        int
+	At        time.Time
 	Chat      string // seed chat name
 	MessageID int64
 	Text      string
@@ -163,6 +173,10 @@ func Start(ctx context.Context, cfg Config) (_ *Stand, err error) {
 		if s.log, err = NewLog(nil, ""); err != nil {
 			return nil, err
 		}
+	}
+	if cfg.Logger != nil {
+		cfg.Logger = slog.New(logWatch{inner: cfg.Logger.Handler(), s: s})
+		s.cfg.Logger = cfg.Logger
 	}
 	now := time.Now().UTC()
 	if err := InitFarmFiles(cfg.Work, f, cfg.Seed, now); err != nil {
@@ -208,16 +222,22 @@ func Start(ctx context.Context, cfg Config) (_ *Stand, err error) {
 		s.closeLater(stop)
 		target, key = u, "sim-mock-key"
 	}
-	// P4 reaches the provider through the front of the farm faults.
+	// P4 reaches the provider through the front of the farm faults, with a key per tenant that
+	// the front reads and strips, so the watch knows the tenant of each model request.
 	if s.front, err = newProviderFront(target, cfg.Seed); err != nil {
 		return nil, err
+	}
+	s.front.observe = func(tenant string, body []byte) {
+		if s.watch != nil {
+			s.watch.model(tenant, body)
+		}
 	}
 	fu, stopFront, err := serve(s.front)
 	if err != nil {
 		return nil, err
 	}
 	s.closeLater(stopFront)
-	model := evals.ModelConfig{Real: true, BaseURL: fu, Key: key}
+	model := evals.ModelConfig{Real: true, BaseURL: fu, Key: key, KeyFor: func(t string) string { return key + tenantKeyMark + t }}
 	skills, err := skillFolders(cfg.Root)
 	if err != nil {
 		return nil, err
@@ -296,6 +316,7 @@ func Start(ctx context.Context, cfg Config) (_ *Stand, err error) {
 	}
 	editSeed(sd)
 	s.seed = sd
+	s.watch = newWatch(s, cfg.HaltOnViolation, cfg.ViolationsFile)
 	for _, c := range sd.Chats {
 		s.chats[c.ExternalID] = c.Name
 	}
@@ -333,7 +354,7 @@ func Start(ctx context.Context, cfg Config) (_ *Stand, err error) {
 		return nil, fmt.Errorf("the farm manager seat: %w", err)
 	}
 	s.log.Addf(KindDirector, "the farm manager seat is %v", seat["state"])
-	for _, fn := range []func(context.Context){s.physics, s.tailWorld, s.watchStore, s.fuse} {
+	for _, fn := range []func(context.Context){s.physics, s.tailWorld, s.watchStore, s.fuse, s.watch.loop} {
 		s.done.Add(1)
 		go func() { defer s.done.Done(); fn(runCtx) }()
 	}
@@ -919,12 +940,12 @@ func (s *Stand) CheckFuse(ctx context.Context) error {
 	if trip {
 		s.tripped = true
 	}
-	hold := s.tripped && !s.held
+	hold := (s.tripped || s.halted != "") && !s.held
 	s.mu.Unlock()
 	if trip {
 		s.log.Add(KindFuse, fmt.Sprintf("the spend %s EUR reached the cap %s EUR: holding every tenant (no_enqueue, no_claim, cancel_running), refusing further model calls and stopping the director",
 			EUR(n), EUR(s.cfg.MaxMicros)), map[string]any{"spent_micros": n, "cap_micros": s.cfg.MaxMicros})
-		close(s.stopped)
+		s.stopOnce.Do(func() { close(s.stopped) })
 	}
 	if !hold {
 		return nil
@@ -1061,6 +1082,56 @@ func (s *Stand) Tripped() bool {
 	return s.tripped
 }
 
+// Halt stops the run at a breach of security: like the fuse it holds every tenant, refuses
+// further model calls and stops the director (exit code 4).
+func (s *Stand) Halt(reason string) {
+	s.mu.Lock()
+	first := s.halted == ""
+	if first {
+		s.halted = reason
+	}
+	s.mu.Unlock()
+	if !first {
+		return
+	}
+	s.log.Add(KindWatch, "halting the run at a breach of security: holding every tenant (no_enqueue, no_claim, cancel_running), refusing further model calls and stopping the director", map[string]any{"reason": reason})
+	s.stopOnce.Do(func() { close(s.stopped) })
+	go s.checkFuseNow()
+}
+
+// Halted is the reason the run halted at a breach of security, "" when it did not.
+func (s *Stand) Halted() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.halted
+}
+
+// chatTenant is the tenant of a seed chat, the home tenant for an unknown one.
+func (s *Stand) chatTenant(chat string) string {
+	if s.seed != nil {
+		if c := s.seed.Chat(chat); c != nil && c.Tenant != "" {
+			return c.Tenant
+		}
+	}
+	return s.Home()
+}
+
+// Violations are the breaches of the invariants the watch found so far.
+func (s *Stand) Violations() []Violation {
+	if s.watch == nil {
+		return nil
+	}
+	return s.watch.Violations()
+}
+
+// FinalWatch runs the last sweep of the invariant watch and the checks of the end of a run.
+func (s *Stand) FinalWatch(ctx context.Context) error {
+	if s.watch == nil {
+		return nil
+	}
+	return s.watch.final(ctx)
+}
+
 // EUR writes micro-euros as euros.
 func EUR(micros int64) string { return strconv.FormatFloat(float64(micros)/1e6, 'f', 4, 64) }
 
@@ -1072,6 +1143,9 @@ func (s *Stand) onBotAPI(method string, req map[string]any, result any) {
 	chat := s.chats[fmt.Sprint(jsonNum(req["chat_id"]))]
 	who := chat
 	text, _ := req["text"].(string)
+	if s.watch != nil {
+		s.watch.chat(s.chatTenant(chat), chat, text)
+	}
 	var mid int64
 	if r, ok := result.(map[string]any); ok {
 		mid = int64(jsonNum(r["message_id"]))
@@ -1106,7 +1180,7 @@ func (s *Stand) onBotAPI(method string, req map[string]any, result any) {
 	subject, _, _ := strings.Cut(buttons[0].Data, ":")
 	c := s.cardByID[chat+"/"+strconv.FormatInt(mid, 10)]
 	if c == nil {
-		c = &Card{No: len(s.cards) + 1, Chat: chat, MessageID: mid}
+		c = &Card{No: len(s.cards) + 1, At: time.Now(), Chat: chat, MessageID: mid}
 		s.cards = append(s.cards, c)
 		s.cardByID[chat+"/"+strconv.FormatInt(mid, 10)] = c
 	}
@@ -1289,7 +1363,7 @@ func (s *Stand) checkFuseNow() {
 // call whose worst case would reach the cap is refused, and so is every call once the fuse
 // tripped. A spend that cannot be read refuses the call too.
 func (s *Stand) gate() bool {
-	if s.Tripped() {
+	if s.Tripped() || s.Halted() != "" {
 		return false
 	}
 	if s.cfg.MaxMicros <= 0 {

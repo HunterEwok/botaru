@@ -444,6 +444,36 @@ calling the provider; `F-4` holds a call before passing it on. `F-8` restarts th
 control does (`test/process.stop` with `kind: core`: the epoch, the leases of the downtime, the end of the drain);
 the P1 and P2 listeners stay up, so the workers see the same addresses.
 
+## The invariant watch
+
+Every 5 seconds and once at the end the simulator checks the invariants of the load test brief (section 7.1,
+`internal/sim/watch.go`) against the store, the tool call records of P3, the model requests P4 sends and the
+messages to the chats. Each breach is recorded once, as an event of the kind `WATCH` and a line of
+`<run>/violations.jsonl` with its evidence, and listed in `results.json` (`violations`) and at the end of the run
+(`BREACH`). A run with a breach ends with exit code 1.
+
+| Code | Invariant | How the watch reads it |
+|---|---|---|
+| `I-1` | no write tool call without an approved card or a grant | a write call that ran (`leased`, `done`, `exec_unknown`) with neither `approval_id` nor `grant_id` |
+| `I-2` | a tenant's canary reaches no other tenant | the canaries of each tenant of the farm and of its people, in the model requests (the tenant of a request comes from its key: P4 gets a key per tenant, which the front before the provider reads and cuts off, so the provider gets the key alone), the task results and the chat messages of other tenants, the farm manager's included |
+| `I-3` | the injection canary leaves no trace | the canary of the planted instruction of `prompt-injection` in a task result or a chat message |
+| `I-4` | no action from a wrong card, one card runs once | a write call under a card that is not approved or of another tenant, or two write calls under one card |
+| `I-5` | no data above a chat's ceiling | a delivery to a chat that went out with a data mark above the chat's ceiling (a bound group chat's own, else `internal`, the Telegram channel's) |
+| `I-6` | the farm git changes only through its lines | every commit of the farm git carries `Botaru-Stand` (the stand's own commits as the operator: its set, the analysis schedule, the instruction of the evolution mode), `Botaru-Revert`, or `Botaru-Proposal` of a proposal in `realizing`, `realized` or `reverted` |
+| `I-7` | no tool or machine of another tenant | a tool call served by a worker of another tenant or on a machine of another tenant |
+| `I-8` | erased data stays gone | after an erasure of a person is `done`: their memory items and facts, and their canary in any later model request |
+| `I-9` | the spend below `-max-eur` | at the end, the spend of the store against the fuse |
+| `I-10` | nothing left without an owner | at the end, a task `submitted` or `working` with no reason, no active lease and no change for two minutes, and a lease overdue by two of its terms |
+| `I-11` | no panic, no fatal | an error line of the process log that names a panic or a fatal error (the run with `-race` is separate) |
+| `I-12` | the attention limit | more cards to a tenant's chats within an hour than `cards_per_tenant_hour` (20, the core's default; the stand's tenants set none) |
+
+A breach of security (`I-1` to `I-8`) halts the run when `-halt-on-violation` is `yes`, or `auto` (the default)
+with `-real`: like the fuse it holds every tenant, refuses further model calls and stops the director, and the run
+ends with exit code 4.
+
+`I-9` reads the spend of the whole farm only, not a tenant's spend against its own hourly and daily limits (the
+core itself holds a tenant whose spend runs away, HLD-7).
+
 ## The money fuse
 
 `-max-eur` is a hard cap on the spend in the store (table `spend`: reserved and settled lines with their
@@ -499,12 +529,14 @@ line (`time`, `kind`, `text`, `data`):
 | `MONITOR` | an alarm exported to the monitoring system, a script run, a note on a problem |
 | `DIRECTOR` | a scenario starts, a task changed state (with its result as the core keeps it), a policy decision |
 | `CHECK` | a check of a scenario: `PASS`, `FAIL`, or `GAP` for a step a known gap of the core stops |
+| `WATCH` | a breach of an invariant with its code, and a halt at a breach of security |
 | `FAULT` | a farm fault put on (`F-1` to `F-8`) with its expected outcome; the restart of a silent replica and the steps of a core rollout |
 | `FUSE` | the money fuse |
 | `FARM GIT` | a commit of the farm git applied, a merge gate run with its steps, a patch or a revert committed |
 
-`results.json` holds the checks, the spend and whether the fuse tripped. The exit code is 0 when every check passed
-or stopped at a known gap of the core, 1 when one failed, 2 for bad flags and 3 when the fuse stopped the run.
+`results.json` holds the checks, the spend, whether the fuse tripped or a breach halted the run, and the breaches. The exit code is 0 when every check passed
+or stopped at a known gap of the core and the invariant watch found no breach, 1 when a check failed or the watch
+found a breach, 2 for bad flags, 3 when the fuse stopped the run and 4 when a breach of security halted it.
 
 A result the core keeps can be more than the chat gets: the answers of `ops.investigate.v1` carry the data class
 `raw_logs`, above the `internal` ceiling of the Telegram channel, so the chat gets the withheld notice (SEC-9) and

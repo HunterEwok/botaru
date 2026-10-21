@@ -51,6 +51,9 @@ type ModelConfig struct {
 	BaseURL string
 	// Key is the provider key of the eval workspace; the bench gives it to P4 for every tenant.
 	Key string
+	// KeyFor, when set, gives each tenant's key for P4 instead of Key, so that a front before
+	// the provider can tell the tenant of a call (the simulator strips it again).
+	KeyFor func(tenant string) string
 	// ProfilesDir holds the ModelProfile manifests of the real run: each replaces the example
 	// profile of the same name, so the run names real models and prices.
 	ProfilesDir string
@@ -349,6 +352,9 @@ func StartBench(ctx context.Context, cfg BenchConfig) (_ *Bench, err error) {
 	keys := map[string]string{}
 	for _, t := range b.seed.Tenants {
 		keys[t] = key
+		if cfg.Model.KeyFor != nil && cfg.Model.Real {
+			keys[t] = cfg.Model.KeyFor(t)
+		}
 	}
 	providers := map[string]gateway.Provider{}
 	for _, name := range []string{"provider-a", "provider-b"} {

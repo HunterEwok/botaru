@@ -114,7 +114,7 @@ func (r *farmRepo) writeSet(ctx context.Context, ms []map[string]any, message st
 	if err != nil {
 		return "", "", nil, err
 	}
-	commit, msg, err := r.commitLocked(ctx, message)
+	commit, msg, err := r.commitLocked(ctx, standCommit(message, "the stand set"))
 	if err != nil {
 		return "", "", nil, err
 	}
@@ -175,6 +175,13 @@ func (r *farmRepo) commitLocked(ctx context.Context, message string) (string, st
 		}
 	}
 	return r.head(ctx)
+}
+
+// standCommit adds the line Botaru-Stand to the message of a commit the stand makes itself as
+// the operator (its set, the analysis schedule, the instruction of the evolution mode), so the
+// invariant watch tells it from a change of a proposal (I-6).
+func standCommit(message, what string) string {
+	return strings.TrimRight(message, "\n") + "\n\nBotaru-Stand: " + what
 }
 
 // head is the head commit of the farm git and its message.
@@ -242,7 +249,7 @@ func (r *farmRepo) setField(ctx context.Context, kind, tenant, name, field strin
 	if err != nil {
 		return "", err
 	}
-	after, _, err := r.commitLocked(ctx, message)
+	after, _, err := r.commitLocked(ctx, standCommit(message, kind+" "+name+" "+field))
 	if err != nil || after == before {
 		return "", err
 	}
