@@ -83,7 +83,7 @@ const (
 	replicaDown      = 150 * time.Second
 	providerErrShare = 0.25
 	// providerErrFirst model calls fail for sure when F-3 begins; the front serves the whole
-	// farm, so more than one keeps the first call of the next task among them.
+	// farm, so more than one makes it likely that the next task meets one of them.
 	providerErrFirst = 3
 	providerFaultFor = 2 * time.Minute
 	providerDelay    = 30 * time.Second
@@ -386,13 +386,15 @@ func (s *Stand) rollCore(ctx context.Context, run *FaultRun) error {
 	// wait other than its end comes back after the start.
 	if errors.Is(err, context.DeadlineExceeded) {
 		err = nil
+	} else if err != nil {
+		s.log.Addf(KindFault, "F-8: the drain wait ended early (%v); the core starts again now", err)
 	}
 	sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
 	var req core.ProcessStopRequest
 	req.Process.Kind, req.Mode = "core", "graceful"
 	if _, serr := s.Bench.Core().TestProcessStop(sctx, req); serr != nil {
-		return fmt.Errorf("the core start: %w", serr)
+		return errors.Join(fmt.Errorf("the core start: %w", serr), err)
 	}
 	if err != nil {
 		return err
