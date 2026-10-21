@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"go.yaml.in/yaml/v3"
 
@@ -38,18 +39,28 @@ type suiteCase struct {
 		Tenant string `yaml:"tenant"`
 		Name   string `yaml:"name"`
 		Field  string `yaml:"field"`
-		// AtLeast is the lowest number the field may hold; Contains a value its list must hold.
+		// AtLeast and AtMost bound the number the field holds (a duration in seconds);
+		// Contains is a value its list must hold.
 		AtLeast  *float64 `yaml:"at_least,omitempty"`
+		AtMost   *float64 `yaml:"at_most,omitempty"`
 		Contains string   `yaml:"contains,omitempty"`
 	} `yaml:"check"`
 }
 
 func atLeast(f float64) *float64 { return &f }
 
+// within is a case on a duration field between two bounds in seconds.
+func within(c suiteCase, lo, hi float64) suiteCase {
+	c.Check.AtLeast, c.Check.AtMost = &lo, &hi
+	return c
+}
+
 // visibleCases are the visible cases of ops-reader in the farm git.
 var visibleCases = []suiteCase{
 	newCase("vis-ops-claims", "ops-reader claims the investigations it answers", "Role", "", "ops-reader", "spec.claims", nil, "ops.investigate.v1"),
 	newCase("vis-ops-queue", "the queue of demo holds a day of the stand's minute schedules", "Tenant", "", "demo", "spec.limits.max_queued", atLeast(1440), ""),
+	within(newCase("vis-ops-attempt", "an investigation attempt has at least the five minutes of its type", "Tenant", "", "demo",
+		"spec.dispatch.rules[].timeouts.attempt", nil, ""), 300, 1800),
 }
 
 // hiddenCases are the hidden cases of ops-reader under <work>/holdout.
@@ -57,6 +68,8 @@ var hiddenCases = []suiteCase{
 	newCase("hold-ops-insight", "ops-reader keeps its analysis type", "Role", "", "ops-reader", "spec.insight.types", nil, "ops.insight.v1"),
 	newCase("hold-ops-enqueue", "demo takes the enqueues of an hour of every schedule", "Tenant", "", "demo", "spec.limits.max_enqueue_per_hour", atLeast(240), ""),
 	newCase("hold-ops-queue", "the queue of demo holds the investigations of a busy day", "Tenant", "", "demo", "spec.limits.max_queued", atLeast(1000), ""),
+	within(newCase("hold-ops-attempt", "an investigation attempt leaves room for a retry within the 30 minutes of its task", "Tenant", "", "demo",
+		"spec.dispatch.rules[].timeouts.attempt", nil, ""), 300, 900),
 }
 
 func newCase(id, title, kind, tenant, name, field string, min *float64, contains string) suiteCase {
@@ -145,9 +158,9 @@ func (c suiteCase) passes(set []map[string]any) bool {
 	if !ok {
 		return false
 	}
-	if c.Check.AtLeast != nil {
+	if c.Check.AtLeast != nil || c.Check.AtMost != nil {
 		n, ok := number(v)
-		if !ok || n < *c.Check.AtLeast {
+		if !ok || c.Check.AtLeast != nil && n < *c.Check.AtLeast || c.Check.AtMost != nil && n > *c.Check.AtMost {
 			return false
 		}
 	}
@@ -166,6 +179,9 @@ func number(v any) (float64, bool) {
 		f, err := x.Float64()
 		return f, err == nil
 	case string:
+		if d, err := time.ParseDuration(strings.TrimSpace(x)); err == nil {
+			return d.Seconds(), true
+		}
 		var f float64
 		_, err := fmt.Sscan(strings.TrimSpace(x), &f)
 		return f, err == nil

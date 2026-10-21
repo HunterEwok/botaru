@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"math/rand/v2"
 	"net"
 	"net/http"
@@ -41,10 +42,12 @@ type Config struct {
 	Real    bool
 	Key     string
 	BaseURL string
-	// Model replaces the model of every model profile in a real run, with its prices in EUR
-	// per million tokens.
-	Model             string
-	PriceIn, PriceOut float64
+	// Model replaces the model of every model profile in a real run; else RankModels gives
+	// each profile the model of its spec.rank. Prices are the EUR per million tokens (input,
+	// output) of every model they name.
+	Model      string
+	RankModels map[int]string
+	Prices     map[string][2]float64
 	// MaxMicros is the money fuse: the spend of the store at which every tenant is held.
 	MaxMicros int64
 	// Seed makes the generated logs repeatable.
@@ -316,9 +319,10 @@ func editSeed(sd *evals.Seed) {
 	}
 }
 
-// editManifests sets the model and the prices of a real run in every model profile.
+// editManifests sets the model and the prices of a real run in every model profile: Model in
+// each, or the model of the profile's rank.
 func editManifests(ms []map[string]any, cfg Config) []map[string]any {
-	if !cfg.Real || cfg.Model == "" {
+	if !cfg.Real || cfg.Model == "" && len(cfg.RankModels) == 0 {
 		return ms
 	}
 	for _, m := range ms {
@@ -326,15 +330,148 @@ func editManifests(ms []map[string]any, cfg Config) []map[string]any {
 			continue
 		}
 		sp, _ := m["spec"].(map[string]any)
-		sp["model"] = cfg.Model
+		model := cfg.Model
+		if model == "" {
+			// The rank comes as whatever number type the manifest reader gives (json.Number).
+			model = rankModel(cfg.RankModels, int(num(sp["rank"])))
+		}
+		sp["model"] = model
 		pr, _ := sp["price"].(map[string]any)
 		if pr == nil {
 			pr = map[string]any{}
 			sp["price"] = pr
 		}
-		pr["input"], pr["output"] = cfg.PriceIn, cfg.PriceOut
+		p := cfg.Prices[model]
+		pr["input"], pr["output"] = p[0], p[1]
 	}
+	widenBudgets(ms)
 	return ms
+}
+
+// widenBudgets raises the budgets of the examples that the reserve of a real model's call would
+// not fit: the tree budget of a task type below twice the reserve of one call of the profiles of
+// the roles that claim it (the apply lint wants one call's output, tree_budget_below_call; the
+// gateway reserves the input as well before each call), and a manager line below the seat's
+// worst day (manager_line_too_small, MGR-20) or four reserves of the seat. The examples are priced for
+// their own illustrative models; the money fuse of the run still caps the spend. Nothing is
+// lowered.
+func widenBudgets(ms []map[string]any) {
+	worst, prices := map[string]float64{}, map[string]map[string]any{}
+	for _, m := range ms {
+		if m["kind"] == "ModelProfile" {
+			sp := mapOf(m["spec"])
+			name, _ := mapOf(m["metadata"])["name"].(string)
+			prices[name] = sp
+			worst[name] = callReserve(sp)
+		}
+	}
+	purpose := map[string]string{}
+	for _, m := range ms {
+		if m["kind"] == "TaskType" {
+			name, _ := mapOf(m["metadata"])["name"].(string)
+			purpose[name], _ = mapOf(m["spec"])["purpose"].(string)
+		}
+	}
+	need := map[string]float64{}
+	for _, m := range ms {
+		if m["kind"] != "Role" {
+			continue
+		}
+		sp := mapOf(m["spec"])
+		for _, c := range asSlice(sp["claims"]) {
+			t, _ := c.(string)
+			slot := "base"
+			if purpose[t] == "insight" || purpose[t] == "aggregate" {
+				slot = "analysis"
+			}
+			prof, _ := mapOf(sp["models"])[slot].(string)
+			need[t] = max(need[t], worst[prof])
+		}
+	}
+	var seat map[string]any
+	reviews := 1.0 // how much the tree budgets of the review types rose
+	for _, m := range ms {
+		switch m["kind"] {
+		case "TaskType":
+			name, _ := mapOf(m["metadata"])["name"].(string)
+			sp := mapOf(m["spec"])
+			if w, cur := cents(2*need[name]), num(sp["tree_budget_eur"]); w > cur {
+				sp["tree_budget_eur"] = w
+				if purpose[name] == "review" && cur > 0 {
+					reviews = max(reviews, w/cur)
+				}
+			}
+		case "Governance":
+			if p, _ := mapOf(mapOf(m["spec"])["farm_manager"])["model_profile"].(string); p != "" {
+				seat = prices[p]
+			}
+		}
+	}
+	// The review line holds the reviews of the role's proposals a month (BUD-13): it rises with
+	// their price.
+	for _, m := range ms {
+		if m["kind"] != "Tenant" || reviews == 1 {
+			continue
+		}
+		line := mapOf(mapOf(mapOf(mapOf(m["spec"])["budgets"])["lines"])["review"])
+		if line != nil && num(line["month_eur"]) > 0 {
+			line["month_eur"] = cents(reviews * num(line["month_eur"]))
+		}
+	}
+	if seat == nil {
+		return
+	}
+	// Three readings of one worst-case incident, 60000 tokens in, three answers at the
+	// profile's max_output_tokens, with the default daily review and post-mortem ceilings.
+	day := cents(max(1.5*((60000*num(mapOf(seat["price"])["input"])+3*num(seat["max_output_tokens"])*num(mapOf(seat["price"])["output"]))/1e6+0.8),
+		4*callReserve(seat)))
+	for _, m := range ms {
+		if m["kind"] != "Tenant" {
+			continue
+		}
+		line := mapOf(mapOf(mapOf(mapOf(m["spec"])["budgets"])["lines"])["manager"])
+		if line == nil || num(line["day_eur"]) >= day {
+			continue
+		}
+		line["day_eur"] = day
+		if month := cents(15 * day); num(line["month_eur"]) < month {
+			line["month_eur"] = month
+		}
+	}
+}
+
+// callReserve is what the gateway reserves for one call of a profile in EUR (gateway.Reserve):
+// the output limit at the output price, and a request of 60000 bytes, which an agent with a few
+// tool results reaches, at the input price.
+func callReserve(profile map[string]any) float64 {
+	pr := mapOf(profile["price"])
+	return (num(profile["max_output_tokens"])*num(pr["output"]) + 60000*num(pr["input"])) / 1e6
+}
+
+// num reads a number of a manifest, whatever number type the reader gave.
+func num(v any) float64 {
+	f, _ := strconv.ParseFloat(fmt.Sprint(v), 64)
+	return f
+}
+
+// cents rounds an amount in EUR up to whole cents.
+func cents(eur float64) float64 { return math.Ceil(eur*100-1e-9) / 100 }
+
+// rankModel is the model of a rank: the one of the highest rank not above it, else the lowest.
+func rankModel(ranks map[int]string, rank int) string {
+	best, low := -1, -1
+	for r := range ranks {
+		if r <= rank && r > best {
+			best = r
+		}
+		if low < 0 || r < low {
+			low = r
+		}
+	}
+	if best < 0 {
+		best = low
+	}
+	return ranks[best]
 }
 
 // startAdapter enrolls and starts the monitoring adapter botaru-zabbix with its webhook.
@@ -967,7 +1104,8 @@ func (s *Stand) onModelCall(req, resp []byte, status int) {
 		return
 	}
 	in := r.Usage.In + r.Usage.CacheRead + r.Usage.CacheCreate
-	cost := int64(float64(in)*s.cfg.PriceIn + float64(r.Usage.Out)*s.cfg.PriceOut) // EUR per Mtok -> micro-euros
+	p := s.price(r.Model)
+	cost := int64(float64(in)*p[0] + float64(r.Usage.Out)*p[1]) // EUR per Mtok -> micro-euros
 	msg := fmt.Sprintf("%s: %d tokens in, %d out, stop %s", r.Model, in, r.Usage.Out, r.StopReason)
 	if s.cfg.Real {
 		msg += fmt.Sprintf(", about %d µEUR", cost)
@@ -993,6 +1131,21 @@ func (s *Stand) onModelCall(req, resp []byte, status int) {
 	}
 	s.log.Add(KindModel, msg, map[string]any{"model": r.Model, "input_tokens": in, "output_tokens": r.Usage.Out, "stop": r.StopReason,
 		"cost_micros": cost, "tools": tools})
+}
+
+// price is the price of the model of an answer; a provider that answers with another id than the
+// profile named is counted at the highest price of the run.
+func (s *Stand) price(model string) [2]float64 {
+	if p, ok := s.cfg.Prices[model]; ok {
+		return p
+	}
+	var top [2]float64
+	for _, p := range s.cfg.Prices {
+		if p[1] > top[1] {
+			top = p
+		}
+	}
+	return top
 }
 
 // checkFuseNow checks the fuse after a model call, answered or not.

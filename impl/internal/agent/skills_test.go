@@ -24,7 +24,7 @@ func TestSKL2RuntimeSkillFiles(t *testing.T) {
 		files[p] = string(b)
 	}
 	h, err := treeHash(files)
-	if err != nil || h != "a6e18f6b3aadf98968046525a84feb2ebd0b24c3fab9b0ab7f3ece4029c7f0a6" {
+	if err != nil || h != "680891b53fd090cbaa9f7a81f7ab901706135481e6ee7f71995631855c3bf7b7" {
 		t.Fatalf("tree hash %s %v", h, err)
 	}
 	base := t.TempDir()

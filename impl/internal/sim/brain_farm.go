@@ -16,7 +16,7 @@ import (
 // mock tells them by their instruction.
 var (
 	reReviewLens = regexp.MustCompile(`review-result for the lens ([a-z]+)`)
-	reInsight    = regexp.MustCompile(`(?i)propose at most three changes`)
+	reInsight    = regexp.MustCompile(`(?i)propose one change, the one with the|load check of this stand`)
 	reIncident   = regexp.MustCompile(`(?i)read the incident`)
 )
 
@@ -86,13 +86,18 @@ func insightQuery(schema map[string]any) map[string]any {
 	}
 }
 
-// EvolveQueued is the queue limit of demo the analysis proposes in the evolution mode: lower than
-// the example's 5000, so the change takes the safe direction a Tenant limit may take (PRP-3).
-const EvolveQueued = 4000
+// InvestigateAttempt is the attempt deadline of the investigations in the dispatcher rule of demo,
+// as in their type; EvolveAttempt is the one the analysis proposes in the evolution mode: the
+// history of the world has attempts cut at the deadline, and the guarded field may rise up to
+// two times, within the task deadline (PRP-12).
+const (
+	InvestigateAttempt = "5m"
+	EvolveAttempt      = "10m"
+)
 
 // insightAnswer proposes to look at the investigations, citing the value it read; without a
-// value it found nothing. In the evolution mode it proposes to lower the queue limit of demo
-// instead (a manifest change of PRP-3 with the attempts of the investigations as its trial
+// value it found nothing. In the evolution mode it proposes to raise the attempt deadline of the
+// investigations instead (a manifest change of a guarded field with their attempts as its trial
 // metric), so the change goes through the merge gate, the archive and the revert (D-120).
 func insightAnswer(seen string, evolve bool) string {
 	var res struct {
@@ -124,8 +129,8 @@ func insightAnswer(seen string, evolve bool) string {
 	}
 	if evolve {
 		body["change"] = map[string]any{"kind": "manifest_change", "manifest_change": map[string]any{"ops": []any{
-			map[string]any{"op": "set", "target": map[string]any{"kind": "Tenant", "name": "demo"}, "field": "spec.limits.max_queued", "value": EvolveQueued}}}}
-		body["benefit"] = map[string]any{"metric": "farm.task.attempts", "subject": g.Subject, "direction": "down", "expected_change_pct": 10, "confidence": "low"}
+			map[string]any{"op": "set", "target": map[string]any{"kind": "Tenant", "name": "demo"}, "field": evolveField, "value": EvolveAttempt}}}}
+		body["benefit"] = map[string]any{"metric": "farm.task.attempts", "subject": g.Subject, "direction": "down", "expected_change_pct": 30, "confidence": "medium"}
 		body["cost"] = map[string]any{"one_time_eur": 0, "monthly_eur": 0, "effort": "minutes"}
 		body["risk"] = map[string]any{"level": "low"}
 	}

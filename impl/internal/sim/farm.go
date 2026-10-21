@@ -51,7 +51,8 @@ func farmSeed(sd *evals.Seed) {
 // minutes, so a scenario sees the whole incident; insights says whether the analysis schedule
 // runs (it is paused until a scenario needs it, since every run of it costs model calls).
 // The tenant demo learns from its scaffold archive and shows a manifest change only after a
-// passed merge gate (D-120: insights.evolution, insights.gate), and ops-reader may analyse more
+// passed merge gate (D-120: insights.evolution, insights.gate) and has one dispatcher rule for
+// the investigations, and ops-reader may analyse more
 // often than the weekly limit of its example, since a run of the stand plays weeks in minutes.
 func farmManifests(ms, farm []map[string]any, insights bool) []map[string]any {
 	ms = append(ms, farm...)
@@ -74,6 +75,15 @@ func farmManifests(ms, farm []map[string]any, insights bool) []map[string]any {
 			ins["digest"] = map[string]any{"schedule": "* * * * *", "max_items": 5}
 			ins["evolution"] = map[string]any{"enabled": true}
 			ins["gate"] = map[string]any{"required": true}
+			// The single dispatcher rule the scaffold evolution tunes: the attempt deadline of the
+			// investigations, as in their type (PRP-12).
+			disp := mapOf(sp["dispatch"])
+			if disp == nil {
+				disp = map[string]any{}
+				sp["dispatch"] = disp
+			}
+			disp["rules"] = []any{map[string]any{"match": map[string]any{"type": "ops.investigate.v1"},
+				"timeouts": map[string]any{"attempt": InvestigateAttempt}}}
 		}
 	}
 	group := func(name string, caps ...any) map[string]any {
@@ -121,6 +131,11 @@ func readFarm(root string) ([]map[string]any, error) {
 			// which the reference does not run yet: the core raises the alarm of a monitoring
 			// problem without numbers, so on the stand the classes open on the alarm alone.
 			delete(mapOf(sp["detect"]), "when")
+			// Without that test both disk classes would open on every disk fault and the farm
+			// manager would answer each, so the stand keeps disk_full, the one its scenarios check.
+			if mapOf(d.Value["metadata"])["name"] == "disk_filling" {
+				continue
+			}
 		}
 		out = append(out, d.Value)
 	}

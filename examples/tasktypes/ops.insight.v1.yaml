@@ -10,8 +10,16 @@ spec:
   tier: 1
   data_class: internal
   instruction: |
-    Look at the outcomes, attempts and durations of this role's tasks and at the machine load.
-    Propose at most three changes with evidence from the series you read, or answer nothing_found.
+    Look at the outcomes, attempts and durations of this role's tasks in the series farm.task.outcome,
+    farm.task.attempts and farm.attempt.duration, and at the machine load.
+
+    The service levels of these tasks: at most 20 percent of them failed (outcome failed in
+    farm.task.outcome), fewer than 2.0 attempts per task on average (farm.task.attempts), and
+    attempts that do not regularly last longer than 180 seconds (farm.attempt.duration).
+
+    If the series you read break at least one of these levels, propose one change, the one with the
+    strongest evidence, with the values you read; nothing_found is then not an answer. Answer
+    nothing_found only when every level holds.
   params_schema: {type: object, additionalProperties: false, properties: {}}
   timeouts: {start_by: 1h, lease: 60s, heartbeat: 20s, attempt: 5m, deadline: 2h}
   retry: {max_attempts: 1, max_runs: 2}

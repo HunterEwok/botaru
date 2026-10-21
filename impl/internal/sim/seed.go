@@ -14,8 +14,9 @@ const seedInvestigations = 18
 
 // SeedInvestigationLoad writes the history of the world's past investigations into the core
 // series of ops-reader: the outcome, the attempts and the attempt duration of
-// task_type:ops.investigate.v1 over the last day: two of three took all three attempts near the
-// attempt timeout and a third failed. A fresh stand
+// task_type:ops.investigate.v1 over the last day: two of three ran into the attempt deadline of
+// five minutes; half of those finished on the second attempt, half failed after all three. A
+// fresh stand
 // has run one investigation, too little for an analysis to find anything; these are the
 // points the observe loop would have written for such tasks (OBV-5). The keys are fixed per
 // point, so a second seeding writes nothing again.
@@ -30,11 +31,12 @@ func (s *Stand) SeedInvestigationLoad(ctx context.Context) error {
 		outcome := "done"
 		duration := 40.0 + float64(i%5)*12
 		if i%3 != 2 {
-			// Two of three ran into the lease and took all three attempts, each close to the
-			// five minutes of the attempt timeout; half of those failed in the end.
-			attempts, duration = 3, 260+float64(i%4)*12
+			// Two of three ran into the attempt deadline: their first attempt was cut at five
+			// minutes, the duration point of the task. Half of those finished on the second
+			// attempt, half failed after the third.
+			attempts, duration = 2, 300
 			if i%2 == 0 {
-				outcome = "failed"
+				attempts, outcome = 3, "failed"
 			}
 		}
 		for _, p := range []struct {
@@ -53,6 +55,6 @@ func (s *Stand) SeedInvestigationLoad(ctx context.Context) error {
 			}
 		}
 	}
-	s.log.Addf(KindDirector, "the history of the world: %d past investigations of ops-reader in the core series, two of three with three attempts near the timeout, a third failed", seedInvestigations)
+	s.log.Addf(KindDirector, "the history of the world: %d past investigations of ops-reader in the core series, two of three cut at the attempt deadline, half of those failed", seedInvestigations)
 	return nil
 }

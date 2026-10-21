@@ -332,6 +332,13 @@ func (a *Agent) run(ctx context.Context, p attemptPayload) (map[string]any, stri
 			}
 			return nil, "model_error", err
 		}
+		if cut := cutToolUses(msg); len(cut) > 0 && turn+1 < maxTurns {
+			// The output limit cut a tool call: it does not run, and the model hears so in the
+			// tool_result the API requires after every tool_use.
+			a.log.Info("tool call cut at the output limit", "task", p.Task.ID)
+			messages = append(messages, msg.ToParam(), anthropic.NewUserMessage(cut...))
+			continue
+		}
 		if msg.StopReason != anthropic.StopReasonToolUse || p3 == nil {
 			var text strings.Builder
 			for _, b := range msg.Content {
@@ -387,6 +394,24 @@ func (a *Agent) run(ctx context.Context, p attemptPayload) (map[string]any, stri
 	}
 	return nil, "runtime_error", errors.New("the model did not answer within the turn limit")
 }
+
+// cutToolUses are the error results for the tool calls of an answer the output limit ended: the
+// input of such a call may be cut, so none of them runs.
+func cutToolUses(msg *anthropic.Message) []anthropic.ContentBlockParamUnion {
+	if msg.StopReason != anthropic.StopReasonMaxTokens {
+		return nil
+	}
+	var out []anthropic.ContentBlockParamUnion
+	for _, b := range msg.Content {
+		if b.Type == "tool_use" {
+			out = append(out, anthropic.NewToolResultBlock(b.ID, cutCallText, true))
+		}
+	}
+	return out
+}
+
+// cutCallText is the tool result of a call that the output limit cut.
+const cutCallText = "This call was cut at the output token limit and did not run. Send it again, shorter, or answer."
 
 // failReason maps a P4 refusal to the reason of fail: the provider codes do not spend the
 // attempt, the others end the run.

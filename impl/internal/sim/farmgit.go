@@ -253,12 +253,21 @@ func (r *farmRepo) setField(ctx context.Context, kind, tenant, name, field strin
 func fieldValue(doc map[string]any, field string) (any, bool) {
 	var cur any = doc
 	for _, p := range strings.Split(field, ".") {
+		// A list part (rules[]) names the single entry of its list, as a change op does.
+		list := strings.HasSuffix(p, "[]")
 		m, ok := cur.(map[string]any)
 		if !ok {
 			return nil, false
 		}
-		if cur, ok = m[p]; !ok {
+		if cur, ok = m[strings.TrimSuffix(p, "[]")]; !ok {
 			return nil, false
+		}
+		if list {
+			l, ok := cur.([]any)
+			if !ok || len(l) != 1 {
+				return nil, false
+			}
+			cur = l[0]
 		}
 	}
 	return cur, true

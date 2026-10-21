@@ -13,6 +13,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/HunterEwok/botaru/impl/internal/spec"
 	"github.com/HunterEwok/botaru/impl/internal/store"
 )
 
@@ -182,8 +183,20 @@ func paragraphs(text string) []string {
 // and soul stems (GOV-29). The skeleton ships the en stems only.
 type unawareTerms map[string][]string
 
-func (c *Core) unawarenessTerms() (unawareTerms, error) {
-	reg, err := c.spec.Registry("spec/model/unawareness-terms.yaml")
+func (c *Core) unawarenessTerms() (unawareTerms, error) { return unawarenessTermsOf(c.spec) }
+
+// UnawareText says whether a text bots read fails the unawareness lint (GOV-29, unaware_text): a
+// paragraph with a word of the act group beside a word of the outcome group.
+func UnawareText(sp *spec.Spec, text string) (bool, error) {
+	u, err := unawarenessTermsOf(sp)
+	if err != nil {
+		return false, err
+	}
+	return u.linked(text, false), nil
+}
+
+func unawarenessTermsOf(sp *spec.Spec) (unawareTerms, error) {
+	reg, err := sp.Registry("spec/model/unawareness-terms.yaml")
 	if err != nil {
 		return nil, err
 	}

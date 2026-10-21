@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"math"
 	"math/rand/v2"
 	"net/url"
@@ -65,22 +66,29 @@ func main() {
 	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 }
 
-// prices are the list prices of models in USD per million tokens (input, output); the
-// simulator counts them as EUR, which overstates the spend a little and so trips the fuse
-// early rather than late. -price-in and -price-out override them.
+// prices are the list prices of models in USD per million tokens (input, output), checked
+// 2026-10-21; the simulator counts them as EUR, which overstates the spend a little and so trips
+// the fuse early rather than late. A profile has one price, so Haiku 5.5 counts at the price of a
+// prompt over 100K tokens (0.10/0.50 below): a call is never counted below what it costs.
+// -price-in and -price-out override them for -model.
 var prices = map[string][2]float64{
-	"claude-opus-5-5":            {5, 25},
-	"claude-sonnet-5-5":          {3, 15},
-	"claude-haiku-5-5":           {1, 5},
-	"claude-opus-4-1-20250805":   {15, 75},
-	"claude-opus-4-20250514":     {15, 75},
-	"claude-sonnet-4-5-20250929": {3, 15},
-	"claude-sonnet-4-20250514":   {3, 15},
-	"claude-haiku-4-5-20251001":  {1, 5},
-	"claude-3-5-haiku-20241022":  {0.8, 4},
+	"claude-fable-5-1":  {10, 50},
+	"claude-opus-5-5":   {4, 20},
+	"claude-sonnet-5-5": {2, 10},
+	"claude-haiku-5-5":  {0.50, 2.50},
 }
 
-// priceOf finds the price of a model by its exact id, then by its family.
+// rankModels are the models of a rank run: each model profile gets the model of its rank, the
+// higher rank the stronger model.
+var rankModels = map[int]string{
+	1: "claude-haiku-5-5",  // functionaries (base)
+	2: "claude-sonnet-5-5", // the translator and the analysis
+	3: "claude-opus-5-5",   // the commission
+	4: "claude-fable-5-1",  // the farm manager
+}
+
+// priceOf finds the price of a model by its exact id, then by its family at the highest price
+// the family had, so that an unknown id of a family never counts below what it may cost.
 func priceOf(model string) ([2]float64, bool) {
 	if p, ok := prices[model]; ok {
 		return p, true
@@ -88,7 +96,7 @@ func priceOf(model string) ([2]float64, bool) {
 	for _, fam := range []struct {
 		part string
 		p    [2]float64
-	}{{"opus", [2]float64{15, 75}}, {"sonnet", [2]float64{3, 15}}, {"haiku", [2]float64{1, 5}}} {
+	}{{"fable", [2]float64{10, 50}}, {"opus", [2]float64{15, 75}}, {"sonnet", [2]float64{3, 15}}, {"haiku", [2]float64{1, 5}}} {
 		if strings.Contains(model, fam.part) {
 			return fam.p, true
 		}
@@ -114,8 +122,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	fs.StringVar(&o.scenario, "scenario", "", "scenarios to run, comma separated, or all ("+strings.Join(scenarioNames(), ", ")+")")
 	fs.StringVar(&o.approve, "auto-approve", "safe", "the policy of the virtual approvers for approval cards: none, safe, all or random")
 	fs.BoolVar(&o.mock, "mock", false, "answer with the built-in mock model (the default)")
-	fs.BoolVar(&o.real, "real", false, "call the real model provider with the key from $"+keyEnv+" or -key-file; needs -model and -max-eur")
-	fs.StringVar(&o.model, "model", "", "the model of every profile in a real run, for example claude-haiku-4-5-20251001")
+	fs.BoolVar(&o.real, "real", false, "call the real model provider with the key from $"+keyEnv+" or -key-file; needs -max-eur")
+	fs.StringVar(&o.model, "model", "rank", "the model of every profile in a real run, for example claude-haiku-5-5; rank (the default) gives each profile the model of its rank: "+rankList())
 	fs.StringVar(&o.keyFile, "key-file", "", "a file holding the provider key, instead of $"+keyEnv)
 	fs.StringVar(&o.providerURL, "provider-url", "", "the provider address (default: the binding's own)")
 	fs.Float64Var(&o.maxEUR, "max-eur", 0, "the money fuse in EUR: no model call whose reserved worst case would reach this spend goes out; at it every tenant is held and the run stops (required with -real; 1.00 for -mock)")
@@ -190,21 +198,25 @@ func (o *options) check() (int, error) {
 		return 2, errors.New("-max-eur must be a positive amount")
 	}
 	if o.real {
-		if o.model == "" {
-			return 2, errors.New("-real needs -model")
-		}
 		if o.maxEUR == 0 {
 			return 2, errors.New("-real needs -max-eur: the money fuse is not optional")
 		}
-		p, known := priceOf(o.model)
-		if o.priceIn == 0 {
-			o.priceIn = p[0]
-		}
-		if o.priceOut == 0 {
-			o.priceOut = p[1]
-		}
-		if !known && (o.priceIn == 0 || o.priceOut == 0) {
-			return 2, fmt.Errorf("no list price of %s: give -price-in and -price-out", o.model)
+		if o.model == "" || o.model == "rank" {
+			if o.priceIn != 0 || o.priceOut != 0 {
+				return 2, errors.New("-price-in and -price-out need one -model: a rank run counts the list price of each rank's model")
+			}
+			o.model = "rank"
+		} else {
+			p, known := priceOf(o.model)
+			if o.priceIn == 0 {
+				o.priceIn = p[0]
+			}
+			if o.priceOut == 0 {
+				o.priceOut = p[1]
+			}
+			if !known && (o.priceIn == 0 || o.priceOut == 0) {
+				return 2, fmt.Errorf("no list price of %s: give -price-in and -price-out", o.model)
+			}
 		}
 	} else if o.maxEUR == 0 {
 		o.maxEUR = 1
@@ -281,12 +293,22 @@ func runWith(o options, stdin io.Reader, stdout, stderr io.Writer) (int, error) 
 	}
 	capMicros := money.FromEUR(o.maxEUR)
 	mode := "mock model"
-	if o.real {
+	single, ranks, models := "", map[int]string(nil), map[string][2]float64{}
+	switch {
+	case o.real && o.model == "rank":
+		ranks = rankModels
+		for _, m := range rankModels {
+			models[m], _ = priceOf(m)
+		}
+		mode = "real models by rank: " + rankList()
+	case o.real:
+		single = o.model
+		models[o.model] = [2]float64{o.priceIn, o.priceOut}
 		mode = fmt.Sprintf("real model %s at %.2f/%.2f EUR per million tokens in/out", o.model, o.priceIn, o.priceOut)
 	}
 	log.Addf(sim.KindDirector, "botaru-sim %s: %s, money fuse %s EUR, auto-approve %s, world in %s", version.Version, mode, sim.EUR(capMicros), o.approve, work)
 	s, err := sim.Start(ctx, sim.Config{Root: root, DSN: dsn, Work: work, Exe: exe, Real: o.real, Key: key, BaseURL: o.providerURL,
-		Model: o.model, PriceIn: o.priceIn, PriceOut: o.priceOut, MaxMicros: capMicros, Seed: o.seed, Step: o.step, Log: log,
+		Model: single, RankModels: ranks, Prices: models, MaxMicros: capMicros, Seed: o.seed, Step: o.step, Log: log,
 		Logger: slog.New(slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: level}))})
 	if err != nil {
 		return 1, err
@@ -339,8 +361,18 @@ func runWith(o options, stdin io.Reader, stdout, stderr io.Writer) (int, error) 
 	return 0, nil
 }
 
+// rankList names the model of each rank with its list price.
+func rankList() string {
+	var out []string
+	for _, r := range slices.Sorted(maps.Keys(rankModels)) {
+		p, _ := priceOf(rankModels[r])
+		out = append(out, fmt.Sprintf("%d %s (%.2f/%.2f)", r, rankModels[r], p[0], p[1]))
+	}
+	return strings.Join(out, ", ")
+}
+
 func writeResults(path string, res []sim.Result, s *sim.Stand, o options) error {
-	raw, err := json.MarshalIndent(map[string]any{"mode": map[bool]string{true: "real", false: "mock"}[o.real], "model": o.model,
+	raw, err := json.MarshalIndent(map[string]any{"mode": map[bool]string{true: "real", false: "mock"}[o.real], "model": map[bool]string{true: o.model}[o.real],
 		"spent_eur": sim.EUR(s.Spent()), "max_eur": o.maxEUR, "fuse_tripped": s.Tripped(), "auto_approve": o.approve, "checks": res}, "", "  ")
 	if err != nil {
 		return err
