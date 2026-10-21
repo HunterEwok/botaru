@@ -42,7 +42,7 @@ var FarmFaults = []FarmFault{
 			"alarm.worker.stale for the silent worker, resolved when it calls again"},
 	{"F-2", false, "the next plugin process the toolhosts start is killed (SIGKILL) while its tool call is in flight",
 		"that tool call fails and the bot sees a tool error; the attempt goes on or is retried; the next call starts a new process"},
-	{"F-3", false, fmt.Sprintf("the provider answers 500, 529 or 429 to the next model call and then to %.0f%% of them for %s", providerErrShare*100, providerFaultFor),
+	{"F-3", false, fmt.Sprintf("the provider answers 500, 529 or 429 to the next %d model calls and then to %.0f%% of them for %s", providerErrFirst, providerErrShare*100, providerFaultFor),
 		"the gateway maps 500 and 529 to provider_unavailable and 429 to provider_rate_limited; the agent ends the attempt at the failed call " +
 			"without spending it, the task waits for the provider (provider_quota) and starts the attempt over from its first call; " +
 			"an attempt in which the model had answered before the failure counts a run, so a task of several calls may end " +
@@ -82,6 +82,9 @@ func FarmFaultOf(code string) *FarmFault {
 const (
 	replicaDown      = 150 * time.Second
 	providerErrShare = 0.25
+	// providerErrFirst model calls fail for sure when F-3 begins; the front serves the whole
+	// farm, so more than one keeps the first call of the next task among them.
+	providerErrFirst = 3
 	providerFaultFor = 2 * time.Minute
 	providerDelay    = 30 * time.Second
 	monitorDown      = 2 * time.Minute
@@ -202,7 +205,7 @@ type FaultRun struct {
 }
 
 // InjectFault puts a farm fault on and heals it after its time; the stand's run ends any heal
-// still waiting. F-1 stops the replica that holds the newest attempt lease in the tenant (or,
+// still waiting. F-1 stops the running replica that holds the newest attempt lease in the tenant (or,
 // with none, a replica of the tenant's role with the most replicas); F-8 returns once the core
 // started again.
 func (s *Stand) InjectFault(ctx context.Context, code, tenant string) (*FaultRun, error) {
@@ -231,7 +234,7 @@ func (s *Stand) injectFault(ctx context.Context, code, tenant, task string) (*Fa
 			err = os.WriteFile(crashFile(s.cfg.Work), []byte("armed\n"), 0o644)
 		}
 	case "F-3":
-		s.front.set(providerFaultFor, providerErrShare, 1, []int{500, 529, 429}, 0)
+		s.front.set(providerFaultFor, providerErrShare, providerErrFirst, []int{500, 529, 429}, 0)
 	case "F-4":
 		s.front.set(providerFaultFor, 0, 0, nil, providerDelay)
 	case "F-5":
@@ -280,6 +283,9 @@ func (s *Stand) silenceReplica(ctx context.Context, tenant, want string, run *Fa
 		}
 	}
 	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
 	if want != "" && name == "" {
 		return fmt.Errorf("no running replica holds the lease of %s", want)
 	}
@@ -376,16 +382,20 @@ func (s *Stand) rollCore(ctx context.Context, run *FaultRun) error {
 		}
 		return running == 0, nil
 	})
-	if err != nil && !errors.Is(err, context.DeadlineExceeded) {
-		return err
+	// A drain once begun always ends, also when the run ends during the wait; an error of the
+	// wait other than its end comes back after the start.
+	if errors.Is(err, context.DeadlineExceeded) {
+		err = nil
 	}
-	// A drain once begun always ends, also when the run ends during the wait.
 	sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
 	var req core.ProcessStopRequest
 	req.Process.Kind, req.Mode = "core", "graceful"
-	if _, err := s.Bench.Core().TestProcessStop(sctx, req); err != nil {
-		return fmt.Errorf("the core start: %w", err)
+	if _, serr := s.Bench.Core().TestProcessStop(sctx, req); serr != nil {
+		return fmt.Errorf("the core start: %w", serr)
+	}
+	if err != nil {
+		return err
 	}
 	s.log.Addf(KindFault, "F-8: the core started again (%d attempts still held their leases)", running)
 	return nil
@@ -437,7 +447,7 @@ func farmFaults(ctx context.Context, d *Director, sc string) error {
 		return
 	}
 
-	// F-3: errors of the provider on the next model call and a share of the others.
+	// F-3: errors of the provider on the next model calls and a share of the others.
 	errs0, delayed0 := s.front.counts()
 	if _, err := s.InjectFault(ctx, "F-3", home); err != nil {
 		return err
