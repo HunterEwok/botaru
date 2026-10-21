@@ -138,10 +138,14 @@ func (d *Director) settle(ctx context.Context, prop string) {
 			}
 		}
 		if state == "parked" && !aged {
-			aged = true
-			if _, err := db.Exec(ctx, `UPDATE proposals SET record = jsonb_set(record, '{parked_since}', '"2000-01-01T00:00:00Z"') WHERE id = $1 AND state = 'parked'`, prop); err != nil {
+			// The core may move it on between the read and the write; then it is dated back on
+			// its next park.
+			tag, err := db.Exec(ctx, `UPDATE proposals SET record = jsonb_set(record, '{parked_since}', '"2000-01-01T00:00:00Z"') WHERE id = $1 AND state = 'parked'`, prop)
+			switch {
+			case err != nil:
 				d.S.log.Addf(KindDirector, "dating back the park of %s: %v", prop, err)
-			} else {
+			case tag.RowsAffected() == 1:
+				aged = true
 				d.S.log.Addf(KindDirector, "proposal %s is parked: its park is dated back past park_ttl", prop)
 			}
 		}

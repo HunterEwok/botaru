@@ -328,8 +328,8 @@ The investigations have an attempt deadline of %[1]s in the single dispatcher ru
 (spec.dispatch.rules[].timeouts.attempt), and their task deadline is 30m. An attempt cut at that
 deadline starts again from the beginning.
 
-When the series show attempts that last about as long as that deadline and tasks that need more
-than one attempt, the first entry of proposals (proposals[0]) is this change, and nothing_found is not
+When farm.attempt.duration reaches the deadline of 300 seconds (its rollup window.p95) and
+farm.task.attempts shows tasks that needed more than one attempt, the first entry of proposals (proposals[0]) is this change, and nothing_found is not
 an answer: change.kind manifest_change with the single op {"op": "set", "target": {"kind": "Tenant",
 "name": "demo"}, "field": "spec.dispatch.rules[].timeouts.attempt", "value": "%[2]s"}, with
 benefit.metric farm.task.attempts, benefit.subject task_type:ops.investigate.v1 and benefit.direction

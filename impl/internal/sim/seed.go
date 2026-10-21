@@ -31,8 +31,9 @@ func (s *Stand) SeedInvestigationLoad(ctx context.Context) error {
 		outcome := "done"
 		duration := 40.0 + float64(i%5)*12
 		if i%3 != 2 {
-			// Two of three ran into the attempt deadline: the core cut each attempt at five
-			// minutes. Half of those finished on the second attempt, half failed after the third.
+			// Two of three ran into the attempt deadline: their first attempt was cut at five
+			// minutes, the duration point of the task. Half of those finished on the second
+			// attempt, half failed after the third.
 			attempts, duration = 2, 300
 			if i%2 == 0 {
 				attempts, outcome = 3, "failed"

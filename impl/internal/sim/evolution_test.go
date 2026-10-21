@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/HunterEwok/botaru/impl/internal/core"
@@ -16,7 +17,8 @@ import (
 )
 
 // TestStandSuite checks the stand's cases on a set read back from the farm git, where numbers
-// arrive as JSON numbers: a lowered queue limit fails the case it passed before.
+// arrive as JSON numbers: a lowered queue limit fails the case it passed before, and the attempt
+// deadline of the single dispatcher rule, a duration, holds within its bounds.
 func TestStandSuite(t *testing.T) {
 	ctx := context.Background()
 	work := t.TempDir()
@@ -28,19 +30,27 @@ func TestStandSuite(t *testing.T) {
 	if err := writeCases(holdout, hiddenCases); err != nil {
 		t.Fatal(err)
 	}
-	set := func(queued int) []map[string]any {
+	set := func(queued int, attempt string) []map[string]any {
 		return []map[string]any{
 			{"apiVersion": "botaru/v1alpha1", "kind": "Tenant", "metadata": map[string]any{"name": "demo"},
-				"spec": map[string]any{"limits": map[string]any{"max_queued": queued, "max_enqueue_per_hour": 600}}},
+				"spec": map[string]any{"limits": map[string]any{"max_queued": queued, "max_enqueue_per_hour": 600},
+					"dispatch": map[string]any{"rules": []any{map[string]any{"match": map[string]any{"type": "ops.investigate.v1"},
+						"timeouts": map[string]any{"attempt": attempt}}}}}},
 			{"apiVersion": "botaru/v1alpha1", "kind": "Role", "metadata": map[string]any{"name": "ops-reader", "tenant": "demo"},
 				"spec": map[string]any{"claims": []any{"ops.investigate.v1"}, "insight": map[string]any{"types": []any{"ops.insight.v1"}}}},
 		}
 	}
+	P, F := evals.Passed, evals.Failed
 	for _, tc := range []struct {
-		queued              int
-		visQueue, holdQueue evals.Status
-	}{{5000, evals.Passed, evals.Passed}, {1200, evals.Failed, evals.Passed}, {10, evals.Failed, evals.Failed}} {
-		if _, _, _, err := r.writeSet(ctx, set(tc.queued), "set"); err != nil {
+		queued                  int
+		attempt                 string
+		visQueue, holdQueue     evals.Status
+		visAttempt, holdAttempt evals.Status
+	}{
+		{5000, InvestigateAttempt, P, P, P, P}, {1200, "5m", F, P, P, P}, {10, "5m", F, F, P, P},
+		{5000, EvolveAttempt, P, P, P, P}, {5000, "20m", P, P, P, F}, {5000, "2m", P, P, F, F},
+	} {
+		if _, _, _, err := r.writeSet(ctx, set(tc.queued, tc.attempt), "set"); err != nil {
 			t.Fatal(err)
 		}
 		vis, err := standSuite()(ctx, r.dir, nil, "")
@@ -51,12 +61,12 @@ func TestStandSuite(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if vis["vis-ops-claims"].Status != evals.Passed || hold["hold-ops-enqueue"].Status != evals.Passed || hold["hold-ops-insight"].Status != evals.Passed {
-			t.Errorf("max_queued %d: the fixed cases %v %v", tc.queued, vis, hold)
+		if vis["vis-ops-claims"].Status != P || hold["hold-ops-enqueue"].Status != P || hold["hold-ops-insight"].Status != P {
+			t.Errorf("max_queued %d, attempt %s: the fixed cases %v %v", tc.queued, tc.attempt, vis, hold)
 		}
-		if vis["vis-ops-queue"].Status != tc.visQueue || hold["hold-ops-queue"].Status != tc.holdQueue {
-			t.Errorf("max_queued %d: vis-ops-queue %s, hold-ops-queue %s; want %s, %s", tc.queued,
-				vis["vis-ops-queue"].Status, hold["hold-ops-queue"].Status, tc.visQueue, tc.holdQueue)
+		got := []evals.Status{vis["vis-ops-queue"].Status, hold["hold-ops-queue"].Status, vis["vis-ops-attempt"].Status, hold["hold-ops-attempt"].Status}
+		if want := []evals.Status{tc.visQueue, tc.holdQueue, tc.visAttempt, tc.holdAttempt}; !slices.Equal(got, want) {
+			t.Errorf("max_queued %d, attempt %s: queue and attempt cases %v, want %v", tc.queued, tc.attempt, got, want)
 		}
 	}
 }
