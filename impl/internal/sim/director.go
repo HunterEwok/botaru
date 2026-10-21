@@ -24,6 +24,8 @@ type Director struct {
 	// Timeout bounds the wait for each step of a scenario.
 	Timeout time.Duration
 	Seed    int64
+	// AfterScenario is called after each scenario (the results are written then).
+	AfterScenario func(ctx context.Context, name string)
 
 	mu sync.Mutex
 	r  *rand.Rand
@@ -162,6 +164,9 @@ func (d *Director) RunScenarios(ctx context.Context, names []string) error {
 				return ctx.Err()
 			}
 			d.check(sc.Name, "healed", false, "%v", err)
+		}
+		if d.AfterScenario != nil {
+			d.AfterScenario(ctx, sc.Name)
 		}
 	}
 	return nil

@@ -35,6 +35,9 @@ type FarmTenant struct {
 	// Evolution gives the tenant the analysis presented to the deciders, the scaffold evolution
 	// and its merge gate (D-120) and the dispatcher rule the evolution tunes.
 	Evolution bool `yaml:"evolution"`
+	// TightBudget marks a tenant whose budget is meant to run out in a load run: only there a
+	// stop for money is no failure (the metric M-6).
+	TightBudget bool `yaml:"tight_budget"`
 	// Replicas are the workers of each bot role in the tenant; nil: one of every role.
 	Replicas map[string]int `yaml:"replicas"`
 }

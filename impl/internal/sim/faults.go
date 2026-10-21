@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"math/rand/v2"
 	"net/http"
 	"net/http/httputil"
@@ -114,6 +115,9 @@ type providerFront struct {
 	// injected counts the errors it answered by status and delayed the calls it held.
 	injected map[int]int
 	delayed  int
+	// answered counts the answers of the provider itself to model calls by status (the
+	// metrics: 429 and 5xx without an injected fault).
+	answered map[int]int
 	// observe sees each model request with the tenant its key names (the invariant watch).
 	observe func(tenant string, body []byte)
 	// halted says the run is halted: a model request is then refused, the one that caused the
@@ -130,8 +134,26 @@ func newProviderFront(target string, seed int64) (*providerFront, error) {
 	if err != nil || u.Scheme == "" || u.Host == "" {
 		return nil, fmt.Errorf("the provider address %q is not a URL", target)
 	}
-	rp := &httputil.ReverseProxy{Rewrite: func(r *httputil.ProxyRequest) { r.SetURL(u) }}
-	return &providerFront{pass: rp, r: rand.New(rand.NewPCG(uint64(seed), 29)), injected: map[int]int{}}, nil
+	p := &providerFront{r: rand.New(rand.NewPCG(uint64(seed), 29)), injected: map[int]int{}, answered: map[int]int{}}
+	p.pass = &httputil.ReverseProxy{Rewrite: func(r *httputil.ProxyRequest) { r.SetURL(u) },
+		// The answer of the provider itself to a model call (the metrics). A provider that cannot
+		// be reached, or a call P4 gave up on before any answer, goes to the proxy's error
+		// handler and has no status.
+		ModifyResponse: func(resp *http.Response) error {
+			if isModelCall(resp.Request) {
+				p.mu.Lock()
+				p.answered[resp.StatusCode]++
+				p.mu.Unlock()
+			}
+			return nil
+		},
+		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, _ error) { w.WriteHeader(http.StatusBadGateway) }}
+	return p, nil
+}
+
+// isModelCall says a request is a model call of the Messages API.
+func isModelCall(r *http.Request) bool {
+	return r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/messages")
 }
 
 // set puts a fault on for a time: a share of errors with the codes (the first next calls fail
@@ -153,6 +175,13 @@ func (p *providerFront) counts() (map[int]int, int) {
 	return out, p.delayed
 }
 
+// answers are the answers of the provider itself to model calls by status.
+func (p *providerFront) answers() map[int]int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return maps.Clone(p.answered)
+}
+
 // providerErrors are the error answers of the provider (the Messages API error shapes).
 var providerErrors = map[int]struct{ typ, msg string }{
 	500: {"api_error", "Internal server error"},
@@ -161,7 +190,7 @@ var providerErrors = map[int]struct{ typ, msg string }{
 }
 
 func (p *providerFront) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	model := r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/messages")
+	model := isModelCall(r)
 	tenant := ""
 	if k := r.Header.Get("x-api-key"); strings.Contains(k, tenantKeyMark) {
 		key, t, _ := strings.Cut(k, tenantKeyMark)
@@ -288,6 +317,9 @@ func (s *Stand) injectFault(ctx context.Context, code, tenant, task string) (*Fa
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", f.Code, err)
 	}
+	s.mu.Lock()
+	s.faultRuns = append(s.faultRuns, *run)
+	s.mu.Unlock()
 	s.log.Add(KindFault, fmt.Sprintf("%s in %s: %s", f.Code, run.Scope, f.What), map[string]any{"code": f.Code, "scope": run.Scope, "worker": run.Worker, "task": run.Task, "expect": f.Expect})
 	return run, nil
 }

@@ -33,6 +33,7 @@ tenants:
     hosts:
       - {id: web5, kind: web}
       - {id: db4, kind: db}
+    tight_budget: true
     replicas: {hello: 1, ops-reader: 2, reviewer-a: 1, reviewer-b: 1, data-job: 1}
   - name: other-dept
     hosts:

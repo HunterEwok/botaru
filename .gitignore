@@ -4,3 +4,5 @@ __pycache__/
 .venv/
 # Working material kept out of the public repository
 _review/
+# The output of botaru-sim runs from impl
+impl/sim-out/
