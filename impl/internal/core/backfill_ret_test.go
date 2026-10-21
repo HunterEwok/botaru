@@ -16,6 +16,7 @@ import (
 // spec/model/retention-classes.yaml in x-botaru-retention, and the default periods the core
 // deletes by are those of the registry.
 func TestBackfillRetentionClasses(t *testing.T) {
+	t.Parallel()
 	root, err := spec.FindRoot("")
 	if err != nil {
 		t.Fatal(err)

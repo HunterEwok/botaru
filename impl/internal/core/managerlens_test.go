@@ -18,6 +18,7 @@ import (
 // that touches the seat role or for a proposal of the holder's own bot (GOV-17). The lens
 // weighs 1 and its review is not needed for the verdict.
 func TestManagerLens(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newManagerBench(t)
 	if _, err := b.c.SeatAssign(ctx, b.farmOp(), SeatRequest{Seat: managerSeatID}); err != nil {

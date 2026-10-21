@@ -55,6 +55,7 @@ func newProductionCore(t *testing.T) *Core {
 // security failures for its static fingerprint; a test tenant gets a warning; a role whose
 // fingerprint did not change stays enabled; doctor warns eval_report_stale (PRV-3).
 func TestEvalReportGate(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	c := newProductionCore(t)
 	op := Operator{Principal: ids.PrincipalID(), Tenant: "farm"}

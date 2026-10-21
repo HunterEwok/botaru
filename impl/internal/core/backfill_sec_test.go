@@ -11,6 +11,7 @@ import (
 // with ai_disclosure: native, which gets no ai_notice; it goes out at the first contact and
 // again at the next contact after notice_version grew, not at every contact.
 func TestBackfillPrivacyNoticeVersion(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	edit := func(version int) func(string, []map[string]any) []map[string]any {
 		return func(_ string, ms []map[string]any) []map[string]any {

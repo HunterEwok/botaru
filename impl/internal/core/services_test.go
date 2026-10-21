@@ -155,6 +155,7 @@ func (b *serviceBench) grants(t *testing.T) []map[string]any {
 // and the bot's own task goes on; a stop goes as a card and runs after the decision (MON-8,
 // APR-18).
 func TestServiceControlBot(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newServiceBench(t)
 	if _, h := b.attemptTools(t, "1", false); containsString(toolNames(t, b.bench, h), serviceToolName) {
@@ -225,6 +226,7 @@ func TestServiceControlBot(t *testing.T) {
 // The initiator's own right, holds, untrusted text, the limits and one operation at a time
 // (D-73, INJ-15, MON-8, HLD-3).
 func TestServiceControlGuards(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newServiceBench(t)
 	_, h := b.attemptTools(t, "1", true)
@@ -288,6 +290,7 @@ func TestServiceControlGuards(t *testing.T) {
 // the outcome comes back as code text; a stop becomes an approval; without the right the
 // person is told the group.
 func TestServiceCommand(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newServiceBench(t)
 	res := b.say(t, "1001", "10", "/service restart nginx")
@@ -334,6 +337,7 @@ func TestServiceCommand(t *testing.T) {
 
 // /run (APR-17): an action by card, a routine action under a grant within its counters.
 func TestRunCommand(t *testing.T) {
+	t.Parallel()
 	b := newServiceBench(t)
 	if res := b.say(t, "1001", "20", "/run nope"); !strings.Contains(res.Text, "no such pipeline") {
 		t.Fatalf("unknown %+v", res)
@@ -368,6 +372,7 @@ func TestRunCommand(t *testing.T) {
 // A /run argument from a marked catalog resource is checked at execution with the mark it was
 // requested with, not dropped as outside the catalog (MAN-10).
 func TestRunMarkedHost(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newActionBench(t, func(ms []map[string]any) []map[string]any {
 		for _, m := range ms {
@@ -411,6 +416,7 @@ func TestRunMarkedHost(t *testing.T) {
 // bot as author, the initiator whose own right service.control:<service> the run stands on
 // (D-73); a person's own call names the person.
 func TestServiceGrantInitiator(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newServiceBench(t)
 	_, h := b.attemptTools(t, "2", true)
@@ -437,6 +443,7 @@ func TestServiceGrantInitiator(t *testing.T) {
 // initiator names the bot itself, and the author kind follows the author's principal, so an
 // operator credential of an external program is not recorded as a person.
 func TestServiceGrantInitiatorFallback(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newServiceBench(t)
 	for p, want := range map[string]string{"human:p_01JB00000000000000000000A1": "human", "bot:bot_01jb": "bot", "worker:wk_01": "bot", "service:ci-exporter": "service", "system": "service"} {

@@ -172,6 +172,7 @@ func rejections(t *testing.T, b *bench) []string {
 // record schema; a duplicate counts once more instead of a second record; the core's reread
 // value goes with the record (INS-3, PRP-1, PRP-2, PRP-5, PRP-14).
 func TestProposalCreated(t *testing.T) {
+	t.Parallel()
 	b := newInsightBench(t, nil)
 	b.helloDone(t, "1", "", "hi")
 	b.loop(t, "observe")
@@ -206,6 +207,7 @@ func TestProposalCreated(t *testing.T) {
 // A body that fails a check gives proposal.rejected.v1 with the reason and no record; a result
 // outside insight-result is refused as a whole (PRP-1, PRP-2, PRP-3, PRP-21, INS-1).
 func TestProposalRejected(t *testing.T) {
+	t.Parallel()
 	b := newInsightBench(t, nil)
 	b.helloDone(t, "1", "", "hi")
 	b.loop(t, "observe")
@@ -242,6 +244,7 @@ func TestProposalRejected(t *testing.T) {
 // A tenant limit goes only down; after untrusted text only such a safe change or kind none is
 // taken, and a service call is not (PRP-3, PRP-7, PRP-11).
 func TestProposalChanges(t *testing.T) {
+	t.Parallel()
 	b := newInsightBench(t, map[string]any{"max_open_proposals": 5})
 	b.helloDone(t, "1", "", "hi")
 	b.loop(t, "observe")
@@ -265,6 +268,7 @@ func TestProposalChanges(t *testing.T) {
 
 // The open limit of the role refuses a new proposal with an event (INS-4, PRP-5).
 func TestProposalRateLimited(t *testing.T) {
+	t.Parallel()
 	b := newInsightBench(t, map[string]any{"max_open_proposals": 1})
 	b.helloDone(t, "1", "", "hi")
 	b.loop(t, "observe")
@@ -282,6 +286,7 @@ func TestProposalRateLimited(t *testing.T) {
 // Analysis starts only from a schedule or a route as system, and a second scheduled analysis
 // of the role inside its merge window is skipped (INS-1, INS-4).
 func TestAnalysisStart(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newInsightBench(t, nil)
 	err := b.c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
@@ -323,6 +328,7 @@ func TestAnalysisStart(t *testing.T) {
 
 // Doctor names the reasons the improvement cycle is off; here no person may decide (INS-6).
 func TestLoopDisabled(t *testing.T) {
+	t.Parallel()
 	b := newInsightBench(t, nil)
 	doc, err := b.c.Doctor(context.Background(), b.op, TenantRequest{})
 	if err != nil {
@@ -342,6 +348,7 @@ func TestLoopDisabled(t *testing.T) {
 // Analysis calls only the tools its catalog offers, even when the role's main work holds more
 // (INS-2).
 func TestAnalysisToolCalls(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newInsightBench(t, map[string]any{"tools": []any{}})
 	_, att := b.analysisAttempt(t, "1")
@@ -358,6 +365,7 @@ func TestAnalysisToolCalls(t *testing.T) {
 // A schedule proposal only shifts the window: the days stay, and the slots of a day neither
 // grow nor fall below half (PRP-3, PRP-11).
 func TestCronShift(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		cur, next     string
 		before, after int
@@ -380,6 +388,7 @@ func TestCronShift(t *testing.T) {
 // An untrusted arrival does not join a trusted proposal that changes something, and a joined
 // arrival raises the record's mark (PRP-5, PRP-12, INJ-4).
 func TestProposalMerge(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newInsightBench(t, nil)
 	b.helloDone(t, "1", "", "hi")
@@ -412,6 +421,7 @@ func TestProposalMerge(t *testing.T) {
 // An analysis whose class is above insight.max_data of its role does not start, even when a
 // catalog got past the lint (INS-2).
 func TestAnalysisAboveMaxData(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newInsightBench(t, nil)
 	err := b.c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
@@ -443,6 +453,7 @@ func TestAnalysisAboveMaxData(t *testing.T) {
 // A refusal shows in "My outcomes" of the worker that handed in the body, not of another
 // worker that held an attempt of the same task (DIG-7).
 func TestMyOutcomesRejectedWorker(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newInsightBench(t, nil)
 	b.helloDone(t, "1", "", "hi")
@@ -476,6 +487,7 @@ func TestMyOutcomesRejectedWorker(t *testing.T) {
 // Rollups keep no producer, so the self influence over a window longer than the raw points of
 // its series is marked partial (PRP-22).
 func TestSelfInfluencePartial(t *testing.T) {
+	t.Parallel()
 	b := newInsightBench(t, nil)
 	ctx := context.Background()
 	cat, err := b.c.Catalog(ctx)
@@ -506,6 +518,7 @@ func TestSelfInfluencePartial(t *testing.T) {
 // is refused proposal_rate_limited; a proposal parked as conflict behind another author's
 // change does not take the slot (PRP-16).
 func TestProposalOnePerBot(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newInsightBench(t, map[string]any{"max_open_proposals": 5})
 	b.helloDone(t, "1", "", "hi")

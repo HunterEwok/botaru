@@ -28,6 +28,7 @@ func leaseOf(t *testing.T, b *bench, work string) (state string, until time.Time
 // delivery to planned without spending its attempt (FEN-5, blackbox:core/core-down-5m,
 // blackbox:lease/extend-two-cores).
 func TestBackfillCoreDowntime(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	kept, lost := b.hello(t, "1"), b.hello(t, "2")
@@ -114,6 +115,7 @@ func TestBackfillCoreDowntime(t *testing.T) {
 // the core alone determines, is refused and changes nothing, so a holder cannot requeue a
 // delivery forever or skip retry.max_runs (FEN-5, DLV-1).
 func TestBackfillDowntimeReasonCoreOnly(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	task := b.helloDone(t, "1", "", "Hello!")

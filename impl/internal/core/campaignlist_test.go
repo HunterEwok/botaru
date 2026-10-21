@@ -16,6 +16,7 @@ import (
 // person, once, deciding nothing; a card of 5 items or fewer has no such button, and a person
 // without the card cannot ask for the list (ORC-2).
 func TestCampaignFullList(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newCampaignReadBench(t, map[string]any{"confirm_read_over": map[string]any{"items": 2}})
 	bob := ids.PrincipalID()

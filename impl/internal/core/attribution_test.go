@@ -27,6 +27,7 @@ func (b *bench) insertIncident(t *testing.T, class, kind, id string) string {
 // while its window is open (rule human, on attribution_card); a link of kind script_run or
 // rejected_proposal is found only by code, and a person without the right is refused.
 func TestAttributionDependencyAndP2(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b, id, _ := realizedBench(t)
 	b.exec(t, `UPDATE proposals SET record = jsonb_set(record, '{body,change,manifest_change,ops,0,target}', '{"kind": "Role", "name": "hello"}') WHERE id = $1`, id)

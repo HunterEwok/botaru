@@ -52,6 +52,7 @@ func (b *bench) count(t *testing.T, sql string, args ...any) int {
 // (MEM-10, blackbox:identity/seal-retention-earlier); metadata of the same age stays; and what a
 // restore brings back past its period is deleted again at the next run.
 func TestRetentionTenantPeriods(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBenchWith(t, retentionSet(map[string]any{"classes": map[string]any{"content": "2d", "memory": "30d"}, "files": "1d"}))
 	task := b.helloDone(t, "1", "", "CANARY-NOT-A-SECRET-ret10")
@@ -148,6 +149,7 @@ func TestRetentionTenantPeriods(t *testing.T) {
 
 // The months of metadata whose records are all expired, and only those (RET-10, AUD-3, D-108).
 func TestExpiredMonths(t *testing.T) {
+	t.Parallel()
 	at := func(s string) time.Time { v, _ := time.Parse(time.RFC3339, s); return v }
 	last := func(sp []span) span {
 		if len(sp) == 0 {
@@ -180,6 +182,7 @@ func TestExpiredMonths(t *testing.T) {
 // month stay until the month is past the period, then go together; those written before the
 // apply keep the longer period.
 func TestMetadataWholeMonths(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	now := b.storeNow(t)
@@ -303,6 +306,7 @@ func TestMetadataWholeMonths(t *testing.T) {
 // period_deleted record; a single record is never deleted and the cut never moves back (AUD-3,
 // AUD-6, RET-10).
 func TestAuditMonthCut(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	before := b.count(t, `SELECT count(*) FROM audit WHERE tenant = 'demo'`)
@@ -355,6 +359,7 @@ func TestAuditMonthCut(t *testing.T) {
 // human. A younger line and a line of system stay as they are (BUD-16, SEC-14,
 // blackbox:budget/subject-anonymized-93d).
 func TestUsageAnonymized(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	now := b.storeNow(t)
@@ -393,6 +398,7 @@ func TestUsageAnonymized(t *testing.T) {
 // the tenant's content period, whichever comes first. A person's erasure purges the bytes and
 // the file name of the person's own export copy (LCY-2, SEC-11).
 func TestToolCacheAndExportPurged(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBenchWith(t, retentionSet(map[string]any{"classes": map[string]any{"content": "2d"}}))
 	now := b.storeNow(t)

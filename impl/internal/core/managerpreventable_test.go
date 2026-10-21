@@ -58,6 +58,7 @@ func restricted(t *testing.T, b *bench, tenant, incident string) bool {
 // restricted mode in the tenant with the same epoch, lifted by seat.resume --tenant; a class
 // that stops_manager stops nothing any more (GOV-47, MGR-45, MGR-47, MGR-55).
 func TestManagerPreventableV03(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	// manager_accountable is a v0.3 field, which apply accepts only under the v0.3 claim (MAN-11).
 	b := newManagerBenchWith(t, nil, []map[string]any{fillingClass()}, accountableEdit)
@@ -150,6 +151,7 @@ func TestManagerPreventableV03(t *testing.T) {
 // refused, stops_manager does not answer for the manager while manager_accountable does, and a
 // takeover is paid from the manager line (GOV-47, MGR-55, MGR-48).
 func TestManagerV01FormsGone(t *testing.T) {
+	t.Parallel()
 	b := newManagerBench(t)
 	_, err := b.c.SeatResume(context.Background(), b.farmOp(), SeatResumeRequest{Seat: managerSeatID, Incident: "inc_x"})
 	wantReason(t, err, "input_schema_invalid")
@@ -163,6 +165,7 @@ func TestManagerV01FormsGone(t *testing.T) {
 
 // The repeats of manager_preventable: 24 h, 72 h, then weekly (GOV-47).
 func TestPreventableRepeats(t *testing.T) {
+	t.Parallel()
 	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	for h, want := range map[int]int{1: 0, 24: 1, 71: 1, 72: 2, 72 + 167: 2, 72 + 168: 3, 72 + 336: 4} {
 		if got := preventableRepeats(t0, t0.Add(time.Duration(h)*time.Hour)); got != want {
@@ -173,6 +176,7 @@ func TestPreventableRepeats(t *testing.T) {
 
 // manager_accountable needs a class whose alarm no agent-role type publishes (GOV-48).
 func TestAccountableLint(t *testing.T) {
+	t.Parallel()
 	c := lintCore(t)
 	class := `apiVersion: botaru/v1alpha1
 kind: IncidentClass
@@ -215,6 +219,7 @@ func kindTo(t *testing.T, b *bench, kind, recipient string) int {
 // tenant; a stop reason incident left by v0.2 goes without a manager_stopped repeat; the seat
 // record and doctor show restricted_in (GOV-47, MGR-47, MGR-55).
 func TestPreventableReadV03(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newManagerBench(t)
 	op := b.farmOperator(t)
@@ -292,6 +297,7 @@ func TestPreventableReadV03(t *testing.T) {
 // lint of store_low no longer refuses stops_manager, and stops_manager does not answer for the
 // manager (MGR-55, GOV-48).
 func TestIgnoredV02FieldsV03(t *testing.T) {
+	t.Parallel()
 	class := manifest.Doc{Kind: "IncidentClass", Name: "spend_storm"}
 	charter := manifest.Doc{Kind: "Governance", Tenant: farmTenant, Name: "farm"}
 	cv := map[string]any{"spec": map[string]any{"stops_manager": true}}
@@ -333,6 +339,7 @@ spec:
 // In restricted mode the proposals of a seat task are dropped, and each one leaves a
 // proposal.rejected event with the reason manager_restricted (MGR-47, D-118).
 func TestRestrictedSeatProposalsRejectedV03(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newManagerBench(t)
 	cat, err := b.c.Catalog(ctx)

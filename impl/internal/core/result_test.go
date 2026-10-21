@@ -65,6 +65,7 @@ func (b *bench) advance(t *testing.T, seconds int) {
 // once, no result is stored, the identical repeat gets output_schema_invalid again, and another
 // complete under the same lease is fenced.
 func TestResultFullSchema(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	applyResultCheckSet(t, b)
@@ -133,6 +134,7 @@ func TestResultFullSchema(t *testing.T) {
 // resolves the enum_from values at complete, filtered by the task's mark, instead of refusing
 // every value.
 func TestResultCheckWithoutAttemptRecord(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	applyResultCheckSet(t, b)
@@ -164,6 +166,7 @@ func TestResultCheckWithoutAttemptRecord(t *testing.T) {
 // lines and the task.completed event (PRV-1); the task record carries fairness_key and trace
 // (DSP-2, OBS-2), and every event of the task carries the root as correlationid.
 func TestRunFingerprint(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	task := b.hello(t, "31")
@@ -247,6 +250,7 @@ func TestRunFingerprint(t *testing.T) {
 // fairnessKey covers every source of DSP-2; a task the core creates itself gets
 // system:<purpose>, and a child or continuation keeps its source's key.
 func TestFairnessKey(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		in   enqueueInput
 		want string
@@ -270,6 +274,7 @@ func TestFairnessKey(t *testing.T) {
 // The result is checked against the result_schema of the type at claim: an apply that
 // narrows the type while the attempt runs does not refuse the attempt's valid result.
 func TestResultSchemaFixedAtClaim(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	applyResultCheckSet(t, b)
@@ -295,6 +300,7 @@ func TestResultSchemaFixedAtClaim(t *testing.T) {
 // the projection of the attempt accepts, where x-botaru-format is no assertion, is still
 // checked against the full schema at complete and refused (OUT-2, OUT-1).
 func TestResultProjectionHint(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	applyResultCheckSet(t, b)

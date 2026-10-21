@@ -14,6 +14,7 @@ import (
 // as its second dimension, and the statistics by role and category count it (DIG-4); a row of
 // "My outcomes" with a trial outcome carries the trial figures (DIG-8).
 func TestDecisionStatsAndTrialFigures(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newCommissionBench(t, true, presentEdit)
 	id, _ := acceptLimits(t, b)

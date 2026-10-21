@@ -31,6 +31,7 @@ func doctorChecks(t *testing.T, b *bench) map[string]DoctorCheck {
 // daily review of the manager as a row of its own; a tenant with farm_manager.enabled: false and
 // no manager line passes apply and has no manager rows (BUD-15).
 func TestBackfillDoctorLineUsage(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	spend := func(b *bench) {
 		t.Helper()
@@ -89,6 +90,7 @@ func TestBackfillDoctorLineUsage(t *testing.T) {
 // an item that overruns the reserve pauses the campaign with estimate_exceeded, which Continue
 // does not clear (BUD-12).
 func TestBackfillCampaignPaidByCard(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newCampaignReadBench(t, map[string]any{"confirm_read_over": map[string]any{"items": 2}})
 	// A second person of the group, who may approve the card.

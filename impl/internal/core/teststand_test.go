@@ -25,6 +25,7 @@ func problemReason(err error) string {
 // The test-control port exists only on a test bench (APR-9): a core without the test bench flag
 // refuses every operation of the port, the new ones as the clock and the loops.
 func TestBenchOpsOnlyOnTestBench(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	b.c.cfg.TestBench = false
@@ -59,6 +60,7 @@ func TestBenchOpsOnlyOnTestBench(t *testing.T) {
 // initiator, the chat ceiling and the budget; no allowing row means no (PRM-1). It writes
 // nothing.
 func TestBenchAuthorizeEval(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	row := func(principal, home, action string, extra map[string]any) map[string]any {
@@ -150,6 +152,7 @@ func TestBenchAuthorizeEval(t *testing.T) {
 // do not; N = max(4, ceil(0.25 x 20)) = 5 with inclusion_prob 0.25; the same seed draws the same
 // ids; 10 answers with a weighted share of 0.4 set commission_underrates, 9 answers do not.
 func TestBenchDigestSample(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	seed := strings.Repeat("ab", 32)
@@ -213,6 +216,7 @@ func strs(l []any) []string {
 // and the window and an unknown name with digits each drop the paragraph; a date and a time of
 // the window pass.
 func TestBenchNumberCheck(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	base := map[string]any{
@@ -256,6 +260,7 @@ func TestBenchNumberCheck(t *testing.T) {
 // disappears on 2027-03-28, with the button; the same for a makes_backup type is
 // schedule_time_invalid without it; a zone outside the IANA database and CRON_TZ get no button.
 func TestBenchScheduleCheck(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	eval := func(in map[string]any) map[string]any {
@@ -295,6 +300,7 @@ func TestBenchScheduleCheck(t *testing.T) {
 // backup is replayed from the separate erasure log, the farm chain of the new epoch opens with
 // the restore record, and P1 is not ready until restore.complete.
 func TestBenchStoreRestore(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newActionBench(t, nil)
 	if _, err := b.c.TestStoreRestore(ctx, "none"); problemReason(err) != "not_found" {
@@ -360,6 +366,7 @@ func TestBenchStoreRestore(t *testing.T) {
 // parentsFirst orders the tables of a restore so a row's parent is inserted before it; a
 // table that references itself does not block the order (its rows go in one statement).
 func TestParentsFirst(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	if _, err := b.c.st.Pool.Exec(ctx, `CREATE TABLE bench_tree (id int PRIMARY KEY, parent int REFERENCES bench_tree(id))`); err != nil {
@@ -394,6 +401,7 @@ func TestParentsFirst(t *testing.T) {
 // claim not ready while complete still passes; event.inject submits an activity by the path of
 // submit_activity of the named channel.
 func TestBenchProcessAndFaults(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	var stop ProcessStopRequest

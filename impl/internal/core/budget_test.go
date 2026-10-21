@@ -70,6 +70,7 @@ func lastCall(t *testing.T, b *bench) (string, string, string) {
 // line of the call when a toolhost takes it, and is given back when nobody does (BUD-2, BUD-3,
 // BUD-5).
 func TestToolCallMoney(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newToolBenchWith(t, nil, pricedChecks(0.02))
 	att, h := b.attemptTools(t, "1", false)
@@ -150,6 +151,7 @@ func TestToolCallMoney(t *testing.T) {
 // A tool without billing: external costs nothing but still gets its usage line (BUD-3), on
 // the line pinned in the task record, not the one of the type as applied now (BUD-7).
 func TestFreeToolCallLine(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newToolBench(t)
 	att, h := b.attemptTools(t, "1", false)
@@ -174,6 +176,7 @@ func TestFreeToolCallLine(t *testing.T) {
 // day limits and the limit per role hold, a used-up line never stops the work line, and the
 // hourly figure is not a reserve limit (BUD-4).
 func TestBudgetLines(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	cat, err := b.c.Catalog(ctx)
@@ -246,6 +249,7 @@ func checkAsk(t *testing.T, b *bench, tv *TenantView, ask budgetAsk) string {
 // role for an hour and raises alarm.hold.auto once; a job role keeps working; the alarm resolves
 // when the holds end (HLD-7, BUD-4).
 func TestRunawaySpend(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBenchWith(t, func(root string, ms []map[string]any) []map[string]any {
 		return append(ms, map[string]any{

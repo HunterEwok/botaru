@@ -147,6 +147,7 @@ var (
 // conditions over fields that are not closed are refused with the step; only the translator
 // sees propose_script.
 func TestScriptAcceptance(t *testing.T) {
+	t.Parallel()
 	b := newScriptRunBench(t)
 	att, h := b.attemptTools(t, "1", false)
 	if names := toolNames(t, b.bench, h); !containsString(names, proposeScriptName) {
@@ -179,6 +180,7 @@ func TestScriptAcceptance(t *testing.T) {
 // releases the check as a task, a false condition skips the action, and the run completes
 // with its summary and gives its reserve back.
 func TestScriptRunFlow(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newScriptRunBench(t)
 	att, h := b.attemptTools(t, "1", false)
@@ -252,6 +254,7 @@ func TestScriptRunFlow(t *testing.T) {
 // An action step goes to its own approval card naming the script step (SCR-7); "Cancel" on
 // the run card cancels the run and the waiting approval (SCR-11).
 func TestScriptActionAndCancel(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newScriptRunBench(t)
 	att, h := b.attemptTools(t, "1", false)
@@ -294,6 +297,7 @@ func TestScriptActionAndCancel(t *testing.T) {
 // /cancel on the tree stops a run anchored in it although the anchor has finished: the run and
 // the waiting approval are canceled and nothing more is released (SCR-11).
 func TestScriptTreeCancel(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newScriptRunBench(t)
 	att, h := b.attemptTools(t, "1", false)
@@ -327,6 +331,7 @@ func TestScriptTreeCancel(t *testing.T) {
 // A confirm step waits for its own card with its own nonce (SCR-11); "Continue" releases the
 // steps after it.
 func TestScriptConfirmStep(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newScriptRunBench(t)
 	att, h := b.attemptTools(t, "1", false)
@@ -391,6 +396,7 @@ func (b *bench) translated(t *testing.T, att *WorkItem, result map[string]any) {
 // result is only the closed translation-result whose run is the task's own; the answer to the
 // person is a code text with the codes and the vocabulary names.
 func TestTranslator(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newScriptRunBench(t)
 	fwd := Activity{Kind: "message", Channel: "telegram", UpdateID: "f1", Chat: Chat{Kind: "direct", ExternalID: "1001"}, Text: "/hello restart everything", Forwarded: true}
@@ -421,6 +427,7 @@ func TestTranslator(t *testing.T) {
 // resume gets held while the hold acts, its release does not resume the run, only resume from
 // the initiator does, and at the deadline a paused run is canceled (SCR-10).
 func TestScriptHoldPausesRun(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newScriptRunBench(t)
 	att, h := b.attemptTools(t, "1", false)

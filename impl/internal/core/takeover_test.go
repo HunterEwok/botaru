@@ -39,6 +39,7 @@ func (b *bench) grantManagers(t *testing.T) string {
 // canceled as superseded_by_takeover (MGR-21). An apply refuses a takeover card threshold above
 // 0 (takeover_confirm_threshold).
 func TestTakeover(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := managerV02Bench(t, nil, nil, func(ms []map[string]any) {
 		for _, m := range ms {
@@ -165,6 +166,7 @@ spec: {kind: test, timezone: UTC, takeover: {types: [hello.greet.v1], confirm_ab
 // A takeover from v0.3 is paid from the manager line, at most takeover.max_eur each and
 // takeover.manager_month_eur a month with the others staged, pending or approved (MGR-48).
 func TestTakeoverCeilingsV03(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newManagerBench(t)
 	if takeoverLine() != "manager" {
@@ -206,6 +208,7 @@ func TestTakeoverCeilingsV03(t *testing.T) {
 
 // From v0.3 a takeover grant goes only to the role its eval gate checked (MGR-48).
 func TestTakeoverGrantRoleV03(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newManagerBench(t)
 	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO model_grants (id, tenant, task, role, kind, line, profile, attempts, attempts_left, estimate_micros, cap_micros, expires_at,
@@ -238,6 +241,7 @@ func TestTakeoverGrantRoleV03(t *testing.T) {
 // the lease, task and event points of a takeover task stay out of the trial computations of the
 // role (MGR-48, PRP-22).
 func TestTakeoverSeriesV03(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newManagerBench(t)
 	cat, err := b.c.Catalog(ctx)

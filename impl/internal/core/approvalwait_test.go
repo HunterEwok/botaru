@@ -15,6 +15,7 @@ import (
 // write call once the machine is free; then a campaign item on the machine waits for the
 // approval's call, as single approvals count too (ORC-12).
 func TestApprovalWaitsBusyResource(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newCampaignActionBench(t)
 	tmpl := map[string]any{"kind": "action", "action": "fix_web", "args": map[string]any{}}
@@ -157,6 +158,7 @@ func waitingApproval(t *testing.T) (b *actionBench, id string, calls func() int,
 // pause_action keeps it waiting after the machine is free, its release lets it run; no_action
 // cancels it with held. The same request again is the waiting approval, not a second one (APR-2).
 func TestWaitingApprovalHolds(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b, id, calls, free := waitingApproval(t)
 	w := b.approval(t, id)

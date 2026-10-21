@@ -13,6 +13,7 @@ import (
 // store migration renames the keys of notices not sent yet, and the core fills the missing
 // parameters at start, so the channel renders them without a raw placeholder.
 func TestUpgradePlannedNotices(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	b.hello(t, "51")

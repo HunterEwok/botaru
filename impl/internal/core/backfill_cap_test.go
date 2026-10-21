@@ -32,6 +32,7 @@ func capTaskRow(t *testing.T, b *bench, id string) (state, reason string, spent 
 // attempts_exhausted, and keeps the last provider reason; provider_spend_cap is not retried
 // (CAP-2).
 func TestBackfillProviderFailureSpendsNoAttempt(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	task := b.hello(t, "1")
@@ -90,6 +91,7 @@ func TestBackfillProviderFailureSpendsNoAttempt(t *testing.T) {
 // tenant catalog with its writers and quotas is found by its disk subject, and its used space
 // above every quota opens no alarm and no incident of the core (CAP-6).
 func TestBackfillVolumeQuotasNotEnforced(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newToolBenchWith(t, nil, func(ms []map[string]any) []map[string]any {
 		for _, m := range ms {

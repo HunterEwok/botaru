@@ -14,6 +14,7 @@ import (
 )
 
 func TestPrivilegedGroup(t *testing.T) {
+	t.Parallel()
 	cat := newCatalog()
 	cat.TaskTypes["greet"] = manifest.TaskType{Tier: 0}
 	cat.TaskTypes["read"] = manifest.TaskType{Tier: 1}
@@ -41,6 +42,7 @@ func TestPrivilegedGroup(t *testing.T) {
 }
 
 func TestCapCovers(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		have, want string
 		ok         bool
@@ -61,6 +63,7 @@ func TestCapCovers(t *testing.T) {
 // group is deleted only without members, and a group of the store's memberships counts as an
 // ordinary group even when the stored set lacks it.
 func TestApplyPrivilegeRaiseAfterDelete(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	root, err := spec.FindRoot("")
@@ -117,6 +120,7 @@ func TestApplyPrivilegeRaiseAfterDelete(t *testing.T) {
 
 // PRM-13: a grant takes the apply lock in shared mode, so it waits while an apply holds it.
 func TestGrantWaitsForApply(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	tx, err := b.c.st.Pool.Begin(ctx)

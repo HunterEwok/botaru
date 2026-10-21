@@ -72,6 +72,7 @@ func taskTree(t *testing.T, b *bench, id string) treeRecord {
 // A child of enqueue_child and its reply continuation (PRM-6, CNT-1, CNT-2, CNT-3,
 // blackbox:model/child-type-not-allowed, blackbox:model/chain-too-deep).
 func TestChildAndContinuation(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newChainBench(t, 1)
 	root := b.hello(t, "1")
@@ -145,6 +146,7 @@ func TestChildAndContinuation(t *testing.T) {
 // of a continuation is the next task of its tree, not a new root with a fresh depth and budget
 // (PRM-6, CNT-5, DSP-2).
 func TestTreeFollowup(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newChainBench(t, 10)
 	root := b.hello(t, "1")
@@ -224,6 +226,7 @@ func TestTreeFollowup(t *testing.T) {
 // reply within the follow-up window that need_input opens; a command closes the window
 // (CNT-5, blackbox:channel/followup-window).
 func TestFollowupWindow(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newChainBench(t, 10)
 	first := b.hello(t, "1")
@@ -279,6 +282,7 @@ func TestFollowupWindow(t *testing.T) {
 // An attempt without progress for longer than stall_after ends with stalled, is spent and
 // raises alarm.task.stalled; a running tool call holds it (CNT-4, blackbox:core/stall).
 func TestStall(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newChainBench(t, 10)
 	task := b.hello(t, "1")

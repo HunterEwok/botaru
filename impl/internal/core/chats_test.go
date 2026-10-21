@@ -69,6 +69,7 @@ func (b *actionBench) inGroup(t *testing.T, update, identity, text string) *Acti
 // and the full answer by direct message; a person outside the tenant stops the deliveries
 // until the chat is bound again (DLV-7, DLV-15, PRM-15).
 func TestGroupChat(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newGroupBench(t)
 	if r := b.inGroup(t, "1", "telegram:1001", "hi"); r.Result != "ignored" {
@@ -143,6 +144,7 @@ func TestGroupChat(t *testing.T) {
 // An admin with admin:people grants a delegated group from a private chat, and the admins hear
 // of it; a privileged group outside delegated_groups is for the operator only (PRM-16, PRM-7).
 func TestDelegatedGrant(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newGroupBench(t)
 	if r := b.say(t, "1", "telegram:1002", "1002", "/grant telegram:1001 researcher"); r.Result != "reply" || !strings.Contains(r.Text, "is now in group researcher") {
@@ -183,6 +185,7 @@ func TestDelegatedGrant(t *testing.T) {
 // The direct message of a split answer dies: the group gets the request to open a private
 // chat, never the content (DLV-15).
 func TestGroupAnswerNoDirect(t *testing.T) {
+	t.Parallel()
 	// The direct half dies itself, or the notice of AI before it does (DLV-12, DLV-15).
 	for _, failKind := range []string{"task_result", "ai_notice"} {
 		t.Run(failKind, func(t *testing.T) { testGroupAnswerNoDirect(t, failKind) })

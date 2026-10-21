@@ -26,6 +26,7 @@ func (b *actionBench) erasureState(t *testing.T, id string) (string, map[string]
 // purges, and a replay after a restore erases by the recorded ids without a new search (RET-11,
 // RET-6, adapter:channel/cache-erase-match, blackbox:core/purge-any-runtime).
 func TestEraseChannelCacheReplay(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b, _ := newMemoryBench(t)
 	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE workers SET hello = jsonb_set(hello, '{driver}', '{"stores_content": "cache"}') WHERE id = $1`, b.channel.ID); err != nil {
@@ -126,6 +127,7 @@ func TestEraseChannelCacheReplay(t *testing.T) {
 // open (RET-11, RET-7); C3 purge takes the scope (tenant) and deletes every session of it, and
 // an agent worker that ran no attempt of the tenant gets no purge step (RET-11, LCY-1).
 func TestEraseTenantScope(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b, bob := newMemoryBench(t)
 	idle := b.enroll(t, EnrollRequest{Tenant: "demo", Role: "hello", Kind: "agent"})
@@ -185,6 +187,7 @@ func TestEraseTenantScope(t *testing.T) {
 // not_ready instead of holding the request open for good; erasure.retry runs them again once
 // the runtime is back (RET-11, RET-7, OBS-4).
 func TestErasureGoneEdges(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b, _ := newMemoryBench(t)
 	b.hello(t, "1")

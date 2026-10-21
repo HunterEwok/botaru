@@ -17,6 +17,7 @@ import (
 // flags of the first call, untrusted_seen and the flag cached on the call, audit and usage; a
 // no_tool hold and an erasure request of the tenant purge the cache (PRM-12).
 func TestToolOutputCache(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newToolBenchWith(t, nil, func(ms []map[string]any) []map[string]any {
 		for _, m := range ms {

@@ -15,6 +15,7 @@ import (
 // step and opens the export window; delete before its end gets export_window_open, after it an
 // erasure request (tenant) and a tombstone that apply refuses; farm never leaves.
 func TestTenantLifecycle(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	if _, err := b.c.TenantLifecycle(ctx, Operator{Principal: b.op.Principal, Tenant: "farm"}, TenantLifecycleRequest{Op: "tenant.offboard", Tenant: "farm"}); !hasReason(err, "forbidden") {

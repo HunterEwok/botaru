@@ -30,6 +30,7 @@ func countNotices(t *testing.T, b *bench) int {
 // alarm_notice to the admin; resolved gives a second notice (OBS-6, MON-13,
 // blackbox:core/alarm-repeat-count, blackbox:core/alarm-notice-no-monitor).
 func TestAlarmEpisode(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	b.withAdmins(t)
@@ -70,6 +71,7 @@ func TestAlarmEpisode(t *testing.T) {
 // A page alarm repeats its notice every 30 minutes while open: 70 minutes give two reminders
 // (MON-13). A hold does not withhold an alarm notice (HLD-3, MON-1).
 func TestAlarmPageRepeats(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	b.withAdmins(t)
@@ -109,6 +111,7 @@ func TestAlarmPageRepeats(t *testing.T) {
 // A worker silent for longer than two long-poll periods gives worker.stale and the alarm; its
 // next call resolves it (OBS-4, blackbox:core/worker-stale).
 func TestWorkerStale(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	if _, err := b.c.TestClockAdvance(ctx, 121); err != nil {
@@ -143,6 +146,7 @@ func TestWorkerStale(t *testing.T) {
 // A task nobody took before start_by stays submitted and raises alarm.task.unclaimed once; the
 // alarm resolves when the task is taken (DSP-8).
 func TestTaskUnclaimed(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	task := b.hello(t, "1")

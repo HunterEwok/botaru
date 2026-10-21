@@ -17,6 +17,7 @@ import (
 // becomes the catalog values of the attempt and x-botaru-format the pattern and length of the
 // format, so the runtime checks a result as complete does (OUT-1).
 func TestFullResultSchemaPayload(t *testing.T) {
+	t.Parallel()
 	b := newBench(t)
 	ms, at := helloSet(t)
 	tt := ms[at["TaskType"]]["spec"].(map[string]any)
@@ -94,6 +95,7 @@ func TestFullResultSchemaPayload(t *testing.T) {
 // says in its description which kind each series takes; an analysis gets the subjects of its
 // role's work in insight_context (OBV-3).
 func TestObservationsQuerySubjects(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newInsightBench(t, map[string]any{"tools": []any{}})
 	_, att := b.analysisAttempt(t, "1")

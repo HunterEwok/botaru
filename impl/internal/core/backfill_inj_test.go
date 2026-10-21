@@ -22,6 +22,7 @@ import (
 // nothing fetches it while the task runs, and an attached file comes as a file_ref whose
 // content is untrusted, whoever uploaded it.
 func TestBackfillLinkStaysText(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	var hits atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits.Add(1) }))
@@ -71,6 +72,7 @@ func TestBackfillLinkStaysText(t *testing.T) {
 // manifest, a role, a permission, a skill, a persona, a charter, a limit or a budget, a call of
 // such a name is refused, and an attempt leaves the manifests as git set them.
 func TestBackfillModelChangesNoConfig(t *testing.T) {
+	t.Parallel()
 	root, err := spec.FindRoot("")
 	if err != nil {
 		t.Fatal(err)
@@ -132,6 +134,7 @@ func TestBackfillModelChangesNoConfig(t *testing.T) {
 // offered, and a name the adapter sends in the list reaches neither the tool nor the events;
 // a role gets scripts by name or ["*"], never true.
 func TestBackfillScriptNamesFromCatalog(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newScriptBench(t)
 	b.scripts(t, "hash-0003", map[string]any{"scriptid": "17", "input": "none"},

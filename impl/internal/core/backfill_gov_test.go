@@ -14,6 +14,7 @@ import (
 // registry of the manager seat and its holder identity, and no task, fact, case, offer, memory or
 // commission seat (GOV-16, gov-fx-10).
 func TestBackfillGovernanceInTenant(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newManagerBench(t)
 	w := b.enroll(t, EnrollRequest{Tenant: "demo", Kind: "agent", Role: "farm-manager"})
@@ -97,11 +98,12 @@ func TestBackfillGovernanceInTenant(t *testing.T) {
 // and every numeric field moved against its direction; it keeps a seat with a holder, and
 // accepts fields moved in their direction (GOV-33, gov-fx-26).
 func TestBackfillOnlyCharterDeclaresSeats(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newCommissionBench(t, false)
 	try := func(name string, edit func(gov, com map[string]any)) []ApplyError {
 		t.Helper()
-		ms := cloneSet(t, appliedSets[b])
+		ms := cloneSet(t, b.applied)
 		edit(specOf(ms, "Governance", "demo"), specOf(ms, "Commission", "demo"))
 		res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: strings.Repeat("5", 40), Manifests: ms, DryRun: true})
 		if err != nil {
@@ -173,7 +175,7 @@ func TestBackfillOnlyCharterDeclaresSeats(t *testing.T) {
 	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE seats SET holder = $1, state = 'held' WHERE tenant = 'demo' AND id = 'commission:4'`, bot); err != nil {
 		t.Fatal(err)
 	}
-	ms := cloneSet(t, appliedSets[b])
+	ms := cloneSet(t, b.applied)
 	c := specOf(ms, "Governance", "demo")["commission"].(map[string]any)
 	c["seats"] = c["seats"].([]any)[:3]
 	if res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: strings.Repeat("6", 40), Manifests: ms}); err == nil && res.Applied {
@@ -188,6 +190,7 @@ func TestBackfillOnlyCharterDeclaresSeats(t *testing.T) {
 // charter of another tenant named farm is a tenant charter and may not declare the manager seat
 // (GOV-33).
 func TestBackfillFarmCharterByTenant(t *testing.T) {
+	t.Parallel()
 	c := lintCore(t)
 	charter := func(meta string) string {
 		return "apiVersion: botaru/v1alpha1\nkind: Governance\nmetadata: " + meta + "\nspec:\n  farm_manager: {incident_stop: {decide_within: 3d}}\n"

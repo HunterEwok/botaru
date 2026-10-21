@@ -22,6 +22,7 @@ import (
 // within the daily limit per person, and the seat learns only how many it reached; a person
 // answers "Useful" once (MGR-52).
 func TestManagerAttentionV03(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newManagerBenchWith(t, managerWorkFiles, append(withIncidentTeam(nil), directors), workEdit)
 	b.member(t, "demo", b.alice, "incident-team")
@@ -104,6 +105,7 @@ func TestManagerAttentionV03(t *testing.T) {
 // the tenth card of her day; the next notice no longer reaches her though the 3 notices a day
 // are not used up, and a decision card for her would wait.
 func TestManagerAttentionCardLimitV03(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newManagerBenchWith(t, managerWorkFiles, append(withIncidentTeam(nil), directors), workEdit)
 	b.member(t, "demo", b.alice, "incident-team")
@@ -159,6 +161,7 @@ func TestManagerAttentionCardLimitV03(t *testing.T) {
 
 // A model paragraph may only use the numbers of the table (MGR-53).
 func TestParagraphChecked(t *testing.T) {
+	t.Parallel()
 	table := map[string]any{"alarm_values": []any{map[string]any{"free_pct": 3}}, "ops": 2}
 	table["incident"] = "inc_01J9Z8"
 	if !paragraphChecked("Free space fell to 3 percent after 2 operations.", []string{"alarms", "inc_01J9Z8"}, table) ||
@@ -193,6 +196,7 @@ func claimPostmortem(ms []map[string]any) {
 // A resolved incident gets one analysis; reopened and resolved again it gets none and the
 // resolve goes through. Analyses share the day's ceiling at claim (MGR-53).
 func TestPostmortemOnceV03(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newManagerBenchWith(t, nil, []map[string]any{postmortemDoc()}, claimPostmortem)
 	cycle := func(free float64) {
@@ -269,6 +273,7 @@ func TestPostmortemOnceV03(t *testing.T) {
 // and quiet hours defer manager_attention (never the digest), as they never defer a decision
 // card (MGR-52, DLV-10).
 func TestAttentionClosedQuietV03(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newManagerBench(t)
 	ok := map[string]any{"sees": "disk_growth", "object": "t_01J9Z3M2Q8YB6V4N7T5K0C2D1E", "threat": "disk_full_soon", "proposal": map[string]any{"op": "hold"}}
@@ -320,6 +325,7 @@ func TestAttentionClosedQuietV03(t *testing.T) {
 // The weekly holder report goes once a week to the farm operators with numbers only, and the
 // daily summary is sent even for an empty day (MGR-50).
 func TestHolderReportV03(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newManagerBench(t)
 	op := b.farmOperator(t)
@@ -346,6 +352,7 @@ func TestHolderReportV03(t *testing.T) {
 // give no rejected-proposal candidate; the reviewer input has no author level; at most 2 a month
 // per tenant (MGR-51, GOV-38, GOV-41, COM-15).
 func TestManagerProposalsV03(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	if authorLevel(true, "manage") != 2 || authorLevel(false, "aggregate") != 1 || authorLevel(false, "insight") != 0 {
 		t.Fatal("author levels")

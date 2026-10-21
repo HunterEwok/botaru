@@ -213,6 +213,7 @@ func kbRecord(t *testing.T, b *bench, task string) map[string]any {
 
 // Without the knowledge profile the corpora, the skills and their operations are refused
 // (MAN-11; the profile seam of the flip).
+// Not parallel: it sets the profile override of the whole test process (spec.SetProfileOverride).
 func TestKnowledgeProfileOffRefuses(t *testing.T) {
 	ctx := context.Background()
 	withoutProfile(t, "knowledge")
@@ -260,6 +261,7 @@ func TestKnowledgeProfileOffRefuses(t *testing.T) {
 // set untrusted_seen, while an ingested corpus's does, with the corpus as the source; both
 // come as a data block with the corpus trust.
 func TestKNW2TrustBySource(t *testing.T) {
+	t.Parallel()
 	b := newKBBench(t, nil)
 	ctx := context.Background()
 	var bad map[string]any
@@ -308,6 +310,7 @@ func TestKNW2TrustBySource(t *testing.T) {
 // demo, and a demo2 fragment id is not_found), a corpus above the task mark is not offered and
 // is refused, and a personal corpus sets personal_seen declared.
 func TestKNW1TenantScopeClassPersonal(t *testing.T) {
+	t.Parallel()
 	b := newKBBench(t, nil)
 	ctx := context.Background()
 	canary := "zebracanary" + strings.ToLower(ids.Secret(6))
@@ -377,6 +380,7 @@ func TestKNW1TenantScopeClassPersonal(t *testing.T) {
 // KNW-3: corpus text reaches the model only as P3 output: an attempt's work item carries no
 // document text, and its instruction is the text from git.
 func TestKNW3CorpusOnlyThroughTools(t *testing.T) {
+	t.Parallel()
 	b := newKBBench(t, nil)
 	canary := "otterword" + strings.ToLower(ids.Secret(6))
 	if r := b.apply(t, ApplyRequest{Knowledge: []KnowledgeFolder{folder("demo", "runbooks", "a.md", "Greeting rule: "+canary)}}); !r.Applied {
@@ -397,6 +401,7 @@ func TestKNW3CorpusOnlyThroughTools(t *testing.T) {
 // credential's tenant; kb.index_put writes only for the leased ingest task's corpus and
 // document; agent roles have no corpus write tool.
 func TestKNW4WriteRights(t *testing.T) {
+	t.Parallel()
 	b := newKBBench(t, nil)
 	ctx := context.Background()
 	staff := Operator{Principal: b.staff, Tenant: "demo"}
@@ -471,6 +476,7 @@ func TestKNW4WriteRights(t *testing.T) {
 // KNW-5: deleting a document, the expiry of its file and removing the corpus delete its
 // fragments, and search no longer finds them; kb tool output is never cached (PRM-12).
 func TestKNW5DeleteDocumentFragments(t *testing.T) {
+	t.Parallel()
 	b := newKBBench(t, nil)
 	ctx := context.Background()
 	if r := b.apply(t, ApplyRequest{Knowledge: []KnowledgeFolder{folder("demo", "runbooks", "a.md", "alpha valve", "b.md", "beta valve")}}); !r.Applied {
@@ -546,6 +552,7 @@ func TestKNW5DeleteDocumentFragments(t *testing.T) {
 // The query text of kb_search goes into no table: not the audit, not the task, not a tool
 // call record (D8).
 func TestKBSearchQueryNotStored(t *testing.T) {
+	t.Parallel()
 	b := newKBBench(t, nil)
 	ctx := context.Background()
 	canary := "quokkaquery" + strings.ToLower(ids.Secret(8))
@@ -587,6 +594,7 @@ func TestKBSearchQueryNotStored(t *testing.T) {
 // The search is a word search: every word must match, ordered by occurrences; there are no
 // operators (D8, docs/capabilities.md). kb_read reads on in document order.
 func TestKBSearchWordsAndRead(t *testing.T) {
+	t.Parallel()
 	b := newKBBench(t, nil)
 	ctx := context.Background()
 	if got, err := searchWords(ctx, b.c.st.Pool, "Pump* OR a pump, VALVE x! user@example.com"); err != nil || !slices.Equal(got, []string{"pump", "or", "valve", "user@example.com"}) {
@@ -644,6 +652,7 @@ func skillMD(name, desc, body string) []byte {
 // SKL-1: the skill cases of conformance/fixtures/manifests/v02-lints.yaml and a symbolic link
 // pass or fail apply as they expect, with skill_format.
 func TestSKL1SkillFormat(t *testing.T) {
+	t.Parallel()
 	b := newKBBench(t, nil)
 	root, _ := spec.FindRoot("")
 	cases := fixtureCases(t, filepath.Join(root, "conformance/fixtures/manifests/v02-lints.yaml"))
@@ -724,6 +733,7 @@ func skilledBench(t *testing.T, body string) (*kbBench, string) {
 // copy gives a warning at apply and no attempt; a hello of skills: farm, or without the
 // declaration for a role with skills, is refused (SKL-4 deferred).
 func TestSKL2SkillsByHash(t *testing.T) {
+	t.Parallel()
 	b, hash := skilledBench(t, "Check the disk first.\n")
 	ctx := context.Background()
 	if _, err := b.c.Hello(ctx, b.agent, HelloRequest{Kind: "agent", ProtocolVersions: []string{"v1"}}); reasonOf(err) != "version_unsupported" {
@@ -779,6 +789,7 @@ func TestSKL2SkillsByHash(t *testing.T) {
 // SKL-3: a skill that names a tool outside the role does not change tools/list, the tier or
 // the data mark of the task.
 func TestSKL3SkillDoesNotChangeCatalog(t *testing.T) {
+	t.Parallel()
 	plain := newKBBench(t, nil)
 	_, h := plain.attemptTools(t, "s3a", false)
 	before := toolNames(t, plain.bench, h)
@@ -797,6 +808,7 @@ func TestSKL3SkillDoesNotChangeCatalog(t *testing.T) {
 // PRV-3: the skills part of the static fingerprint is the hash of the role's skill tree hashes;
 // a skill change changes the fingerprint.
 func TestPRV3SkillsInStaticFingerprint(t *testing.T) {
+	t.Parallel()
 	none, err := staticFingerprint("sha256:r", nil, "", "base-std", "", "core", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -824,6 +836,7 @@ func emptyListHash(t *testing.T) string {
 // The deferred SKL-4 and the word search tools: skill_read is never offered and a call to it
 // is refused; runtime.skills: farm is version_unsupported (TestSKL2SkillsByHash).
 func TestSKL4SkillReadNotOffered(t *testing.T) {
+	t.Parallel()
 	b, _ := skilledBench(t, "Body.\n")
 	helloSkills(t, b)
 	_, h := b.attemptTools(t, "s4", false)
@@ -844,6 +857,7 @@ func TestSKL4SkillReadNotOffered(t *testing.T) {
 // KNW-1, PRM-5: a corpus without data_class has the class of its documents' mark (internal):
 // a summary task is not offered it and is refused, a task whose mark covers internal reads it.
 func TestKNW1CorpusWithoutClass(t *testing.T) {
+	t.Parallel()
 	b := newKBBench(t, nil)
 	ctx := context.Background()
 	if r := b.apply(t, ApplyRequest{Knowledge: []KnowledgeFolder{folder("demo", "nodata", "n.md", "internal note about the valve")}}); !r.Applied {
@@ -874,6 +888,7 @@ func TestKNW1CorpusWithoutClass(t *testing.T) {
 // KNW-5, RET-10: an expired git document is gone from search, and the next apply that carries
 // its folder brings it back for a new ingest.
 func TestKNW5ExpiredGitDocumentComesBack(t *testing.T) {
+	t.Parallel()
 	b := newKBBench(t, nil)
 	ctx := context.Background()
 	f := folder("demo", "runbooks", "a.md", "alpha valve")
@@ -900,6 +915,7 @@ func TestKNW5ExpiredGitDocumentComesBack(t *testing.T) {
 // A refused ingest enqueue and a failed ingest task leave the document failed with the reason;
 // the next apply enqueues it again.
 func TestKBIngestFailedRetriedAtApply(t *testing.T) {
+	t.Parallel()
 	b := newKBBench(t, nil)
 	ctx := context.Background()
 	noOps := make([]map[string]any, 0, len(b.ms))
@@ -956,6 +972,7 @@ func TestKBIngestFailedRetriedAtApply(t *testing.T) {
 
 // CAP-1: a git document over the tenant's storage ceiling is left out with a warning.
 func TestKBGitDocumentStorageCeiling(t *testing.T) {
+	t.Parallel()
 	b := newKBBench(t, nil)
 	ms := make([]map[string]any, 0, len(b.ms))
 	for _, m := range b.ms {
@@ -983,6 +1000,7 @@ func TestKBGitDocumentStorageCeiling(t *testing.T) {
 
 // The log line of a missing skill copy comes at most once per interval for one role's pins.
 func TestSkillMissingWarnRateLimited(t *testing.T) {
+	t.Parallel()
 	refs := []manifest.SkillRef{{Name: "a", SHA256: strings.Repeat("1", 64)}}
 	now := time.Now()
 	if !skillWarnDue("t-rl", "r", refs, now) || skillWarnDue("t-rl", "r", refs, now.Add(time.Minute)) {

@@ -32,6 +32,7 @@ func countKind(t *testing.T, b *bench, kind, state string) int {
 // (MON-11, MON-12, blackbox:monitor/export-retry, blackbox:monitor/export-order,
 // blackbox:core/alarm-path-monitor).
 func TestMonitorExport(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	b.withAdmins(t)
@@ -91,6 +92,7 @@ func TestMonitorExport(t *testing.T) {
 // admins; after 20 more minutes no second message; the export coming back resolves the alarm
 // (MON-11, MON-12, blackbox:monitor/export-stalled).
 func TestMonitorExportStalled(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	b.withAdmins(t)
@@ -130,6 +132,7 @@ func TestMonitorExportStalled(t *testing.T) {
 // finds a head with a changed hash, a foreign signature, seq falling within an epoch and an
 // edit of the store (MON-3, blackbox:core/audit-head-signed).
 func TestAuditHead(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	mon := b.monitorOn(t)
@@ -240,6 +243,7 @@ func TestAuditHead(t *testing.T) {
 // A hold with no_delivery does not withhold the export; a newer change of the same alarm
 // replaces one not handed out yet (MON-1, MON-11).
 func TestMonitorExportHoldAndSupersede(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	b.withAdmins(t)
@@ -284,6 +288,7 @@ func (b *bench) loop(t *testing.T, loop string) {
 
 // The untrusted monitor tools record the documented source ids (INJ-13, e3-tool-host.md).
 func TestUntrustedSource(t *testing.T) {
+	t.Parallel()
 	for tool, want := range map[string]string{"monitor/item_text": "monitor_item_text", "monitor/problem_comments": "monitor_comment", "web/fetch": "web/fetch"} {
 		if got := untrustedSource(tool); got != want {
 			t.Errorf("%s: %s, want %s", tool, got, want)
@@ -294,6 +299,7 @@ func TestUntrustedSource(t *testing.T) {
 // MON-5: an alarm of the class unknown is alarm.monitor.problem with severity warn, as the
 // class table sets it.
 func TestMonitorProblemSeverity(t *testing.T) {
+	t.Parallel()
 	c := lintCore(t)
 	if s, err := c.alarmSeverity(Alarm{Name: "monitor.problem"}); err != nil || s != "warn" {
 		t.Fatalf("severity %q %v", s, err)

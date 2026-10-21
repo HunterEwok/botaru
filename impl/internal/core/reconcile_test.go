@@ -58,6 +58,7 @@ func (b *bench) used(t *testing.T) int64 {
 // 35 days raises the overdue alarm, which only a reconciliation resolves; an estimated line
 // past seven days without a reconciliation stops counting.
 func TestReconcile(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	if _, err := b.c.TestClockSet(ctx, time.Date(2027, 3, 2, 12, 0, 0, 0, time.UTC)); err != nil {
@@ -183,6 +184,7 @@ func TestReconcile(t *testing.T) {
 // example tenant) is deleted by the loop while its metadata stays, a younger one keeps its
 // content, and the key of a deleted task answers gone.
 func TestRetention(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	old := b.helloDone(t, "1", "", "old answer")
@@ -219,6 +221,7 @@ func TestRetention(t *testing.T) {
 // answers draining with the seconds to the deadline, a tenant operator cannot drain, and the
 // next core start hands out work again.
 func TestDrain(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	if _, err := b.c.CoreDrain(ctx, b.op, CoreDrainRequest{Until: "10m"}); err == nil {
@@ -251,6 +254,7 @@ func TestDrain(t *testing.T) {
 // doctor answers on a store pool of one connection: nothing inside its transaction asks the
 // pool for a second one (the catalog is loaded before).
 func TestDoctorOneConnection(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	cfg := b.c.st.Pool.Config()

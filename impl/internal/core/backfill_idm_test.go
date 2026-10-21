@@ -85,6 +85,7 @@ func keyPrefix(e ast.Expr, vars map[string][]ast.Expr, depth int) []string {
 // with system:, which no sender may use, and a double firing of one trigger gives one task
 // (IDM-2, blackbox:core/system-key-list).
 func TestBackfillCoreKeys(t *testing.T) {
+	t.Parallel()
 	kinds := coreKeyKinds(t)
 	fset := token.NewFileSet()
 	files, err := filepath.Glob("*.go")

@@ -60,6 +60,7 @@ func obsPoints(t *testing.T, out map[string]any) []map[string]any {
 // operator reads them through obs.series, and another tenant sees neither the series subject
 // nor the points (OBV-3, OBV-5, OBV-6, TEN-4).
 func TestObserveCoreSeries(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newObsBench(t)
 	b.helloDone(t, "1", "", "hi")
@@ -97,6 +98,7 @@ func TestObserveCoreSeries(t *testing.T) {
 // a subject of its catalog; the observe loop turns it into farm.external.* and the backup age,
 // and the job reads only its type's observes (OBV-3, OBV-7, IDM-4).
 func TestEmitRunFinished(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newObsBench(t)
 	b.hello(t, "1")
@@ -161,6 +163,7 @@ func TestEmitRunFinished(t *testing.T) {
 // Points go after the raw period and rollups after the rollup period, only in whole calendar
 // months: a month goes once its last day is past the period (OBV-4, RET-10).
 func TestObserveRetention(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newObsBench(t)
 	// The clock goes to the 21st day of a month, so the months below are known.
@@ -204,6 +207,7 @@ func TestObserveRetention(t *testing.T) {
 // of the call; a value outside the series bounds and an untrusted or failed call write nothing
 // (OBV-1, OBV-2).
 func TestToolSeries(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newToolBenchWith(t, nil, func(ms []map[string]any) []map[string]any {
 		return append(ms, map[string]any{
@@ -247,6 +251,7 @@ func TestToolSeries(t *testing.T) {
 // A batch full of rows with one time does not hold the cursor: the next pass reads after the
 // last row of the batch, and a task that ends later is observed.
 func TestObserveCursorFullBatch(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newObsBench(t)
 	id := b.helloDone(t, "1", "", "hi")
@@ -269,6 +274,7 @@ func TestObserveCursorFullBatch(t *testing.T) {
 
 // A window longer than the raw points kept is refused for a rollup the series does not store.
 func TestObsWindowBeyondRaw(t *testing.T) {
+	t.Parallel()
 	b := newObsBench(t)
 	q := ObsQueryRequest{Series: seriesTaskOutcome, Subject: "task_type:hello.greet.v1", Window: "93d", Rollup: "window.share"}
 	if out, err := b.c.ObsSeries(context.Background(), b.op, q); err == nil {
@@ -283,6 +289,7 @@ func TestObsWindowBeyondRaw(t *testing.T) {
 // A tenant series of source job takes its field from run.finished.v1 on the event's catalog
 // subject (OBV-1, OBV-7).
 func TestEmitJobSeries(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newToolBenchWith(t, nil, func(ms []map[string]any) []map[string]any {
 		for _, m := range ms {
@@ -321,6 +328,7 @@ func TestEmitJobSeries(t *testing.T) {
 // Emit takes the data schema of the events catalog for any type a job produces; a type the
 // core produces is never published by a job (IDM-4).
 func TestJobEventSchema(t *testing.T) {
+	t.Parallel()
 	b := newObsBench(t)
 	for typ, want := range map[string]string{runFinishedType: "run-finished", "alarm.disk.free.low.v1": "alarm", "alarm.worker.stale.v1": "", "schedule.skipped": "", "no.such.v1": ""} {
 		got, ok, err := b.c.jobEventSchema(typ)
@@ -333,6 +341,7 @@ func TestJobEventSchema(t *testing.T) {
 // A job's alarm goes the one alarm path: an episode opens once, its alarmkey must be its name
 // and subject, and a resolution closes it (MON-1, OBS-6).
 func TestEmitAlarm(t *testing.T) {
+	t.Parallel()
 	b := newObsBench(t)
 	ctx := context.Background()
 	alarm := func(state, key string) (string, error) {
@@ -383,6 +392,7 @@ func TestEmitAlarm(t *testing.T) {
 // Rollups cover periods older than two days that no rollup has yet, within the raw points
 // kept, and a window longer than the rollups kept is refused (OBV-4).
 func TestObserveRollupBackfill(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newToolBenchWith(t, nil, func(ms []map[string]any) []map[string]any {
 		return append(ms, map[string]any{
@@ -416,6 +426,7 @@ func TestObserveRollupBackfill(t *testing.T) {
 // canary point of another tenant in the same series and subject is not in the answer (AGG-3,
 // AGG-5).
 func TestAggregatorReads(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	cat := &Catalog{Tenants: map[string]*TenantView{}, Roles: map[string]manifest.Role{"agg": {Profile: "aggregator",

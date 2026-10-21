@@ -68,6 +68,7 @@ var factProposals = []any{
 // the window, refuses a proposal without enough evidence with an event, and the next attempt
 // of the identity reads the facts without their author (MEM-6).
 func TestFactsProposeAndRead(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newFactBench(t)
 	bot := b.botOf(t, b.agent.ID)
@@ -120,6 +121,7 @@ func TestFactsProposeAndRead(t *testing.T) {
 // inherited, and sealed; without a successor the offer waits for the first identity enrolled
 // in the role (MEM-7).
 func TestFactsOffer(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newFactBench(t)
 	old := b.botOf(t, b.agent.ID)
@@ -167,6 +169,7 @@ func TestFactsOffer(t *testing.T) {
 // it hands the runtime, and the type's schema stays as it is; a duration fact on a resource is
 // refused, since the attempt times are kept by task type only (MEM-6).
 func TestFactsProposeSchemaAndOn(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newFactBench(t)
 	bot := b.botOf(t, b.agent.ID)

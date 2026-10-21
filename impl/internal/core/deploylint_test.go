@@ -73,6 +73,7 @@ func deployCodes(t *testing.T, c *Core, doc string) []string {
 // The deployment descriptions of the skeleton examples and of impl/deploy/compose pass the
 // deployment lint, and the base of these tests does too (DEP-10, D-88).
 func TestDeployLintExamples(t *testing.T) {
+	t.Parallel()
 	c := lintCore(t)
 	for _, p := range []string{"examples/deploy/farm.yaml", "examples/deploy/single.yaml", "deploy/compose.example.yaml", "impl/deploy/compose/deploy.yaml"} {
 		b, err := os.ReadFile(filepath.Join(c.spec.Root, p))
@@ -94,6 +95,7 @@ func TestDeployLintExamples(t *testing.T) {
 // Each placement rule of the deployment lint fails a description that breaks it (DEP-1,
 // DEP-3, DEP-4, DEP-6, DEP-7, DEP-8, DEP-9, DEP-11, SEC-2, SEC-5, MON-2, RET-5, D-75, D-86).
 func TestDeployLintRules(t *testing.T) {
+	t.Parallel()
 	c := lintCore(t)
 	cases := []struct {
 		rule, old, new, want string
@@ -170,6 +172,7 @@ func TestDeployLintRules(t *testing.T) {
 // scope, a channel process named as a channel its channel, another tenant process the tenant,
 // a farm process none (SEC-6, DEP-10).
 func TestDeploySecretScopes(t *testing.T) {
+	t.Parallel()
 	c := lintCore(t)
 	l, err := LintDeploy(c.spec, []byte(deployBase))
 	if err != nil || l.Err() != nil {
@@ -196,6 +199,7 @@ func TestDeploySecretScopes(t *testing.T) {
 // The core refuses to start with a failing deployment description or one whose farm nodes
 // differ from the settings, and doctor lints it again (DEP-10, DEP-11).
 func TestDeployStartAndDoctor(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	good, bad := filepath.Join(dir, "good.yaml"), filepath.Join(dir, "bad.yaml")
 	if err := os.WriteFile(good, []byte(deployBase), 0o600); err != nil {

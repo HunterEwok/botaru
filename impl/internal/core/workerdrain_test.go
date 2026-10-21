@@ -14,6 +14,7 @@ import (
 // asks for release, and release does not spend the attempt; the expired lease of a draining
 // worker that stays silent past its deadline is not spent either (LCY-4).
 func TestWorkerDrainDeadline(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	task := b.hello(t, "1")

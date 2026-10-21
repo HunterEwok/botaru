@@ -13,6 +13,7 @@ import (
 // A type checked by the core's own result schema hands the runtime that schema with every
 // $ref inlined, so that a real model can read it as text; any other type gets none.
 func TestCoreResultSchemaInlined(t *testing.T) {
+	t.Parallel()
 	b := newBench(t)
 	for _, tc := range []struct {
 		purpose string

@@ -91,6 +91,7 @@ func (b *scriptBench) scripts(t *testing.T, hash string, list ...map[string]any)
 // whatever class the adapter claims; the alarm of a host resolves with its last open problem;
 // a node outside the catalog does not enter (MON-5, blackbox:monitor/trigger-not-in-catalog).
 func TestMonitorProblem(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newScriptBench(t)
 	b.problem(t, "901", "4401", "web1", "open")
@@ -140,6 +141,7 @@ func TestMonitorProblem(t *testing.T) {
 // that reads it; an unchanged list gives no event; the note goes on the open problem of the
 // host (MON-10, MON-8, blackbox:monitor/script-name-closed).
 func TestScriptRun(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newScriptBench(t)
 	b.scripts(t, "hash-0001", map[string]any{"scriptid": "17", "input": "none"},
@@ -265,6 +267,7 @@ func TestScriptRun(t *testing.T) {
 // Guards: an initiator without monitor.script_run, a hold, one run per host at a time, a run
 // no adapter takes and a lease that runs out (D-73, HLD-3, APR-7).
 func TestScriptRunGuards(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newScriptBench(t)
 	b.scripts(t, "hash-0001", map[string]any{"scriptid": "17", "input": "none"})
@@ -341,7 +344,7 @@ func waitScript(t *testing.T, b *bench) {
 
 func queued(t *testing.T, b *bench) bool {
 	t.Helper()
-	for range 200 {
+	for range 1000 {
 		var n int
 		if err := b.c.st.Pool.QueryRow(context.Background(), `SELECT count(*) FROM toolcalls WHERE tool = $1 AND state = 'queued'`, scriptRight).Scan(&n); err != nil {
 			t.Fatal(err)
@@ -374,6 +377,7 @@ func recv(t *testing.T, ch <-chan struct {
 // A hold set after the call was queued withholds the run at hand-out, and a released run ends
 // its call instead of going back to the queue (HLD-3, MON-10).
 func TestScriptRunHandout(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newScriptBench(t)
 	b.scripts(t, "hash-0001", map[string]any{"scriptid": "17", "input": "none"})
@@ -446,6 +450,7 @@ func TestScriptRunHandout(t *testing.T) {
 // machine is held; after the window ends a later period of the same window is a new hold;
 // after a person released the hold the window sets no new one; a farm node sets nothing.
 func TestMaintenanceWindow(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newScriptBench(t)
 	poll := func(n int, state string, until time.Duration) *ActivityResult {

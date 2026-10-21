@@ -115,6 +115,7 @@ func (b *bench) stopAlarm(t *testing.T, firing bool) {
 // farm each time, the previous holder leaves with the next one as successor, and every change
 // grows the epoch and tells the admins (MGR-1, MGR-31).
 func TestManagerSeatAssign(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newManagerBench(t)
 	if _, err := b.c.SeatAssign(ctx, b.op, SeatRequest{Seat: managerSeatID}); err == nil {
@@ -160,6 +161,7 @@ func TestManagerSeatAssign(t *testing.T) {
 // A hold on the scope seat stops the seat with the reason human in the same transaction, and
 // its release returns it to held; both grow the epoch (MGR-15).
 func TestManagerSeatHumanStop(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newManagerBench(t)
 	if _, err := b.c.SeatAssign(ctx, b.farmOp(), SeatRequest{Seat: managerSeatID}); err != nil {
@@ -184,6 +186,7 @@ func TestManagerSeatHumanStop(t *testing.T) {
 
 // A stop reason added to or removed from a vacant seat grows the epoch and keeps it vacant.
 func TestManagerVacantSeatStop(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newManagerBench(t)
 	if _, err := b.c.SeatAssign(ctx, b.farmOp(), SeatRequest{Seat: managerSeatID}); err != nil {
@@ -213,6 +216,7 @@ func TestManagerVacantSeatStop(t *testing.T) {
 // the field is not used, the seat keeps its holder, epoch and empty reasons, no decide_within
 // deadline retires the holder, and seat.resume by the incident is refused (GOV-47, MGR-55).
 func TestManagerIncidentStop(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newManagerBench(t)
 	if _, err := b.c.SeatAssign(ctx, b.farmOp(), SeatRequest{Seat: managerSeatID}); err != nil {
@@ -247,6 +251,7 @@ func TestManagerIncidentStop(t *testing.T) {
 // holder with the seat epoch; a vacant seat leaves it waiting, and a tenant without the manager
 // enrolls no seat worker (MGR-1, MGR-3, MGR-42).
 func TestManagerSeatTask(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newManagerBench(t)
 	w := b.enroll(t, EnrollRequest{Tenant: "demo", Kind: "agent", Role: "farm-manager"})
@@ -288,6 +293,7 @@ func TestManagerSeatTask(t *testing.T) {
 
 // A tenant with farm_manager.enabled: false enrolls no worker of a seat role (MGR-42).
 func TestManagerDisabledTenant(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newManagerBench(t, func(ms []map[string]any) {
 		for _, m := range ms {
@@ -318,6 +324,7 @@ func (b *bench) loadBot(t *testing.T, id string) *botRow {
 // A class threshold on the free share gives a used-bytes threshold only with the volume size
 // (MGR-33).
 func TestUsedThreshold(t *testing.T) {
+	t.Parallel()
 	spec := map[string]any{"detect": map[string]any{"when": []any{map[string]any{"atom": "lt", "field": "values.free_pct", "value": 5}}}}
 	if _, ok := usedThreshold(spec, map[string]any{}); ok {
 		t.Fatal("a threshold without the volume size")
@@ -334,6 +341,7 @@ func TestUsedThreshold(t *testing.T) {
 // Disk growth compares the numbers logged at the window's start and at its end, not the
 // numbers of the incident's opening (MGR-34).
 func TestAlarmValuesAt(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newManagerBench(t)
 	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -364,6 +372,7 @@ func TestAlarmValuesAt(t *testing.T) {
 // A seat task answers to the tenant's consent group as it stands, not to the system initiator
 // (MGR-3).
 func TestSeatConsent(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newManagerBench(t)
 	cat, err := b.c.Catalog(ctx)

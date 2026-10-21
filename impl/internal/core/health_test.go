@@ -20,6 +20,7 @@ func openAlarms(t *testing.T, b *bench, alarm string) int {
 // tick is older than the threshold makes health not alive with loop_stale and gives
 // alarm.health.loop_tick for that loop (OBS-4, OBS-9).
 func TestLoopTicks(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	if err := b.c.Tick(ctx); err != nil {
@@ -68,6 +69,7 @@ func TestLoopTicks(t *testing.T) {
 // health answer; the share of deliveries delivered within 10 minutes is counted over the
 // deliveries that had their 10 minutes (OBS-9, blackbox:core/health-indicators).
 func TestHealthIndicators(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	task := b.hello(t, "1")
@@ -109,6 +111,7 @@ func TestHealthIndicators(t *testing.T) {
 // and alarm.store.free.low fires; below the hard one P1 answers not_ready to claim but lets
 // complete pass and health is not alive; above both the alarm resolves (CAP-5).
 func TestStoreFreeSpace(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	free := uint64(50)
@@ -167,6 +170,7 @@ func TestStoreFreeSpace(t *testing.T) {
 // While the store was unavailable P1 answers not_ready with retry_after_s, and health is not
 // alive until every loop ticked again (OBS-8).
 func TestStoreDownGate(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	b.c.storeDown.Store(true)
@@ -183,6 +187,7 @@ func TestStoreDownGate(t *testing.T) {
 // A loop that never ticked since the loops started counts its age from the start: one stuck
 // in its first pass makes health not alive and raises its alarm (OBS-4, OBS-9).
 func TestLoopNeverTicked(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	b.c.running.Store(true)

@@ -12,6 +12,7 @@ import (
 // the admin change of a principal and a membership, the allowed and the refused enqueue, the
 // claim, the completion, the delivery and the audit read itself (AUD-1).
 func TestBackfillAuditRecordsDecisions(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	task := b.helloDone(t, "1", "", "Hello, alice!")
@@ -61,6 +62,7 @@ func TestBackfillAuditRecordsDecisions(t *testing.T) {
 // answer reaches the task body and the delivery, which are content with an expiry, but no audit
 // record, event, usage line, observation point or rollup, loop tick or alarm value (AUD-2).
 func TestBackfillAuditMetadataOnly(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	const canary = "CANARY7f3a9q"

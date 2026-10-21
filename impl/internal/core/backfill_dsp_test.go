@@ -16,6 +16,7 @@ import (
 // claim answers with a work item, and an enqueued task waits in the queue without a lease until
 // a worker claims it (DSP-1).
 func TestBackfillWorkOnlyByClaim(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root, err := spec.FindRoot("")
 	if err != nil {
@@ -69,6 +70,7 @@ func TestBackfillWorkOnlyByClaim(t *testing.T) {
 // person's direct request of an interactive type, class 1 comes from no request or type, and a
 // higher class is handed out before any lower one (DSP-5).
 func TestBackfillPriorityClasses(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newPeopleBench(t, func(ms []map[string]any) {
 		for _, m := range ms {

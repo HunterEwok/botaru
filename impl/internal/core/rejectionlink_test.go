@@ -46,6 +46,7 @@ func linkBench(t *testing.T) *bench {
 // the open candidates and the departures that wait. The work of a reviewer has no link id and
 // no cause (the P4 canary of GOV-46).
 func TestRejectionLinksV03(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := linkBench(t)
 	alice := Operator{Principal: b.alice, Tenant: "demo"}

@@ -12,6 +12,7 @@ import (
 // with audit.read and data:<mark> in the message's tenant, wrapped and audited; another tenant's
 // message is the same not_found as a nonexistent one (MSG-18).
 func TestMessageViews(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newMsgBenchWith(t, func(ms []map[string]any) []map[string]any {
 		return append(ms, map[string]any{"apiVersion": "botaru/v1alpha1", "kind": "Group", "metadata": map[string]any{"name": "auditors", "tenant": "demo"},

@@ -15,6 +15,7 @@ import (
 // Slots across both 2027 transitions of Europe/Berlin: 02:30 does not exist on 28 March and is
 // a gap; it occurs twice on 31 October and runs once, at the first instant (TIM-3).
 func TestCronSlots(t *testing.T) {
+	t.Parallel()
 	berlin, err := time.LoadLocation("Europe/Berlin")
 	if err != nil {
 		t.Fatal(err)
@@ -56,6 +57,7 @@ func TestCronSlots(t *testing.T) {
 // The limit on lowering a schedule's frequency counts from the value applied 90 days earlier:
 // one halving passes, a second halving within the 90 days does not (PRP-16).
 func TestCronCumulative(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	cat := &Catalog{Tenants: map[string]*TenantView{"demo": {Name: "demo", Schedules: map[string]manifest.Schedule{"nightly": {Cron: "0 */2 * * *"}}}}}

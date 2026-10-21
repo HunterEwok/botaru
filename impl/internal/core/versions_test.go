@@ -37,6 +37,7 @@ func helloSet(t *testing.T) ([]map[string]any, map[string]int) {
 // nothing of the set is applied, and the same set without them passes (MAN-11, D-114,
 // blackbox:core/apply-later-version). Role skills, of the claimed knowledge profile, pass.
 func TestApplyLaterVersion(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	ms, at := helloSet(t)
@@ -108,6 +109,7 @@ func itoa(i int) string { return strconv.Itoa(i) }
 // The set lint sees the store as it will be after the apply: an object of an earlier apply
 // that stays counts in the checks across objects.
 func TestApplyLintsStore(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	cat := map[string]any{"apiVersion": "botaru/v1alpha1", "kind": "Catalog", "metadata": map[string]any{"name": "demo", "tenant": "demo"},

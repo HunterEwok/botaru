@@ -29,6 +29,7 @@ func sampleEdit(ms []map[string]any) {
 // "Details" opened after that and marks the record veto_overridden (DIG-6, APR-14). P2
 // commission.status counts the answer (DIG-5).
 func TestAuditSample(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newCommissionBench(t, true, sampleEdit)
 	b.helloDone(t, "1", "", "hi")
@@ -119,6 +120,7 @@ func TestAuditSample(t *testing.T) {
 
 // The size of the month sample is min(T, max(min_per_month, ceil(share × T))) (DIG-5).
 func TestAuditSampleSize(t *testing.T) {
+	t.Parallel()
 	for _, c := range [][4]int{{0, 0}, {3, 3}, {10, 4}, {40, 10}, {41, 11}} {
 		if got := sampleSize(c[0], 4, 0.25); got != c[1] {
 			t.Errorf("T %d: %d, want %d", c[0], got, c[1])
@@ -160,6 +162,7 @@ func (b *bench) catalog(t *testing.T) *Catalog {
 // waits for a passed gate at the applied commit like "Accept" does (EVO-9); the lift then takes
 // the proposal out of the review rule its veto taught (EVO-3).
 func TestAuditSampleGate(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newCommissionBench(t, true, sampleEdit, gateEdit, evolutionEdit)
 	alice := Operator{Principal: b.alice, Tenant: "demo"}

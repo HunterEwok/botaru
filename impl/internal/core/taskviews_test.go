@@ -14,6 +14,7 @@ import (
 // initiator is canceled(initiator) and a repeat gives the same answer; an operator's cancel of
 // another's task is canceled(admin), and a finished task is already_terminal.
 func TestTaskViews(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newPeopleBench(t, func(ms []map[string]any) {
 		for _, m := range ms {
@@ -143,6 +144,7 @@ func TestTaskViews(t *testing.T) {
 // the group's tasks for a person with team.view only of types they may read, and the code text
 // of the bot; without team.view the answer names the needed capability.
 func TestTaskLists(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newPeopleBench(t, nil)
 	var ids []string

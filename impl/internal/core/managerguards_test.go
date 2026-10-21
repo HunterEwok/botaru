@@ -12,6 +12,7 @@ import (
 // From v0.3 the farm manager's daily review reads the two farm guards of the tenant's last day,
 // as numbers with their samples (PRP-26).
 func TestManagerReviewFarmGuards(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newManagerWorkBench(t)
 	b.exec(t, `INSERT INTO obs_points (tenant, series, subject, at, enum, source, data_mark, key, created_at)

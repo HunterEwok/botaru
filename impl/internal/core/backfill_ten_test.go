@@ -22,6 +22,7 @@ import (
 // record. A hold of scope farm is a record of the service tenant farm, a hold of another scope
 // a record of the tenant of its scope.
 func TestBackfillRecordTenant(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	for _, table := range []string{"tasks", "leases", "toolcalls", "approvals", "deliveries", "principals", "identities", "memberships",
@@ -73,6 +74,7 @@ func TestBackfillRecordTenant(t *testing.T) {
 // worker clock shifted by 10 minutes in its report changes nothing, and the lease ends when the
 // store clock passes it, not the worker's.
 func TestBackfillStoreClock(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	b.hello(t, "1")
@@ -95,6 +97,7 @@ func TestBackfillStoreClock(t *testing.T) {
 // STA-2: a state self-report decides nothing: a worker that reports itself idle but is not
 // seen goes stale by the core's own observation, and another worker still gets the queued task.
 func TestBackfillStateInformational(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newMsgBench(t)
 	lead := b.enroll(t, EnrollRequest{Tenant: "demo", Role: "lead", Kind: "job"})
@@ -119,6 +122,7 @@ func TestBackfillStateInformational(t *testing.T) {
 // is in the attempt's catalog only when the type declares inbox.read, and the message text is
 // not in the instruction, the goal or the attempt payload.
 func TestBackfillMessageOnlyThroughTool(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	canary := "CANARY-" + ids.Secret(6)
 	for _, reads := range []bool{true, false} {
@@ -170,6 +174,7 @@ func TestBackfillMessageOnlyThroughTool(t *testing.T) {
 // filtered by the initiator's rights, each described by summary_for_managers from git; a type
 // the initiator may not enqueue is not in it.
 func TestBackfillWorkerDirectory(t *testing.T) {
+	t.Parallel()
 	b := newBenchWith(t, func(_ string, ms []map[string]any) []map[string]any {
 		var types []map[string]any
 		for _, m := range ms {
@@ -219,6 +224,7 @@ func TestBackfillWorkerDirectory(t *testing.T) {
 // demo is not in the attempt of tenant demo2, nor in any row of demo2's tasks, sessions,
 // facts, memory, messages, deliveries or files, and the worker of demo2 gets no work of demo.
 func TestBackfillTenantsDoNotMix(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBenchWith(t, func(_ string, ms []map[string]any) []map[string]any {
 		var add []map[string]any

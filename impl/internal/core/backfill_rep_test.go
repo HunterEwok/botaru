@@ -24,6 +24,7 @@ func countTasks(t *testing.T, b *bench) int {
 // model and without a task of any type; in a group chat only /help and /about answer, every
 // other command gets cmd.direct_only.
 func TestBackfillCodeCommands(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newGroupBench(t)
 	bind := ChatBindRequest{Op: "chat.bind", Tenant: "demo", Channel: "telegram", Chat: Chat{Kind: "group", ExternalID: "-500"}, Ceiling: "summary", Name: "lab"}
@@ -67,6 +68,7 @@ func TestBackfillCodeCommands(t *testing.T) {
 // without a reporter task, only to private chats of admins with admin:people, never to the
 // bound group chat where the person was seen.
 func TestBackfillNoticeBypassesReporter(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newGroupBench(t)
 	bind := ChatBindRequest{Op: "chat.bind", Tenant: "demo", Channel: "telegram", Chat: Chat{Kind: "group", ExternalID: "-500"}, Ceiling: "summary", Name: "lab"}
@@ -113,6 +115,7 @@ func TestBackfillNoticeBypassesReporter(t *testing.T) {
 // of the approver is refused and the approval waits; no built-in tool of the reporter profile
 // decides, draws a card or picks the cards of a digest, so a reporter has no path to decide.
 func TestBackfillReporterDecidesNothing(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newActionBench(t, nil)
 	att, h := b.attemptTools(t, "1", false)

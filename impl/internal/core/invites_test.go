@@ -52,6 +52,7 @@ func (b *peopleBench) inviteState(t *testing.T, id string) string {
 // code, a wrong code changes nothing and is audited; offboarding revokes the unused invitations
 // the person issued.
 func TestInvitations(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newPeopleBench(t, nil)
 	inv := b.invite(t, b.op, "hello")
@@ -217,6 +218,7 @@ func TestInvitations(t *testing.T) {
 // P2 grant of a privileged group (PRM-13): pending without the code, a wrong code is forbidden,
 // the person's code from /me makes it active; /me marks a group of delegated_groups (PRM-16).
 func TestPrivilegedGrantCode(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newPeopleBench(t, nil)
 	d, err := b.c.Grant(ctx, b.op, GrantRequest{Op: "grant", Subject: b.alice, Group: "staff"})
@@ -248,6 +250,7 @@ func TestPrivilegedGrantCode(t *testing.T) {
 // PRM-16: /me shows a group of delegated_groups with the attribute delegated, and every admin
 // hears of a delegated grant, removal or invitation made on P2.
 func TestMeDelegatedMark(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newPeopleBench(t, func(ms []map[string]any) {
 		for _, m := range ms {
@@ -299,6 +302,7 @@ func TestMeDelegatedMark(t *testing.T) {
 // (PRM-13); the first admin of a tenant without one is invited without it, and the code check
 // still holds.
 func TestPrivilegedProduction(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newPeopleBench(t, func(ms []map[string]any) {
 		for _, m := range ms {

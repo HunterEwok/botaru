@@ -76,6 +76,7 @@ func noticeText(t *testing.T, b *bench, s sent) string {
 // has the one revert command; the farm operators' text has only the number, the class, the
 // operation codes and the numbers (MGR-39, MGR-13).
 func TestManagerNoticeEdit(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newNoticeBench(t)
 	b.diskAlarm(t, true, 3)
@@ -167,6 +168,7 @@ func TestManagerNoticeEdit(t *testing.T) {
 
 // A driver without edit gets the new lines in a batch at most once in 15 minutes (MGR-39).
 func TestManagerNoticeBatch(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newNoticeBench(t, withoutEdit)
 	b.diskAlarm(t, true, 3)
@@ -197,6 +199,7 @@ func TestManagerNoticeBatch(t *testing.T) {
 // A failure while writing the message to people leaves no operation, audit or control.applied:
 // it is one transaction (MGR-13, blackbox:manager/immediate-report).
 func TestManagerNoticeOneTransaction(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newNoticeBench(t)
 	b.diskAlarm(t, true, 3)
@@ -271,6 +274,7 @@ func stoppedNotices(t *testing.T, b *bench, person string) []map[string]any {
 // and nothing repeats one: the seat is not stopped by incidents (GOV-47, MGR-55); a
 // preventable incident sends manager_preventable instead (TestPreventableRepeats).
 func TestManagerStoppedCard(t *testing.T) {
+	t.Parallel()
 	b := newManagerBench(t)
 	op := b.farmOperator(t)
 	if _, err := b.c.SeatAssign(context.Background(), b.farmOp(), SeatRequest{Seat: managerSeatID}); err != nil {
@@ -299,6 +303,7 @@ func TestManagerStoppedCard(t *testing.T) {
 // decide_within that an earlier core left on the seat are dropped by the manager loop, the
 // holder stays, and no repeat is sent (GOV-47, MGR-55).
 func TestStopRepeats(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newManagerBench(t)
 	op := b.farmOperator(t)

@@ -54,6 +54,7 @@ func (b *bench) botOf(t *testing.T, worker string) *botRow {
 // Enroll binds a model role worker to a new identity, and every attempt, its task record and
 // the audit of its claim carry the identity and its epoch; a channel worker has none (IDN-8).
 func TestBotIdentityOnAttempt(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	var none int
@@ -97,6 +98,7 @@ func TestBotIdentityOnAttempt(t *testing.T) {
 // bot.retire fences the running attempt (it goes back unspent) and the live worker goes on
 // under a new identity, the successor; the tombstone keeps the reason (IDN-11).
 func TestBotRetire(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	old := b.botOf(t, b.agent.ID)
@@ -143,6 +145,7 @@ func TestBotRetire(t *testing.T) {
 // the next epoch, and an unbound identity past unbound_ttl leaves as worker_gone (IDN-8,
 // IDN-11).
 func TestBotUnbound(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	bot := b.botOf(t, b.agent.ID)
@@ -172,6 +175,7 @@ func TestBotUnbound(t *testing.T) {
 // its worker gets a new identity, and the lens review then runs on behalf of the holder on a
 // worker of the seat role; seat.vacate retires the holder and the seat is vacant (IDN-10).
 func TestSeatAssign(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newCommissionBench(t, true, func(ms []map[string]any) {
 		specOf(ms, "Governance", "demo")["commission"].(map[string]any)["seat_role"] = "reviewer-a"
@@ -251,6 +255,7 @@ func TestSeatAssign(t *testing.T) {
 // worker.revoke fences every lease of the worker, not only its attempts: a delivery in
 // sending goes back to planned (IDN-4).
 func TestWorkerRevokeDelivery(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	b.hello(t, "1")

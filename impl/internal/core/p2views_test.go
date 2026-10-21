@@ -38,6 +38,7 @@ func jsonMap(t *testing.T, v any) map[string]any {
 // work that is not dead and an action task are refused, and every redrive is audited (DLV-4,
 // APR-7).
 func TestDeadletterRedrive(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	task := b.hello(t, "1")
@@ -117,6 +118,7 @@ func TestDeadletterRedrive(t *testing.T) {
 // audit.query returns the records of the credential's tenant by a filter, pages by seq and
 // audits the read itself (AUD-7).
 func TestAuditQuery(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	res, err := b.c.AuditQuery(ctx, b.op, AuditQueryRequest{Command: "grant"})
@@ -142,6 +144,7 @@ func TestAuditQuery(t *testing.T) {
 // status shows the applied commit and the claim of this build; doctor lists the checks with
 // the tick of each loop and the tenant counts (MAN-8, OBS-4, CAP-5).
 func TestStatusDoctor(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newBench(t)
 	st, err := b.c.Status(ctx, b.op, TenantRequest{})
@@ -174,6 +177,7 @@ func TestStatusDoctor(t *testing.T) {
 // farm_manager_disabled names only the tenants with farm_manager.enabled: false, every such
 // tenant for the operator of farm and else the credential's own (D-77).
 func TestStatusFarmManagerDisabled(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	// The manager bench turns the manager of demo on; demo2 has it off.
 	b := newManagerBenchWith(t, nil, []map[string]any{{"apiVersion": "botaru/v1alpha1", "kind": "Tenant", "metadata": map[string]any{"name": "demo2"},

@@ -71,6 +71,7 @@ func (b *bench) entry(t *testing.T, bot string) (state string, count int) {
 // (APR-14). The head of the queue takes a vacant seat on "Confirm" after "Details" (GOV-9), and
 // its entry leaves as seated; every step writes its governance audit record (GOV-21).
 func TestPromotionVacancy(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b, _ := promotedBench(t)
 	var n int
@@ -137,6 +138,7 @@ func promotedBench(t *testing.T) (*bench, string) {
 // retires removed_by_vote and the case carries evicts_upheld_veto for a leaver whose veto
 // people upheld (GOV-9, GOV-19).
 func TestPromotionRemoval(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b, _ := promotedBench(t)
 	for _, seat := range []string{"commission:2", "commission:3", "commission:4"} {
@@ -224,6 +226,7 @@ func realizedBench(t *testing.T) (*bench, string, *botRow) {
 // probation that ended before governance_since give only a track row; a self-measured outcome
 // waits for "Count it" on self_measured_card.
 func TestPromotionTriggers(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b, id, _ := realizedBench(t)
 	b.loop(t, "governance")
@@ -344,6 +347,7 @@ func (b *bench) caseState(t *testing.T) (state, reason string) {
 // P2 seat.assign of the vacant seat of an open case cancels the case in the same transaction
 // (canceled(seat_changed)), and the entry goes back to the queue (GOV-12).
 func TestPromotionSeatChanged(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b, author := openVacancyCase(t)
 	other := b.botOf(t, b.enroll(t, EnrollRequest{Tenant: "demo", Role: "hello", Kind: "agent"}).ID)
@@ -361,6 +365,7 @@ func TestPromotionSeatChanged(t *testing.T) {
 // A hold on the scope governance pauses an open case: it does not expire while held, and its
 // expiry moves on by the held time (GOV-14).
 func TestPromotionHold(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b, _ := openVacancyCase(t)
 	h, err := b.c.HoldSet(ctx, OperatorActor(b.op), HoldSetRequest{Scope: HoldScope{Kind: "governance", Tenant: "demo", Name: "cases"}, Effects: []string{"no_enqueue"}, Reason: "maintenance"})
@@ -392,6 +397,7 @@ func TestPromotionHold(t *testing.T) {
 // Dismissing the incident cancels its attribution candidate in the same transaction, and the
 // change then gives its trigger (GOV-13, GOV-14).
 func TestPromotionIncidentDismissed(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b, id, _ := realizedBench(t)
 	b.loop(t, "governance")

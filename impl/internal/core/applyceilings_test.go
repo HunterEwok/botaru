@@ -40,6 +40,7 @@ func lintDetails(t *testing.T, c *Core, docs string) map[string]string {
 // the share of the organization ceiling, and a tenant without a described workspace is named
 // (GW-9).
 func TestLintWorkspaceCeilings(t *testing.T) {
+	t.Parallel()
 	c := lintCore(t)
 	c.cfg.Workspaces = WorkspaceCeilings{Providers: map[string]ProviderCeilings{
 		"provider-a": {OrganizationEUR: 1000, Workspaces: map[string]float64{"demo": 100, "demo3": 1000}},
@@ -65,6 +66,7 @@ func TestLintWorkspaceCeilings(t *testing.T) {
 // one proposal, the lenses with an executor; a line below it is rejected with the missing
 // amount, and without an executor of the veto lenses no review is reserved (BUD-13, COM-6).
 func TestLintReviewLine(t *testing.T) {
+	t.Parallel()
 	c := lintCore(t)
 	var types []string
 	for _, d := range c.lensDefs() {

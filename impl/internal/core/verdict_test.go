@@ -16,6 +16,7 @@ import (
 // The verdict tables of the conformance fixtures com-03 and com-06 give the same outcome, mean
 // and strict thresholds here (COM-4, COM-14).
 func TestVerdictFixtures(t *testing.T) {
+	t.Parallel()
 	root, err := spec.FindRoot("")
 	if err != nil {
 		t.Fatal(err)

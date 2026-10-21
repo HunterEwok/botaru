@@ -39,6 +39,7 @@ func scriptChange(steps ...map[string]any) map[string]any {
 // assignment is a rejection; "Accept" puts the draft through the SCR-5 acceptance on behalf of
 // the person and sends the SCR-6 card; the completed run realizes the proposal.
 func TestProposalScriptChange(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newCommissionBench(t, true, presentEdit, scriptProposalEdit)
 	b.helloDone(t, "1", "", "hi")

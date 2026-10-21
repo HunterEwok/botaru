@@ -36,6 +36,7 @@ func aggEdit(ms []map[string]any) []map[string]any {
 // message, memory, corpus or plugin tool reaches an aggregate task, and the profile refuses
 // tools and messages of its own at apply (AGG-2).
 func TestBackfillAggregatorInputsAggregated(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newToolBenchWith(t, nil, aggEdit)
 	cat, err := b.c.Catalog(ctx)
@@ -88,6 +89,7 @@ spec: {profile: aggregator, worker_kind: agent, claims: [], models: {base: base-
 // with an untrusted source would, and the proposal follows it (AGG-4). Raising the record while
 // reading is the job of the read tools and is not exercised here.
 func TestBackfillAggregatorMarks(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	b := newToolBenchWith(t, nil, aggEdit)
 	w := b.enroll(t, EnrollRequest{Tenant: "demo", Role: "agg", Kind: "agent"})
