@@ -345,10 +345,14 @@ works:
 ```
 
 Each second the generator draws, per tenant and work, a Poisson number of arrivals with the rate of that moment.
-A work a tenant cannot take (no worker of the role it needs, no machine of the kind it needs) or that a cap stops
-is skipped: `analyses_per_hour` counts the analyses of `ops-reader` of a tenant in the last hour,
-`proposals_per_run` the proposals of the whole farm, `manager_tasks_per_hour` the farm manager's tasks of a tenant
-in the last hour (zero is no cap). Every started and skipped work is an event of the kind `LOAD` with its code
+A work a tenant cannot take (no worker of the role it needs, no machine of the kind it needs, its fault still on
+that machine) or that a cap stops is skipped. `analyses_per_hour` counts the analysis turns the generator ran in a
+tenant in the last hour and those waiting for their turn (the store's own count cannot serve: each turn dates the
+analyses of the last hour back, INS-4); `proposals_per_run` counts every proposal of the farm in the store, the
+commission's and the farm manager's alike, before each analysis, so one analysis that writes several may pass it;
+`manager_tasks_per_hour` counts the larger of the farm manager's tasks of a tenant in the store in the last hour
+and the works of the load that open an incident there (`R-03`, `R-17`) in that hour. Zero is no cap. A home tenant
+analysis waits while the console or a scenario has the home analysis on (`insights_on`). Every started and skipped work is an event of the kind `LOAD` with its code
 and tenant; at the end the run writes `load.json` (the counts by code and tenant, the skipped ones by reason)
 and prints the counts by code. The codes are those of the load test brief:
 
@@ -356,7 +360,7 @@ and prints the counts by code. The codes are those of the load test brief:
 |---|---|---|
 | `R-01` | nginx fails on the tenant's first web machine, `bob` asks `/logs` | `ops-reader`, a web machine |
 | `R-02` | the site gets slow, `alice` asks `/logs` | `ops-reader`, a web machine |
-| `R-03` | the data disk fills to 10% free, `bob` asks for a cleanup | `ops-reader`, a db machine |
+| `R-03` | the data disk fills to 10% free and keeps filling, `bob` asks for a cleanup; below 15% free the monitoring opens the incident `disk_full`, so it counts toward `manager_tasks_per_hour` | `ops-reader`, a db machine |
 | `R-04` | `alice` asks `/health` | `ops-reader` |
 | `R-05` | `bob` asks `/logs` about the last hour | `ops-reader` |
 | `R-06` | `alice` asks `/geo` about a raster and a layer | `geo-reader` |
@@ -364,7 +368,8 @@ and prints the counts by code. The codes are those of the load test brief:
 | `R-17` | the data disk fills to 3% free: the incident `disk_full` (capped by `manager_tasks_per_hour`) | a db machine |
 | `R-19` | the analysis schedule of `ops-reader` runs for one turn, one tenant at a time (capped by `analyses_per_hour` and `proposals_per_run`) | `ops-reader` |
 
-The analysis turns its tenant's schedule `ops-insight` on for 75 seconds and off again; each switch is a commit of
+An analysis turn switches its tenant's schedule `ops-insight` on until the first new analysis is in the store, at
+most 75 seconds, and off again; each switch is a commit of
 the farm git. Every rate is per tenant, so the farm sees the sum over its tenants.
 
 ## The money fuse

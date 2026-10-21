@@ -145,14 +145,19 @@ type loadKind struct {
 	role string
 	// host is the machine kind the work needs in the tenant; "" for none.
 	host string
-	do   func(ctx context.Context, g *loadGen, tenant string) error
+	// fault names the fault the work leaves on that machine for the fault life; a work whose
+	// fault is already on the machine is skipped, so faults never overlap.
+	fault string
+	do    func(ctx context.Context, g *loadGen, tenant string) error
 }
+
+const analysisWhat = "an analysis of ops-reader's own results"
 
 // loadKinds are the kinds of work by code (the codes of the load test brief).
 var loadKinds = map[string]*loadKind{
-	"R-01": {what: "the site is down: nginx fails, a person asks", role: "ops-reader", host: KindWeb, do: func(ctx context.Context, g *loadGen, t string) error {
+	"R-01": {what: "the site is down: nginx fails, a person asks", role: "ops-reader", host: KindWeb, fault: "nginx", do: func(ctx context.Context, g *loadGen, t string) error {
 		web := g.host(t, KindWeb)
-		return g.fault(ctx, t, "nginx-down on "+web, func(w *World) {
+		return g.fault(ctx, t, "nginx:"+web, "nginx-down on "+web, func(w *World) {
 			s := w.Service(web, UnitNginx)
 			s.State, s.Changed = "failed", time.Now().UTC()
 		}, func(w *World) {
@@ -161,15 +166,15 @@ var loadKinds = map[string]*loadKind{
 			}
 		}, "bob", "/logs The site does not open, is it down?")
 	}},
-	"R-02": {what: "the site is slow, a person asks", role: "ops-reader", host: KindWeb, do: func(ctx context.Context, g *loadGen, t string) error {
+	"R-02": {what: "the site is slow, a person asks", role: "ops-reader", host: KindWeb, fault: "slow", do: func(ctx context.Context, g *loadGen, t string) error {
 		key := FaultSlowSite + ":" + g.host(t, KindWeb)
-		return g.fault(ctx, t, "slow site on "+g.host(t, KindWeb), func(w *World) { w.Faults[key] = true },
+		return g.fault(ctx, t, "slow:"+g.host(t, KindWeb), "slow site on "+g.host(t, KindWeb), func(w *World) { w.Faults[key] = true },
 			func(w *World) { delete(w.Faults, key) }, "alice", "/logs Why is the site so slow right now?")
 	}},
-	"R-03": {what: "the disk fills, a person asks for a cleanup", role: "ops-reader", host: KindDB, do: func(ctx context.Context, g *loadGen, t string) error {
+	"R-03": {what: "the disk fills, a person asks for a cleanup", class: classManager, role: "ops-reader", host: KindDB, fault: "disk", do: func(ctx context.Context, g *loadGen, t string) error {
 		db := g.host(t, KindDB)
 		key := FaultDiskFilling + ":" + db
-		return g.fault(ctx, t, "disk filling on "+db, func(w *World) {
+		return g.fault(ctx, t, "disk:"+db, "disk filling on "+db, func(w *World) {
 			w.Hosts[db].Disks["/data"].Fill(0.10)
 			w.Faults[key] = true
 		}, func(w *World) { healDisk(w, db, key) }, "bob", "/logs The disk on "+db+" is filling up, can you free some space?")
@@ -186,15 +191,15 @@ var loadKinds = map[string]*loadKind{
 	"R-08": {what: "why a pipeline run failed", role: "pipeline-reader", do: func(ctx context.Context, g *loadGen, t string) error {
 		return g.say(t, "bob", "/pipeline Why did the last CTD run fail?")
 	}},
-	"R-17": {what: "an incident: the disk is full", class: classManager, host: KindDB, do: func(ctx context.Context, g *loadGen, t string) error {
+	"R-17": {what: "an incident: the disk is full", class: classManager, host: KindDB, fault: "disk", do: func(ctx context.Context, g *loadGen, t string) error {
 		db := g.host(t, KindDB)
 		key := FaultDiskFilling + ":" + db
-		return g.fault(ctx, t, "disk full on "+db, func(w *World) {
+		return g.fault(ctx, t, "disk:"+db, "disk full on "+db, func(w *World) {
 			w.Hosts[db].Disks["/data"].Fill(0.03)
 			w.Faults[key] = true
 		}, func(w *World) { healDisk(w, db, key) }, "", "")
 	}},
-	"R-19": {what: "an analysis of ops-reader's own results", class: classAnalysis, role: "ops-reader", do: func(ctx context.Context, g *loadGen, t string) error {
+	"R-19": {what: analysisWhat, class: classAnalysis, role: "ops-reader", do: func(ctx context.Context, g *loadGen, t string) error {
 		return g.analysis(ctx, t)
 	}},
 }
@@ -225,9 +230,14 @@ type loadGen struct {
 	// insights keeps one analysis switch at a time: each is a commit of the farm git.
 	insights sync.Mutex
 	mu       sync.Mutex
-	// analysing are the tenants with an analysis switched on or waiting for its switch: its task
-	// may not be in the store yet.
+	// analysing counts the analyses of each tenant waiting for their turn.
 	analysing map[string]int
+	// costly are the times the costly work of each "class tenant" started: an analysis when its
+	// turn switched the schedule on, an incident when it broke the world. The caps count them
+	// here, since the store's own count lags behind and the analyses are dated back (INS-4).
+	costly map[string][]time.Time
+	// faulty are the faults on the machines now, by "fault:host".
+	faulty map[string]bool
 	// started and skipped count the work by code and tenant; skipped by reason too.
 	started map[string]int
 	skipped map[string]int
@@ -245,7 +255,7 @@ type LoadSummary struct {
 // One stream per tenant and work: each second the number of arrivals is drawn from a Poisson
 // law with the work's rate at that moment.
 func (d *Director) RunLoad(ctx context.Context, p *LoadProfile, seed int64) LoadSummary {
-	g := &loadGen{d: d, p: p, r: rand.New(rand.NewPCG(uint64(seed), 17)), step: d.S.cfg.Step, started: map[string]int{}, skipped: map[string]int{}, analysing: map[string]int{}}
+	g := &loadGen{d: d, p: p, r: rand.New(rand.NewPCG(uint64(seed), 17)), step: d.S.cfg.Step, started: map[string]int{}, skipped: map[string]int{}, analysing: map[string]int{}, costly: map[string][]time.Time{}, faulty: map[string]bool{}}
 	d.S.log.Addf(KindDirector, "load %s: %d kinds of work over %s", p.Name, len(p.Works), strings.Join(d.S.TenantNames(), ", "))
 	start := time.Now()
 	t := time.NewTicker(time.Second)
@@ -298,13 +308,24 @@ func (g *loadGen) start(ctx context.Context, code, tenant string) {
 		g.d.S.log.Add(KindLoad, fmt.Sprintf("%s in %s skipped: %s", code, tenant, reason), map[string]any{"code": code, "tenant": tenant, "skipped": reason})
 		return
 	}
-	g.count(g.started, code+" "+tenant)
-	if k.class == classAnalysis {
-		g.mu.Lock()
+	g.mu.Lock()
+	switch {
+	case k.class == classAnalysis:
+		// An analysis counts as started when its turn comes (analysis).
 		g.analysing[tenant]++
-		g.mu.Unlock()
+	case k.class == classManager:
+		g.costly[k.class+" "+tenant] = append(g.costly[k.class+" "+tenant], time.Now())
 	}
-	g.d.S.log.Add(KindLoad, fmt.Sprintf("%s in %s: %s", code, tenant, k.what), map[string]any{"code": code, "tenant": tenant, "class": k.class})
+	if k.fault != "" {
+		g.faulty[k.fault+":"+g.host(tenant, k.host)] = true
+	}
+	g.mu.Unlock()
+	if k.class == classAnalysis {
+		g.d.S.log.Add(KindLoad, fmt.Sprintf("%s in %s waits for its turn: %s", code, tenant, k.what), map[string]any{"code": code, "tenant": tenant, "class": k.class, "queued": true})
+	} else {
+		g.count(g.started, code+" "+tenant)
+		g.d.S.log.Add(KindLoad, fmt.Sprintf("%s in %s: %s", code, tenant, k.what), map[string]any{"code": code, "tenant": tenant, "class": k.class})
+	}
 	g.wg.Add(1)
 	go func() {
 		defer g.wg.Done()
@@ -334,33 +355,65 @@ func (g *loadGen) blockedAs(ctx context.Context, k *loadKind, tenant string, wit
 	if k.host != "" && g.host(tenant, k.host) == "" {
 		return "no_machine"
 	}
+	g.mu.Lock()
+	busy := k.fault != "" && g.faulty[k.fault+":"+g.host(tenant, k.host)]
+	g.mu.Unlock()
+	if busy {
+		return "fault_on_machine"
+	}
 	c := g.p.Caps
 	pool := g.d.S.Bench.Store().Pool
-	n := func(q string, args ...any) int {
+	n := func(q string, args ...any) (int, bool) {
 		var v int
-		if err := pool.QueryRow(ctx, q, args...).Scan(&v); err != nil {
-			return math.MaxInt32
-		}
-		return v
+		err := pool.QueryRow(ctx, q, args...).Scan(&v)
+		return v, err == nil
 	}
 	switch k.class {
 	case classAnalysis:
-		if c.AnalysesPerHour > 0 && n(`SELECT count(*) FROM tasks WHERE tenant = $1 AND type = 'ops.insight.v1' AND created_at > now() - interval '1 hour'`, tenant)+g.pending(tenant, withPending) >= c.AnalysesPerHour {
+		if tenant == g.d.S.Home() && g.d.S.Insights() {
+			// The console or a scenario runs the home analysis; the load leaves it alone.
+			return "insights_on"
+		}
+		if c.AnalysesPerHour > 0 && g.recent(classAnalysis, tenant)+g.pending(tenant, withPending) >= c.AnalysesPerHour {
 			return "cap_analyses_per_hour"
 		}
-		if c.ProposalsPerRun > 0 && n(`SELECT count(*) FROM proposals WHERE tenant = ANY($1)`, g.d.S.TenantNames()) >= c.ProposalsPerRun {
-			return "cap_proposals_per_run"
+		if c.ProposalsPerRun > 0 {
+			v, ok := n(`SELECT count(*) FROM proposals WHERE tenant = ANY($1)`, g.d.S.TenantNames())
+			if !ok {
+				return "error"
+			}
+			if v >= c.ProposalsPerRun {
+				return "cap_proposals_per_run"
+			}
 		}
 	case classManager:
-		if c.ManagerTasksPerHour > 0 && n(`SELECT count(*) FROM tasks WHERE tenant = $1 AND type LIKE 'manager.%' AND created_at > now() - interval '1 hour'`, tenant) >= c.ManagerTasksPerHour {
-			return "cap_manager_tasks_per_hour"
+		if c.ManagerTasksPerHour > 0 {
+			v, ok := n(`SELECT count(*) FROM tasks WHERE tenant = $1 AND type LIKE 'manager.%' AND created_at > now() - interval '1 hour'`, tenant)
+			if !ok {
+				return "error"
+			}
+			if max(v, g.recent(classManager, tenant)) >= c.ManagerTasksPerHour {
+				return "cap_manager_tasks_per_hour"
+			}
 		}
 	}
 	return ""
 }
 
-// pending counts the analyses of a tenant the generator started whose task may not be in the
-// store yet.
+// recent counts the costly work of a class that started in a tenant in the last hour.
+func (g *loadGen) recent(class, tenant string) int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	key, since := class+" "+tenant, time.Now().Add(-time.Hour)
+	ts := g.costly[key]
+	for len(ts) > 0 && ts[0].Before(since) {
+		ts = ts[1:]
+	}
+	g.costly[key] = ts
+	return len(ts)
+}
+
+// pending counts the analyses of a tenant waiting for their turn.
 func (g *loadGen) pending(tenant string, with bool) int {
 	if !with {
 		return 0
@@ -381,7 +434,12 @@ func (g *loadGen) say(tenant, who, text string) error {
 
 // fault breaks the world, lets a person ask a little later when who is set, and heals the fault
 // after the profile's fault life.
-func (g *loadGen) fault(ctx context.Context, tenant, what string, breakIt, heal func(*World), who, ask string) error {
+func (g *loadGen) fault(ctx context.Context, tenant, key, what string, breakIt, heal func(*World), who, ask string) error {
+	defer func() {
+		g.mu.Lock()
+		delete(g.faulty, key)
+		g.mu.Unlock()
+	}()
 	if err := Update(g.d.S.cfg.Work, func(w *World) error {
 		breakIt(w)
 		w.Note("director", "", "load fault in %s: %s", tenant, what)
@@ -389,15 +447,12 @@ func (g *loadGen) fault(ctx context.Context, tenant, what string, breakIt, heal 
 	}); err != nil {
 		return err
 	}
-	if who != "" {
-		if !sleepCtx(ctx, 3*g.step) {
-			return nil
-		}
+	// When the run ends first, the fault is healed all the same, so the world is left whole.
+	if who != "" && sleepCtx(ctx, 3*g.step) {
 		if err := g.say(tenant, who, ask); err != nil {
-			return err
+			g.d.S.log.Addf(KindDirector, "load fault in %s: %v", tenant, err)
 		}
 	}
-	// When the run ends first, the fault is healed all the same, so the world is left whole.
 	sleepCtx(ctx, g.p.FaultLife)
 	return Update(g.d.S.cfg.Work, func(w *World) error {
 		heal(w)
@@ -406,8 +461,8 @@ func (g *loadGen) fault(ctx context.Context, tenant, what string, breakIt, heal 
 	})
 }
 
-// analysis turns the analysis schedule of the tenant on for a little over a minute (it runs each
-// minute and skips while one waits) and off again.
+// analysis turns the analysis schedule of the tenant on until its first new analysis is in the
+// store, at most 75 seconds (the schedule runs each minute), and off again.
 func (g *loadGen) analysis(ctx context.Context, tenant string) error {
 	defer func() {
 		g.mu.Lock()
@@ -416,16 +471,31 @@ func (g *loadGen) analysis(ctx context.Context, tenant string) error {
 	}()
 	g.insights.Lock()
 	defer g.insights.Unlock()
+	if ctx.Err() != nil {
+		return nil
+	}
 	// Analyses wait here one after another; the caps are read again when its turn comes.
 	if reason := g.blockedAs(ctx, &loadKind{class: classAnalysis}, tenant, false); reason != "" {
 		g.count(g.skipped, "R-19 "+tenant+" "+reason)
 		g.d.S.log.Add(KindLoad, fmt.Sprintf("R-19 in %s skipped at its turn: %s", tenant, reason), map[string]any{"code": "R-19", "tenant": tenant, "skipped": reason})
 		return nil
 	}
+	on := time.Now()
+	g.mu.Lock()
+	g.costly[classAnalysis+" "+tenant] = append(g.costly[classAnalysis+" "+tenant], on)
+	g.mu.Unlock()
+	g.count(g.started, "R-19 "+tenant)
+	g.d.S.log.Add(KindLoad, fmt.Sprintf("R-19 in %s: %s", tenant, analysisWhat), map[string]any{"code": "R-19", "tenant": tenant, "class": classAnalysis})
 	if err := g.d.S.SetInsightsIn(ctx, tenant, true); err != nil {
 		return err
 	}
-	sleepCtx(ctx, 75*time.Second)
+	pool := g.d.S.Bench.Store().Pool
+	for end := on.Add(75 * time.Second); time.Now().Before(end) && sleepCtx(ctx, 5*time.Second); {
+		var n int
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM tasks WHERE tenant = $1 AND type = 'ops.insight.v1' AND created_at >= $2`, tenant, on).Scan(&n); err == nil && n > 0 {
+			break
+		}
+	}
 	return g.d.S.SetInsightsIn(context.WithoutCancel(ctx), tenant, false)
 }
 
