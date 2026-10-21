@@ -145,7 +145,7 @@ func TestPhysics(t *testing.T) {
 	if f := w.Hosts["db1"].Disks["/data"].FreeRatio; f > 0.15 {
 		t.Fatalf("the disk did not fill: %v", f)
 	}
-	raw, _ := os.ReadFile(checksPath(work))
+	raw, _ := os.ReadFile(checksPath(work, "web1"))
 	if !strings.Contains(string(raw), `"www-health":{"last_status":0`) {
 		t.Fatalf("checks with nginx down: %s", raw)
 	}

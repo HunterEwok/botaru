@@ -20,6 +20,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/HunterEwok/botaru/impl/internal/agent"
@@ -77,8 +78,10 @@ type BenchConfig struct {
 	// Roles are further role folders of examples/roles the bench applies beside hello and
 	// ops-reader; an agent worker starts for each one of worker_kind agent.
 	Roles []string
-	// Edit changes the bench set before apply.
-	Edit func(ms []map[string]any) []map[string]any
+	// Edit changes the bench set before apply, while tenant demo is the template of the bench
+	// tenants (Tenants); EditTenants changes it after each bench tenant got its copy.
+	Edit        func(ms []map[string]any) []map[string]any
+	EditTenants func(ms []map[string]any) []map[string]any
 	// Skills are the skill folders apply carries (the skills extension field, SKL-1): the
 	// files of each folder by name, as farmctl sends them.
 	Skills map[string][]map[string]any
@@ -103,10 +106,28 @@ type BenchConfig struct {
 	// is about to apply and returns the commit and its message to apply it with, and the set read
 	// back from that commit. Without it each apply names a commit of its own that no git holds.
 	Commit func(ms []map[string]any) (commit, message string, set []map[string]any, err error)
-	// PersonOperators are seed people of demo who get a P2 credential of their own, for P2As:
-	// a stand calls the operations that need a person's rights (proposal.gate, variant.list).
+	// PersonOperators are seed people who get a P2 credential of their own, for P2As: a stand
+	// calls the operations that need a person's rights (proposal.gate, variant.list).
 	PersonOperators []string
+	// Tenants are the tenants the bench runs, the first its home: each gets the seed people of
+	// its own, a Telegram channel against a fake Bot API of its own and its agent workers, and
+	// the manifests of the template tenant demo (its Tenant and every manifest of tenant demo)
+	// as its own; demo itself is left out when it is not one of them. Empty: demo alone, with
+	// one worker of each agent role, as the eval runner has it.
+	Tenants []BenchTenant
 }
+
+// BenchTenant is one tenant of a bench.
+type BenchTenant struct {
+	Name string
+	// Agents are the agent roles that run in the tenant with the number of workers of each;
+	// each worker is enrolled on its own. Nil: one worker of every applied agent role.
+	Agents map[string]int
+}
+
+// templateTenant is the tenant of the example manifests the bench reads; its manifests are the
+// template of every bench tenant.
+const templateTenant = "demo"
 
 // HostEnv is what the bench made for the toolhosts of a stand: the monitoring API address and
 // the file with its read token.
@@ -114,10 +135,12 @@ type HostEnv struct {
 	MonitorAPI, MonitorTokenFile string
 }
 
-// HostPlugins is one toolhost of a demo machine: its plugins with the flags of each. A plugin with
-// a secret or egress gets a toolhost of its own (DEP-7).
+// HostPlugins is one toolhost of a machine: its plugins with the flags of each. A plugin with a
+// secret or egress gets a toolhost of its own (DEP-7).
 type HostPlugins struct {
-	Host    string
+	Host string
+	// Tenant is the tenant of the machine; empty: the home tenant.
+	Tenant  string
 	Plugins map[string][]string
 }
 
@@ -141,13 +164,18 @@ type Bench struct {
 	ops    map[string]string
 	// personOps are the P2 tokens of PersonOperators by seed name.
 	personOps map[string]string
-	bot       *fakeBotAPI
-	rec       *recorder
-	mock      *mockModel
-	cancel    context.CancelFunc
-	done      sync.WaitGroup
-	closers   []func()
-	people    map[string]string // seed name -> principal id
+	// bot is the fake Bot API of the home tenant, bots that of every bench tenant; the update
+	// ids of all of them come from one sequence, so the idempotency key of a message names it
+	// in the whole farm.
+	bot     *fakeBotAPI
+	bots    map[string]*fakeBotAPI
+	updates *atomic.Int64
+	rec     *recorder
+	mock    *mockModel
+	cancel  context.CancelFunc
+	done    sync.WaitGroup
+	closers []func()
+	people  map[string]string // seed name -> principal id
 	// capHolds are the holds stopSpend set.
 	capHolds map[string]string // tenant -> hold id
 	// spendCap is the store spend total at which a running case stops (0: none).
@@ -171,6 +199,44 @@ type Bench struct {
 	// agentRoles are the applied roles of worker_kind agent, in name order.
 	agentRoles []string
 	runCtx     context.Context
+	// workers are the cancels of the workers by name (<tenant>/<role>/<n> for an agent), so one
+	// worker can be stopped alone.
+	workersMu sync.Mutex
+	workers   map[string]context.CancelFunc
+}
+
+// tenants are the bench tenants, the home first.
+func (b *Bench) tenants() []BenchTenant {
+	if len(b.cfg.Tenants) == 0 {
+		return []BenchTenant{{Name: templateTenant}}
+	}
+	return b.cfg.Tenants
+}
+
+// home is the home tenant of the bench: the tenant of the eval cases and of the operator that
+// applies the set.
+func (b *Bench) home() string { return b.tenants()[0].Name }
+
+// tenantNames are the names of the bench tenants, the home first.
+func (b *Bench) tenantNames() []string {
+	var out []string
+	for _, t := range b.tenants() {
+		out = append(out, t.Name)
+	}
+	return out
+}
+
+// botOf is the fake Bot API of a tenant; the home tenant's for a tenant the bench does not run.
+func (b *Bench) botOf(tenant string) *fakeBotAPI {
+	if f := b.bots[tenant]; f != nil {
+		return f
+	}
+	return b.bot
+}
+
+// isTenant says whether a tenant is one of the bench tenants.
+func (b *Bench) isTenant(name string) bool {
+	return slices.ContainsFunc(b.tenants(), func(t BenchTenant) bool { return t.Name == name })
 }
 
 func hashHex(s string) string {
@@ -193,8 +259,12 @@ func StartBench(ctx context.Context, cfg BenchConfig) (_ *Bench, err error) {
 	if cfg.Logger == nil {
 		cfg.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
-	b := &Bench{cfg: cfg, ops: map[string]string{}, personOps: map[string]string{}, bot: &fakeBotAPI{observe: cfg.OnBotAPI}, people: map[string]string{}, ungranted: map[string][]string{}, ungrantedWhy: map[string]string{}, pendingGroups: map[string][]string{}, Profiles: map[string]string{},
-		roles: map[string][]string{}}
+	b := &Bench{cfg: cfg, ops: map[string]string{}, personOps: map[string]string{}, bots: map[string]*fakeBotAPI{}, updates: &atomic.Int64{}, people: map[string]string{}, ungranted: map[string][]string{}, ungrantedWhy: map[string]string{}, pendingGroups: map[string][]string{}, Profiles: map[string]string{},
+		roles: map[string][]string{}, workers: map[string]context.CancelFunc{}}
+	for _, t := range b.tenants() {
+		b.bots[t.Name] = &fakeBotAPI{observe: cfg.OnBotAPI, seq: b.updates}
+	}
+	b.bot = b.bots[b.home()]
 	for r, files := range benchRoles {
 		b.roles[r] = files
 	}
@@ -218,6 +288,12 @@ func StartBench(ctx context.Context, cfg BenchConfig) (_ *Bench, err error) {
 	}
 	if cfg.EditSeed != nil {
 		cfg.EditSeed(b.seed)
+	}
+	// Every bench tenant has an operator and a provider key.
+	for _, t := range b.tenantNames() {
+		if !slices.Contains(b.seed.Tenants, t) {
+			b.seed.Tenants = append(b.seed.Tenants, t)
+		}
 	}
 	if b.st, err = store.Open(ctx, cfg.DSN); err != nil {
 		return nil, err
@@ -295,11 +371,15 @@ func StartBench(ctx context.Context, cfg BenchConfig) (_ *Bench, err error) {
 		return nil, err
 	}
 	b.closers = append(b.closers, stop)
-	botURL, stop, err := listen(b.bot)
-	if err != nil {
-		return nil, err
+	botURLs := map[string]string{}
+	for name, bot := range b.bots {
+		u, stop, err := listen(bot)
+		if err != nil {
+			return nil, err
+		}
+		b.closers = append(b.closers, stop)
+		botURLs[name] = u
 	}
-	b.closers = append(b.closers, stop)
 	var monitor http.Handler = fakeMonitor{}
 	if cfg.Monitor != nil {
 		monitor = cfg.Monitor
@@ -316,7 +396,7 @@ func StartBench(ctx context.Context, cfg BenchConfig) (_ *Bench, err error) {
 	if err := b.seedPeople(ctx); err != nil {
 		return nil, err
 	}
-	if err := b.startWorkers(ctx, runCtx, tx, botURL, zbx); err != nil {
+	if err := b.startWorkers(ctx, runCtx, tx, botURLs, zbx); err != nil {
 		return nil, err
 	}
 	if err := b.confirmPending(ctx); err != nil {
@@ -429,7 +509,7 @@ func (b *Bench) manifests() ([]map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	out = append(out, b.seed.GroupManifests("demo", dataClasses(caps.Entries), []string{"hello"})...)
+	out = append(out, b.seed.GroupManifests(templateTenant, dataClasses(caps.Entries), []string{"hello"})...)
 	out = append(out, acts...)
 	profiles, err := filepath.Glob(filepath.Join(root, "examples/model-profiles/*.yaml"))
 	if err != nil {
@@ -458,16 +538,74 @@ func (b *Bench) manifests() ([]map[string]any, error) {
 		b.Profiles[n] = str(asMap(byName[n]["spec"])["model"])
 		out = append(out, byName[n])
 	}
-	if err := b.dropLaterResources(out); err != nil {
-		return nil, err
-	}
 	if b.cfg.Edit != nil {
 		out = b.cfg.Edit(out)
+	}
+	out = b.forTenants(out)
+	if b.cfg.EditTenants != nil {
+		out = b.cfg.EditTenants(out)
+	}
+	if err := b.dropLaterResources(out); err != nil {
+		return nil, err
 	}
 	if _, err := testbench.DropUnsupported(b.sp, out); err != nil {
 		return nil, err
 	}
 	return out, nil
+}
+
+// forTenants gives every bench tenant the manifests of the template tenant: its Tenant under the
+// bench tenant's name and each manifest of the template tenant in the bench tenant. The template
+// tenant keeps its own only when it is a bench tenant. With bench tenants named, a tenant that
+// is neither one of them nor farm is left out with its manifests (demo2 of the examples).
+func (b *Bench) forTenants(ms []map[string]any) []map[string]any {
+	var out []map[string]any
+	for _, m := range ms {
+		md := asMap(m["metadata"])
+		tenant := str(md["tenant"])
+		if str(m["kind"]) == "Tenant" {
+			tenant = str(md["name"])
+		}
+		if tenant != templateTenant {
+			// A farm with demo as its home keeps the example demo2 beside it.
+			if tenant == "" || len(b.cfg.Tenants) == 0 || tenant == "farm" || b.isTenant(tenant) || b.home() == templateTenant {
+				out = append(out, m)
+			}
+			continue
+		}
+		for _, t := range b.tenants() {
+			c := m
+			if t.Name != templateTenant {
+				c = deepCopy(m).(map[string]any)
+				if str(c["kind"]) == "Tenant" {
+					asMap(c["metadata"])["name"] = t.Name
+				} else {
+					asMap(c["metadata"])["tenant"] = t.Name
+				}
+			}
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// deepCopy copies the maps and lists of a manifest value; the scalars are shared.
+func deepCopy(v any) any {
+	switch x := v.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(x))
+		for k, e := range x {
+			out[k] = deepCopy(e)
+		}
+		return out
+	case []any:
+		out := make([]any, len(x))
+		for i, e := range x {
+			out[i] = deepCopy(e)
+		}
+		return out
+	}
+	return v
 }
 
 func fileExists(p string) bool {
@@ -576,23 +714,23 @@ func (b *Bench) applySet(ctx context.Context, ms []map[string]any, commit, messa
 		req["personas"] = personas
 	}
 	var resp applyResponse
-	if err := b.P2(ctx, "demo", "apply", req, &resp); err != nil {
+	if err := b.P2(ctx, b.home(), "apply", req, &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil
 }
 
-// seedPeople adds the people of demo with their identities and groups (seed.yaml).
+// seedPeople adds the people of the bench tenants with their identities and groups (seed.yaml).
 func (b *Bench) seedPeople(ctx context.Context) error {
 	for _, p := range b.seed.People {
-		if p.Tenant != "demo" || p.Kind != "human" || !p.Subject || p.ID == "" {
+		if !b.isTenant(p.Tenant) || p.Kind != "human" || !p.Subject || p.ID == "" {
 			continue
 		}
 		req := map[string]any{"op": "principal.add", "subject": p.ID, "kind": "human"}
 		if p.Identity != "" {
 			req["identity"] = p.Identity
 		}
-		if err := b.P2(ctx, "demo", "principal.add", req, nil); err != nil {
+		if err := b.P2(ctx, p.Tenant, "principal.add", req, nil); err != nil {
 			return fmt.Errorf("seed %s: %w", p.Name, err)
 		}
 		b.people[p.Name] = p.ID
@@ -600,7 +738,7 @@ func (b *Bench) seedPeople(ctx context.Context) error {
 			var out struct {
 				State string `json:"state"`
 			}
-			if err := b.P2(ctx, "demo", "grant", map[string]any{"op": "grant", "subject": p.ID, "group": g}, &out); err != nil {
+			if err := b.P2(ctx, p.Tenant, "grant", map[string]any{"op": "grant", "subject": p.ID, "group": g}, &out); err != nil {
 				return fmt.Errorf("seed %s in %s: %w", p.Name, g, err)
 			}
 			if out.State == "pending" {
@@ -651,13 +789,14 @@ func (b *Bench) confirmPending(ctx context.Context) error {
 			b.ungranted[name], b.ungrantedWhy[name] = gs, "privileged seed groups "+strings.Join(gs, ", ")+" stay pending (PRM-13): the person has no direct chat to read the code in /me"
 			continue
 		}
-		mark := b.bot.sentCount()
+		bot := b.bots[p.Tenant]
+		mark := bot.sentCount()
 		if _, _, err := b.play(ctx, name, chat, "/me", 30*time.Second); err != nil {
 			return fmt.Errorf("seed %s: /me: %w", name, err)
 		}
 		code := ""
 		ext := b.seed.Chat(chat).ExternalID
-		for _, m := range b.bot.sentSince(mark) {
+		for _, m := range bot.sentSince(mark) {
 			if fmt.Sprint(m["chat_id"]) == ext {
 				if c := reCode.FindString(str(m["text"])); c != "" {
 					code = c
@@ -671,7 +810,7 @@ func (b *Bench) confirmPending(ctx context.Context) error {
 			var out struct {
 				State string `json:"state"`
 			}
-			if err := b.P2(ctx, "demo", "grant", map[string]any{"op": "grant", "subject": p.ID, "group": g, "code": code}, &out); err != nil {
+			if err := b.P2(ctx, p.Tenant, "grant", map[string]any{"op": "grant", "subject": p.ID, "group": g, "code": code}, &out); err != nil {
 				return fmt.Errorf("seed %s in %s with the code: %w", name, g, err)
 			}
 			if out.State != "active" {
@@ -682,20 +821,26 @@ func (b *Bench) confirmPending(ctx context.Context) error {
 	return nil
 }
 
-// enroll enrolls a worker and returns its P1 token.
+// enroll enrolls a worker of the tenant the request names (the home tenant without one) as that
+// tenant's operator and returns its P1 token.
 func (b *Bench) enroll(ctx context.Context, req map[string]any) (string, error) {
 	var out struct {
 		Token string `json:"token"`
 	}
-	if err := b.P2(ctx, "demo", "worker.enroll", req, &out); err != nil {
+	tenant := str(req["tenant"])
+	if tenant == "" {
+		tenant = b.home()
+	}
+	if err := b.P2(ctx, tenant, "worker.enroll", req, &out); err != nil {
 		return "", err
 	}
 	return out.Token, nil
 }
 
-// startWorkers enrolls and starts the channel, one agent per bench role and the toolhosts of
-// web1 and db1 with the own plugins over the bench data.
-func (b *Bench) startWorkers(ctx, runCtx context.Context, tx *texts.Catalog, botURL, zbx string) error {
+// startWorkers enrolls and starts the channel and the agents of every bench tenant and the
+// toolhosts of the machines: the stand's, or web1 and db1 of the home tenant with the own
+// plugins over the bench data.
+func (b *Bench) startWorkers(ctx, runCtx context.Context, tx *texts.Catalog, botURLs map[string]string, zbx string) error {
 	b.dataDir = filepath.Join(b.cfg.WorkDir, "data")
 	for _, d := range []string{"web1", "db1", "bin"} {
 		if err := os.MkdirAll(filepath.Join(b.dataDir, d), 0o755); err != nil {
@@ -714,33 +859,45 @@ func (b *Bench) startWorkers(ctx, runCtx context.Context, tx *texts.Catalog, bot
 	if err := os.WriteFile(token, []byte("eval-monitor-read\n"), 0o600); err != nil {
 		return err
 	}
-	var workers []func(context.Context) error
-	tok, err := b.enroll(ctx, map[string]any{"tenant": "demo", "role": "telegram", "kind": "channel", "target": "telegram"})
-	if err != nil {
-		return err
+	type worker struct {
+		name string
+		run  func(context.Context) error
 	}
-	ch := telegram.New(telegram.Config{Core: &p1client.Client{BaseURL: b.p1, Token: tok}, Channel: benchChannel, BotAPI: botURL, BotToken: "EVAL:TOKEN",
-		Texts: tx, LinkAllowlist: b.linkAllowlist, PollTimeoutS: 1, Logger: b.cfg.Logger})
-	if err := ch.Hello(ctx); err != nil {
-		return err
-	}
-	workers = append(workers, ch.Run)
+	var workers []worker
 	slices.Sort(b.agentRoles)
-	for _, role := range b.agentRoles {
-		tok, err := b.enroll(ctx, map[string]any{"tenant": "demo", "role": role, "kind": "agent"})
+	for _, t := range b.tenants() {
+		tok, err := b.enroll(ctx, map[string]any{"tenant": t.Name, "role": "telegram", "kind": "channel", "target": "telegram"})
 		if err != nil {
 			return err
 		}
-		ag := agent.New(agent.Config{Core: &p1client.Client{BaseURL: b.p1, Token: tok}, MaxTokens: 2000, Logger: b.cfg.Logger})
-		if err := ag.Hello(ctx); err != nil {
+		ch := telegram.New(telegram.Config{Core: &p1client.Client{BaseURL: b.p1, Token: tok}, Channel: benchChannel, BotAPI: botURLs[t.Name], BotToken: "EVAL:TOKEN",
+			Texts: tx, LinkAllowlist: b.linkAllowlist, PollTimeoutS: 1, Logger: b.cfg.Logger})
+		if err := ch.Hello(ctx); err != nil {
 			return err
 		}
-		workers = append(workers, ag.Run)
+		workers = append(workers, worker{t.Name + "/telegram", ch.Run})
+		for _, role := range b.agentRoles {
+			n := 1
+			if t.Agents != nil {
+				n = t.Agents[role]
+			}
+			for i := range n {
+				tok, err := b.enroll(ctx, map[string]any{"tenant": t.Name, "role": role, "kind": "agent"})
+				if err != nil {
+					return err
+				}
+				ag := agent.New(agent.Config{Core: &p1client.Client{BaseURL: b.p1, Token: tok}, MaxTokens: 2000, Logger: b.cfg.Logger})
+				if err := ag.Hello(ctx); err != nil {
+					return err
+				}
+				workers = append(workers, worker{fmt.Sprintf("%s/%s/%d", t.Name, role, i+1), ag.Run})
+			}
+		}
 	}
 	m := func(p string) string { return filepath.Join(b.cfg.Root, "examples/tools", p, "tool.yaml") }
 	catalog := filepath.Join(b.cfg.Root, "examples/tenants/demo/catalog.yaml")
 	hosts := []HostPlugins{
-		{"web1", map[string][]string{
+		{Host: "web1", Plugins: map[string][]string{
 			"logs": {"-manifest", m("logs"), "-source", "nginx-access=" + b.dataPath("web1", "access.log"),
 				"-source", "nginx-error=" + b.dataPath("web1", "error.log"), "-source", "app-api=" + b.dataPath("web1", "app-api.log")},
 			"checks":  {"-manifest", m("checks"), "-results", b.dataPath("web1", "checks.json")},
@@ -748,10 +905,10 @@ func (b *Bench) startWorkers(ctx, runCtx context.Context, tx *texts.Catalog, bot
 			"service": {"-manifest", m("service"), "-systemctl", systemctl},
 		}},
 		// A plugin with a secret or egress gets a toolhost of its own (DEP-7).
-		{"web1", map[string][]string{
-			"monitor": {"-manifest", m("monitor"), "-api", zbx + "/api_jsonrpc.php", "-api-token-file", token, "-catalog", catalog, "-tenant", "demo"},
+		{Host: "web1", Plugins: map[string][]string{
+			"monitor": {"-manifest", m("monitor"), "-api", zbx + "/api_jsonrpc.php", "-api-token-file", token, "-catalog", catalog, "-tenant", b.home()},
 		}},
-		{"db1", map[string][]string{
+		{Host: "db1", Plugins: map[string][]string{
 			"logs": {"-manifest", m("logs"), "-source", "postgresql=" + b.dataPath("db1", "postgresql.log")},
 			"cmd":  {"-manifest", m("cmd"), "-host", "db1", "-spec-root", b.cfg.Root},
 		}},
@@ -759,14 +916,18 @@ func (b *Bench) startWorkers(ctx, runCtx context.Context, tx *texts.Catalog, bot
 	if b.cfg.Hosts != nil {
 		hosts = b.cfg.Hosts(HostEnv{MonitorAPI: zbx + "/api_jsonrpc.php", MonitorTokenFile: token})
 	}
-	for _, h := range hosts {
+	for i, h := range hosts {
 		var ps []toolhost.Plugin
 		names := slices.Sorted(mapKeys(h.Plugins))
 		for _, n := range names {
 			cmd, env := b.cfg.Plugin(n, h.Plugins[n])
 			ps = append(ps, toolhost.Plugin{Name: n, Command: cmd, Env: env})
 		}
-		tok, err := b.enroll(ctx, map[string]any{"tenant": "demo", "role": "toolhost", "kind": "toolhost", "plugins": names, "placement": "host", "host": h.Host})
+		tenant := h.Tenant
+		if tenant == "" {
+			tenant = b.home()
+		}
+		tok, err := b.enroll(ctx, map[string]any{"tenant": tenant, "role": "toolhost", "kind": "toolhost", "plugins": names, "placement": "host", "host": h.Host})
 		if err != nil {
 			return err
 		}
@@ -778,13 +939,38 @@ func (b *Bench) startWorkers(ctx, runCtx context.Context, tx *texts.Catalog, bot
 		if err := th.Hello(ctx); err != nil {
 			return fmt.Errorf("toolhost %s: %w", h.Host, err)
 		}
-		workers = append(workers, th.Run)
+		workers = append(workers, worker{fmt.Sprintf("%s/toolhost/%s/%d", tenant, h.Host, i+1), th.Run})
 	}
 	for _, w := range workers {
-		b.done.Add(1)
-		go func() { defer b.done.Done(); _ = w(runCtx) }()
+		b.start(runCtx, w.name, w.run)
 	}
 	return nil
+}
+
+// start runs a worker under a context of its own until it ends, StopWorker stops it or the bench
+// closes; false, and nothing started, when a worker of the name runs already.
+func (b *Bench) start(runCtx context.Context, name string, run func(context.Context) error) bool {
+	b.workersMu.Lock()
+	if _, dup := b.workers[name]; dup {
+		b.workersMu.Unlock()
+		return false
+	}
+	ctx, cancel := context.WithCancel(runCtx)
+	b.workers[name] = cancel
+	b.workersMu.Unlock()
+	b.done.Add(1)
+	go func() {
+		defer b.done.Done()
+		defer cancel()
+		_ = run(ctx)
+		// A worker that ended frees its name; StopWorker deleted it already.
+		b.workersMu.Lock()
+		if _, ok := b.workers[name]; ok && ctx.Err() == nil {
+			delete(b.workers, name)
+		}
+		b.workersMu.Unlock()
+	}()
+	return true
 }
 
 func (b *Bench) dataPath(host, file string) string { return filepath.Join(b.dataDir, host, file) }
@@ -988,6 +1174,19 @@ type fakeBotAPI struct {
 	nextUpd   float64
 	// observe, when set, sees every call but getUpdates with its request and result.
 	observe func(method string, req map[string]any, result any)
+	// seq, when set, numbers the updates of all the bench's bots, so an update id names one
+	// update on the whole bench.
+	seq *atomic.Int64
+}
+
+// next numbers the next update.
+func (f *fakeBotAPI) next() float64 {
+	if f.seq != nil {
+		f.nextUpd = float64(f.seq.Add(1))
+	} else {
+		f.nextUpd++
+	}
+	return f.nextUpd
 }
 
 func (f *fakeBotAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -1039,7 +1238,7 @@ func (f *fakeBotAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (f *fakeBotAPI) message(userID, chatID int64, private bool, text string) float64 {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.nextUpd++
+	f.next()
 	typ := "private"
 	if !private {
 		typ = "group"
@@ -1054,7 +1253,7 @@ func (f *fakeBotAPI) message(userID, chatID int64, private bool, text string) fl
 func (f *fakeBotAPI) press(userID, chatID, messageID int64, private bool, data string) float64 {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.nextUpd++
+	f.next()
 	typ := "private"
 	if !private {
 		typ = "group"

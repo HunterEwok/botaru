@@ -1,0 +1,11 @@
+# The farm of the stand before the cloud load test: the tenant demo alone with web1, db1 and
+# ctd1 and one worker of every bot role. The scenarios of the stand run on it (impl/SIM.md).
+name: smoke
+tenants:
+  - name: demo
+    hosts:
+      - {id: web1, kind: web}
+      - {id: db1, kind: db}
+      - {id: ctd1, kind: ctd}
+    manager: true
+    evolution: true

@@ -38,7 +38,7 @@ type farmRepo struct {
 
 // initRepo creates the farm git with the visible eval cases of the stand's suite; the manifests
 // come with the first apply.
-func initRepo(work string) (*farmRepo, error) {
+func initRepo(work, home string) (*farmRepo, error) {
 	r := &farmRepo{dir: filepath.Join(work, "repo")}
 	if err := os.MkdirAll(r.dir, 0o755); err != nil {
 		return nil, err
@@ -49,7 +49,7 @@ func initRepo(work string) (*farmRepo, error) {
 			return nil, err
 		}
 	}
-	if err := writeCases(filepath.Join(r.dir, "evals", "cases"), visibleCases); err != nil {
+	if err := writeCases(filepath.Join(r.dir, "evals", "cases"), casesFor(visibleCases, home)); err != nil {
 		return nil, err
 	}
 	return r, nil

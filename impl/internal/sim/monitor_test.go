@@ -27,10 +27,10 @@ func TestMonitorItemHistory(t *testing.T) {
 	srv := httptest.NewServer(&Monitor{Work: work})
 	defer srv.Close()
 	m := &plugins.Monitor{API: srv.URL, Token: "t", Hosts: map[string]string{}, Items: plugins.DefaultMonitorItems}
-	for h := range hostIDs {
+	for _, h := range NewWorld(now).HostNames() {
 		m.Hosts[h] = h + ".example.org"
 	}
-	for host := range hostIDs {
+	for host := range m.Hosts {
 		for field := range plugins.DefaultMonitorItems {
 			for _, step := range []string{"1m", "5m"} {
 				r, err := m.Call(context.Background(), "item_history", map[string]any{"host": host, "item": field, "step": step}, nil)

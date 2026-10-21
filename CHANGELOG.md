@@ -33,6 +33,12 @@ Entries are grouped by area; within a group the newest entry comes first.
 
 ### Reference Implementation (impl/)
 
+- `botaru-sim -farm smoke|standard` (impl/SIM.md, "Farm profiles"): a farm profile names the tenants of the stand,
+  their machines and the workers of each bot role per tenant. `smoke`, the default, is the stand as it was;
+  `standard` runs the four tenants of the cloud load test on sixteen machines with 35 agent workers. The eval bench
+  (`evals.BenchConfig.Tenants`, `EditTenants`) gives each tenant a copy of the demo manifests, its own Telegram
+  channel and agents, and runs each worker under a context of its own (`StopWorker`); the world, the fake Zabbix
+  API and the physics are per machine and tenant. `botaru-eval` and its cases are unchanged.
 - An analysis of a role's own results (`purpose: insight`) and an aggregate run on the role's `analysis` slot, as
   the apply lint already priced them (PRF-1), and their calls are held to the position's analysis ceiling (GW-7):
   the claim took the main slot `base` before, so the analysis of `ops-reader` ran on the profile of its base work.

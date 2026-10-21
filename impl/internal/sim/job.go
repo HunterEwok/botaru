@@ -15,10 +15,11 @@ import (
 	"github.com/HunterEwok/botaru/impl/internal/version"
 )
 
-// startJob enrolls and runs the job worker of the role data-job: the code of the schedule
-// tasks, which reads the world and uses no model (the role's kb.ingest.v1 is not run here).
-func (s *Stand) startJob(ctx, run context.Context) error {
-	tok, err := s.Bench.Enroll(ctx, map[string]any{"tenant": "demo", "role": "data-job", "kind": "job"})
+// startJob enrolls and runs a job worker of the role data-job in a tenant: the code of the
+// schedule tasks, which reads the world and uses no model (the role's kb.ingest.v1 is not run
+// here).
+func (s *Stand) startJob(ctx, run context.Context, tenant string) error {
+	tok, err := s.Bench.Enroll(ctx, map[string]any{"tenant": tenant, "role": "data-job", "kind": "job"})
 	if err != nil {
 		return err
 	}
@@ -31,8 +32,8 @@ func (s *Stand) startJob(ctx, run context.Context) error {
 	go func() {
 		defer s.done.Done()
 		for run.Err() == nil {
-			if err := s.jobOnce(run, c); err != nil && run.Err() == nil {
-				s.log.Addf(KindDirector, "the data-job worker: %v", err)
+			if err := s.jobOnce(run, c, tenant); err != nil && run.Err() == nil {
+				s.log.Addf(KindDirector, "the data-job worker of %s: %v", tenant, err)
 				select {
 				case <-run.Done():
 				case <-time.After(2 * time.Second):
@@ -43,8 +44,8 @@ func (s *Stand) startJob(ctx, run context.Context) error {
 	return nil
 }
 
-// jobOnce claims one attempt and completes it with the numbers of the world.
-func (s *Stand) jobOnce(ctx context.Context, c *p1client.Client) error {
+// jobOnce claims one attempt and completes it with the numbers of the tenant's world.
+func (s *Stand) jobOnce(ctx context.Context, c *p1client.Client, tenant string) error {
 	w, err := c.Claim(ctx, []string{"attempt"}, 20)
 	if err != nil || w == nil {
 		return err
@@ -59,9 +60,9 @@ func (s *Stand) jobOnce(ctx context.Context, c *p1client.Client) error {
 	var result map[string]any
 	switch p.Task.Type {
 	case "check.http.v1":
-		result = s.httpChecks()
+		result = s.httpChecks(tenant)
 	case "pipeline.watch.v1":
-		result = map[string]any{"finished": s.finishedRuns()}
+		result = map[string]any{"finished": s.finishedRuns(tenant)}
 	case "data.sensor_watch.v1":
 		result = map[string]any{"silent": 0}
 	default:
@@ -70,10 +71,11 @@ func (s *Stand) jobOnce(ctx context.Context, c *p1client.Client) error {
 	return c.Call(ctx, "complete", lease, map[string]any{"result": result}, nil)
 }
 
-// httpChecks are the results of the checks file as the external checker wrote them.
-func (s *Stand) httpChecks() map[string]any {
+// httpChecks are the results of the checks file of a tenant as the external checker wrote them;
+// none for a tenant without a web machine.
+func (s *Stand) httpChecks(tenant string) map[string]any {
 	checks := []any{}
-	raw, err := os.ReadFile(checksPath(s.cfg.Work))
+	raw, err := os.ReadFile(checksPath(s.cfg.Work, s.farm.Tenant(tenant).First(KindWeb)))
 	var all map[string]struct {
 		LastStatus int `json:"last_status"`
 		MsMax      int `json:"ms_max"`
@@ -91,12 +93,12 @@ func (s *Stand) httpChecks() map[string]any {
 	return map[string]any{"checks": checks}
 }
 
-// finishedRuns counts the oneshot runs done since the last watch.
-func (s *Stand) finishedRuns() int {
-	files, _ := filepath.Glob(filepath.Join(s.cfg.Work, "queue", "demo", "done", "*.json"))
+// finishedRuns counts the oneshot runs of a tenant done since its last watch.
+func (s *Stand) finishedRuns(tenant string) int {
+	files, _ := filepath.Glob(filepath.Join(queueDir(s.cfg.Work, tenant), "done", "*.json"))
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	n := max(0, len(files)-s.watched)
-	s.watched = len(files)
+	n := max(0, len(files)-s.watched[tenant])
+	s.watched[tenant] = len(files)
 	return min(n, 1000)
 }

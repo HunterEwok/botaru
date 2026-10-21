@@ -55,7 +55,8 @@ func within(c suiteCase, lo, hi float64) suiteCase {
 	return c
 }
 
-// visibleCases are the visible cases of ops-reader in the farm git.
+// visibleCases are the visible cases of ops-reader in the farm git of the smoke farm, and
+// casesFor gives them, or hiddenCases, for another home tenant.
 var visibleCases = []suiteCase{
 	newCase("vis-ops-claims", "ops-reader claims the investigations it answers", "Role", "", "ops-reader", "spec.claims", nil, "ops.investigate.v1"),
 	newCase("vis-ops-queue", "the queue of demo holds a day of the stand's minute schedules", "Tenant", "", "demo", "spec.limits.max_queued", atLeast(1440), ""),
@@ -70,6 +71,22 @@ var hiddenCases = []suiteCase{
 	newCase("hold-ops-queue", "the queue of demo holds the investigations of a busy day", "Tenant", "", "demo", "spec.limits.max_queued", atLeast(1000), ""),
 	within(newCase("hold-ops-attempt", "an investigation attempt leaves room for a retry within the 30 minutes of its task", "Tenant", "", "demo",
 		"spec.dispatch.rules[].timeouts.attempt", nil, ""), 300, 900),
+}
+
+// casesFor are cases of tenant demo for a home tenant: its Tenant manifest and the manifests in it.
+func casesFor(cases []suiteCase, home string) []suiteCase {
+	out := make([]suiteCase, len(cases))
+	for i, c := range cases {
+		if c.Check.Tenant == "demo" {
+			c.Check.Tenant = home
+		}
+		if c.Check.Kind == "Tenant" && c.Check.Name == "demo" {
+			c.Check.Name = home
+		}
+		c.Title = strings.ReplaceAll(c.Title, "demo", home)
+		out[i] = c
+	}
+	return out
 }
 
 func newCase(id, title, kind, tenant, name, field string, min *float64, contains string) suiteCase {

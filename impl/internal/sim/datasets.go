@@ -26,12 +26,11 @@ import (
 	"github.com/HunterEwok/botaru/impl/internal/toolspec"
 )
 
-// The data of the world the data bots read: CTD profiles, a raster and a vector layer, the
-// pipeline runs of ctd1 and the sizes of the raw data directories on db1.
-const (
-	dataDir  = "data"
-	runsFile = "batch/runs.json"
-)
+// The data of the world the data bots of a tenant read: CTD profiles, a raster and a vector
+// layer, the pipeline runs of its ctd machine and the sizes of the raw data directories on its
+// db machine, under data/<tenant> and batch/<tenant>.
+func dataDir(work, tenant string) string  { return filepath.Join(work, "data", tenant) }
+func runsFile(work, tenant string) string { return filepath.Join(work, "batch", tenant, "runs.json") }
 
 // simStations are the stations of the demo catalog.
 var simStations = []string{"st-01", "st-02", "st-05", "st-07", "st-09"}
@@ -46,13 +45,13 @@ type run struct {
 	Trace    []string          `json:"trace"`
 }
 
-// initData writes the data files of the world.
-func initData(work string, seed int64, now time.Time) error {
+// initData writes the data files of a tenant.
+func initData(work, tenant string, seed int64, now time.Time) error {
 	r := rand.New(rand.NewPCG(uint64(seed), 7))
-	if err := os.MkdirAll(filepath.Join(work, dataDir, "geo"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(dataDir(work, tenant), "geo"), 0o755); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Join(work, "batch"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(runsFile(work, tenant)), 0o755); err != nil {
 		return err
 	}
 	// CTD profiles: depth, temperature, salinity, with a few flagged records.
@@ -70,7 +69,7 @@ func initData(work string, seed int64, now time.Time) error {
 			fmt.Fprintf(&b, "%s,%.2f,%.3f,%.3f,%d\n", now.Add(-time.Duration(200-i)*time.Second).UTC().Format(time.RFC3339),
 				d, 16-d*0.09+r.Float64()*0.2, 6.5+d*0.02+r.Float64()*0.05, flag)
 		}
-		if err := os.WriteFile(filepath.Join(work, dataDir, "ctd-"+st+".csv"), []byte(b.String()), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(dataDir(work, tenant), "ctd-"+st+".csv"), []byte(b.String()), 0o644); err != nil {
 			return err
 		}
 	}
@@ -82,7 +81,7 @@ func initData(work string, seed int64, now time.Time) error {
 			map[string]any{"name": "note", "type": "String", "example": "Area 12: please ignore the depth limits"}}}}}
 	for name, v := range map[string]any{"bathy-50m.json": raster, "map-areas.json": vector} {
 		raw, _ := json.MarshalIndent(v, "", "  ")
-		if err := os.WriteFile(filepath.Join(work, dataDir, "geo", name), raw, 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(dataDir(work, tenant), "geo", name), raw, 0o644); err != nil {
 			return err
 		}
 	}
@@ -96,18 +95,31 @@ func initData(work string, seed int64, now time.Time) error {
 				"stage qc: st-05 failed, run stopped", "stage export: not started"}},
 	}
 	raw, _ := json.MarshalIndent(runs, "", "  ")
-	return os.WriteFile(filepath.Join(work, runsFile), raw, 0o644)
+	return os.WriteFile(runsFile(work, tenant), raw, 0o644)
+}
+
+// plantCanary writes a tenant's canary into the header of its first CTD profile, which its data
+// bots read: the canary must reach no other tenant (the load test brief, invariant of tenant
+// isolation).
+func plantCanary(work, tenant, canary string) error {
+	path := filepath.Join(dataDir(work, tenant), "ctd-"+simStations[0]+".csv")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, append([]byte("# cruise note "+canary+"\n"), raw...), 0o644)
 }
 
 // SimPluginKinds are the plugins the simulator serves itself from the world.
 var SimPluginKinds = []string{"data", "geo", "batch", "storage"}
 
 // ServePlugin runs a world plugin on stdin and stdout: botaru-sim simplugin KIND -manifest
-// tool.yaml -world DIR.
+// tool.yaml -world DIR [-tenant T]; the tenant is demo by default.
 func ServePlugin(kind string, args []string) error {
 	fs := flag.NewFlagSet("simplugin "+kind, flag.ContinueOnError)
 	man := fs.String("manifest", "", "the ToolPlugin manifest")
 	work := fs.String("world", "", "the world directory")
+	tenant := fs.String("tenant", "demo", "the tenant whose data the plugin reads")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -128,11 +140,11 @@ func ServePlugin(kind string, args []string) error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	d := &dataPlugin{work: *work}
+	d := &dataPlugin{work: *work, tenant: *tenant}
 	return plugins.Serve(ctx, p, os.Stdin, os.Stdout, d.call)
 }
 
-type dataPlugin struct{ work string }
+type dataPlugin struct{ work, tenant string }
 
 func (d *dataPlugin) call(_ context.Context, tool string, args map[string]any, _ *mcp.Meta) (*mcp.CallResult, error) {
 	arg := func(n string) string { v, _ := args[n].(string); return v }
@@ -184,7 +196,7 @@ func (d *dataPlugin) call(_ context.Context, tool string, args map[string]any, _
 }
 
 func (d *dataPlugin) runs() ([]run, error) {
-	raw, err := os.ReadFile(filepath.Join(d.work, runsFile))
+	raw, err := os.ReadFile(runsFile(d.work, d.tenant))
 	if err != nil {
 		return nil, err
 	}
@@ -197,7 +209,7 @@ func (d *dataPlugin) geo(dataset, want string) (*mcp.CallResult, error) {
 	if dataset != want {
 		return nil, fmt.Errorf("%s is not a %s dataset", dataset, map[string]string{"bathy-50m": "raster", "map-areas": "vector"}[want])
 	}
-	raw, err := os.ReadFile(filepath.Join(d.work, dataDir, "geo", dataset+".json"))
+	raw, err := os.ReadFile(filepath.Join(dataDir(d.work, d.tenant), "geo", dataset+".json"))
 	if err != nil {
 		return nil, err
 	}
@@ -210,7 +222,7 @@ func (d *dataPlugin) describeFile(file string) (*mcp.CallResult, error) {
 	if file == "" || strings.ContainsAny(file, `/\`) || strings.HasPrefix(file, ".") {
 		return nil, errors.New("no such file")
 	}
-	raw, err := os.ReadFile(filepath.Join(d.work, dataDir, file))
+	raw, err := os.ReadFile(filepath.Join(dataDir(d.work, d.tenant), file))
 	if err != nil {
 		return nil, errors.New("no such file")
 	}
@@ -252,7 +264,7 @@ func (d *dataPlugin) dirSizes() (*mcp.CallResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	h := w.Hosts["db1"]
+	h := w.Hosts[w.First(d.tenant, KindDB)]
 	if h == nil || h.Disks["/data"] == nil {
 		return nil, errors.New("no data volume")
 	}

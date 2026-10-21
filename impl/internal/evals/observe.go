@@ -79,7 +79,7 @@ func (b *Bench) collect(ctx context.Context, since time.Time, sender, key string
 		names[id] = n
 	}
 	rows, err := b.st.Pool.Query(ctx, `SELECT id, type, state, coalesce(reason, ''), initiator, idempotency_key, coalesce(result, 'null'::jsonb), record, created_at
-		FROM tasks WHERE tenant = 'demo' AND created_at >= $1 ORDER BY created_at, id`, since)
+		FROM tasks WHERE tenant = $2 AND created_at >= $1 ORDER BY created_at, id`, since, b.home())
 	if err != nil {
 		return nil, err
 	}
@@ -111,7 +111,7 @@ func (b *Bench) collect(ctx context.Context, since time.Time, sender, key string
 		chats[c.ExternalID] = c.Name
 	}
 	drows, err := b.st.Pool.Query(ctx, `SELECT coalesce(task, ''), kind, addr, target_id, state, coalesce(body, 'null'::jsonb), coalesce(reason, '')
-		FROM deliveries WHERE tenant = 'demo' AND created_at >= $1 ORDER BY seq`, since)
+		FROM deliveries WHERE tenant = $2 AND created_at >= $1 ORDER BY seq`, since, b.home())
 	if err != nil {
 		return nil, err
 	}
@@ -189,8 +189,8 @@ func (b *Bench) collect(ctx context.Context, since time.Time, sender, key string
 	if o.Self == nil {
 		var reason, typ string
 		err := b.st.Pool.QueryRow(ctx, `SELECT coalesce(record->>'reason', ''), coalesce(record->'after'->>'type', record->'target'->>'id', '') FROM audit
-			WHERE tenant = 'demo' AND record->>'command' = 'task.enqueue' AND record->>'ok' = 'false' AND record->'actor'->>'principal' = $1
-			AND (record->>'at')::timestamptz >= $2 ORDER BY epoch, seq LIMIT 1`, sender, since).Scan(&reason, &typ)
+			WHERE tenant = $3 AND record->>'command' = 'task.enqueue' AND record->>'ok' = 'false' AND record->'actor'->>'principal' = $1
+			AND (record->>'at')::timestamptz >= $2 ORDER BY epoch, seq LIMIT 1`, sender, since, b.home()).Scan(&reason, &typ)
 		if err == nil {
 			o.Refusal = &Refusal{Reason: reason, Type: typ}
 		} else if !errors.Is(err, pgx.ErrNoRows) {
@@ -200,13 +200,15 @@ func (b *Bench) collect(ctx context.Context, since time.Time, sender, key string
 	return o, nil
 }
 
-// pending says whether a case still has work: a task that is not terminal or a delivery of
-// tenant demo that is not done. The exports of a monitoring adapter do not count: a stand with
-// the monitor profile (the simulator) exports them on its own pace.
-func (b *Bench) pending(ctx context.Context, since time.Time) (bool, error) {
+// pending says whether a case still has work: a task that is not terminal or a delivery of a
+// tenant that is not done. Neither the tasks of the tenant's schedules nor the exports of a
+// monitoring adapter count: a stand with schedules and the monitor profile (the simulator) runs
+// them on its own pace, the schedule tasks only once its job workers started.
+func (b *Bench) pending(ctx context.Context, since time.Time, tenant string) (bool, error) {
 	var n int
-	err := b.st.Pool.QueryRow(ctx, `SELECT (SELECT count(*) FROM tasks WHERE tenant = 'demo' AND created_at >= $1 AND state IN ('submitted', 'working'))
-		+ (SELECT count(*) FROM deliveries WHERE tenant = 'demo' AND created_at >= $1 AND state IN ('planned', 'sending') AND exec_kind <> 'monitor')`, since).Scan(&n)
+	err := b.st.Pool.QueryRow(ctx, `SELECT (SELECT count(*) FROM tasks WHERE tenant = $2 AND created_at >= $1 AND state IN ('submitted', 'working')
+			AND idempotency_key NOT LIKE 'system:schedule:%')
+		+ (SELECT count(*) FROM deliveries WHERE tenant = $2 AND created_at >= $1 AND state IN ('planned', 'sending') AND exec_kind <> 'monitor')`, since, tenant).Scan(&n)
 	return n > 0, err
 }
 

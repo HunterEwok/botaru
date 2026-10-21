@@ -25,6 +25,8 @@ import (
 // switch it has is the evolution mode the director turns on: then an analysis proposes a
 // manifest change instead of a change of the kind none (D-120).
 type Brain struct {
+	// Home is the tenant of the scenarios, whose Tenant an analysis proposes to change.
+	Home   string
 	calls  atomic.Int64
 	evolve atomic.Bool
 }
@@ -34,6 +36,17 @@ func (b *Brain) Calls() int64 { return b.calls.Load() }
 
 // SetEvolve turns the evolution mode of the analyses on or off.
 func (b *Brain) SetEvolve(on bool) { b.evolve.Store(on) }
+
+// evolveTarget is the Tenant an analysis proposes to change in the evolution mode, "" outside it.
+func (b *Brain) evolveTarget() string {
+	if !b.Evolve() {
+		return ""
+	}
+	if b.Home == "" {
+		return "demo"
+	}
+	return b.Home
+}
 
 // Evolve says whether the analyses propose a manifest change.
 func (b *Brain) Evolve() bool { return b.evolve.Load() }
@@ -252,7 +265,7 @@ func (b *Brain) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	var content []map[string]any
 	stop := "end_turn"
-	if call, ans, ok := governance(system, goal, seen.String(), names, offered, called, b.Evolve()); ok {
+	if call, ans, ok := governance(system, goal, seen.String(), names, offered, called, b.evolveTarget()); ok {
 		if call != nil {
 			call["id"] = fmt.Sprintf("toolu_sim%06d", n)
 			content = []map[string]any{{"type": "text", "text": "Let me read the series."}, call}

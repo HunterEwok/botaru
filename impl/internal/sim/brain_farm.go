@@ -21,8 +21,9 @@ var (
 )
 
 // governance is the next step of a governance task, or ok false for any other task. A step is
-// a tool call (call set) or the final answer; evolve makes an analysis propose a manifest change.
-func governance(system, goal, seen string, names []string, offered map[string]map[string]any, called map[string]int, evolve bool) (call map[string]any, answer string, ok bool) {
+// a tool call (call set) or the final answer; evolve, the name of a Tenant, makes an analysis
+// propose a manifest change of it.
+func governance(system, goal, seen string, names []string, offered map[string]map[string]any, called map[string]int, evolve string) (call map[string]any, answer string, ok bool) {
 	switch {
 	case reReviewLens.MatchString(system):
 		return nil, reviewAnswer(reReviewLens.FindStringSubmatch(system)[1]), true
@@ -99,7 +100,7 @@ const (
 // value it found nothing. In the evolution mode it proposes to raise the attempt deadline of the
 // investigations instead (a manifest change of a guarded field with their attempts as its trial
 // metric), so the change goes through the merge gate, the archive and the revert (D-120).
-func insightAnswer(seen string, evolve bool) string {
+func insightAnswer(seen string, evolve string) string {
 	var res struct {
 		Series string `json:"series"`
 		Window string `json:"window"`
@@ -127,9 +128,9 @@ func insightAnswer(seen string, evolve bool) string {
 			"rollup": res.Rollup, "value": g.Points[len(g.Points)-1].Value}},
 		"change": map[string]any{"kind": "none"},
 	}
-	if evolve {
+	if evolve != "" {
 		body["change"] = map[string]any{"kind": "manifest_change", "manifest_change": map[string]any{"ops": []any{
-			map[string]any{"op": "set", "target": map[string]any{"kind": "Tenant", "name": "demo"}, "field": evolveField, "value": EvolveAttempt}}}}
+			map[string]any{"op": "set", "target": map[string]any{"kind": "Tenant", "name": evolve}, "field": evolveField, "value": EvolveAttempt}}}}
 		body["benefit"] = map[string]any{"metric": "farm.task.attempts", "subject": g.Subject, "direction": "down", "expected_change_pct": 30, "confidence": "medium"}
 		body["cost"] = map[string]any{"one_time_eur": 0, "monthly_eur": 0, "effort": "minutes"}
 		body["risk"] = map[string]any{"level": "low"}
