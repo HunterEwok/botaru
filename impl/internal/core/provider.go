@@ -211,12 +211,11 @@ func (c *Core) resolveOpen(ctx context.Context, tx pgx.Tx, now time.Time, a Alar
 	return c.resolveAlarm(ctx, tx, now, a)
 }
 
-// pairWait is the waiting reason of the pair a role's model needs, or "": provider_unavailable
+// pairWait is the waiting reason of the pair of a model profile, or "": provider_unavailable
 // while its circuit is open or waits for a fix, provider_quota while it waits for the rate
 // limit (dispatch conditions D18, D19). A circuit whose pause ended does not wait: one of its
 // tasks makes the probe.
-func pairWait(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tenant string, role manifest.Role) (string, error) {
-	_, name := mainSlot(role)
+func pairWait(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tenant, name string) (string, error) {
 	if name == "" {
 		return "", nil
 	}

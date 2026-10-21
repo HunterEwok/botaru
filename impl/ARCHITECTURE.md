@@ -489,6 +489,11 @@ call, and answers `done` with state `unknown`; P2 does not reconcile the outcome
 The `provider` of a model profile is a name that the deployment settings map to a binding, an address and the key of
 each tenant's workspace. On the test bench the provider of the examples (`provider-a`) maps to the mock provider. P4
 serves the Anthropic Messages binding with the allowlist and the model of the slot, and reserves and charges each call.
+The slot of an attempt is fixed at claim: an analysis of the role's own results (`purpose: insight`) and an aggregate
+run on the role's `analysis` slot when it has one, the slot the apply lint prices their tree budget by (PRF-1), and their
+calls are held to the position's `analysis_max_rank` (GW-7), and they wait for the provider pair of that slot's
+profile. Any other task runs on the main slot (`base`, then `analysis`, then `seat`), whose pair is checked before a
+task is picked; the farm manager seat without a charter `model_profile` also runs on the main slot (MGR-1).
 
 ### Provider pairs
 
