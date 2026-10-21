@@ -83,7 +83,7 @@ func incidentAndCommission(ctx context.Context, d *Director, sc string) error {
 	var astate, areason string
 	err = d.S.waitFor(ctx, d.Timeout, func() (bool, error) {
 		e := db.QueryRow(ctx, `SELECT state, coalesce(reason, '') FROM tasks WHERE tenant = $1 AND type = 'manager.postmortem.v1'
-			AND record->>'postmortem' = $2`, d.S.Home(), incident).Scan(&astate, &areason)
+			AND record->>'postmortem' = $2 ORDER BY created_at DESC LIMIT 1`, d.S.Home(), incident).Scan(&astate, &areason)
 		return e == nil && (astate == "completed" || astate == "failed" || astate == "canceled"), nil
 	})
 	d.check(sc, "postmortem", err == nil && astate == "completed", "analysis after the incident %s %s", astate, areason)

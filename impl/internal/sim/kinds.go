@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -92,8 +93,10 @@ func reports(ctx context.Context, d *Director, sc string) error {
 		return err
 	}
 	text := fmt.Sprint(result["text"])
+	// The number of runs as a number of its own, not a digit of the month.
 	runs := fmt.Sprint(nums["ctd_qc_runs"])
-	d.check(sc, "month_report", state == "completed" && strings.Contains(text, month) && strings.Contains(text, runs),
+	hasRuns := regexp.MustCompile(`(^|[^\d.])` + regexp.QuoteMeta(runs) + `([^\d.]|$)`).MatchString(strings.ReplaceAll(text, month, ""))
+	d.check(sc, "month_report", state == "completed" && strings.Contains(text, month) && hasRuns,
 		"state %s %s, %s CTD QC runs: %s", state, reason, runs, clip(text, 200))
 
 	start = time.Now().UTC()
@@ -376,7 +379,7 @@ func directive(ctx context.Context, d *Director, sc string) error {
 	}
 	var by string
 	_ = d.S.Bench.Store().Pool.QueryRow(ctx, `SELECT coalesce(record->'directive'->>'via', '') FROM tasks WHERE tenant = $1 AND type = 'manager.directive.v1'
-		AND created_at >= $2 ORDER BY created_at DESC LIMIT 1`, home, start).Scan(&by)
+		AND created_at >= $2 ORDER BY created_at LIMIT 1`, home, start).Scan(&by)
 	d.check(sc, "directive_done", state == "completed" && by == "channel", "state %s %s, via %q: %v", state, reason, by, result)
 	return nil
 }
@@ -395,12 +398,13 @@ func erasure(ctx context.Context, d *Director, sc string) error {
 		return fmt.Errorf("no seed person %s", leaver)
 	}
 	db := d.S.Bench.Store().Pool
+	start := time.Now().UTC()
 	// ended waits for the latest erasure request of dave other than one already seen to end.
 	ended := func(seen string) (string, string, []string, error) {
 		var id, reason, state string
 		err := d.S.waitFor(ctx, d.Timeout, func() (bool, error) {
 			e := db.QueryRow(ctx, `SELECT id, reason, state FROM erasure_requests WHERE tenant = $1 AND subject = $2 AND id <> $3
-				ORDER BY created_at DESC LIMIT 1`, home, p.ID, seen).Scan(&id, &reason, &state)
+				AND created_at >= $4 ORDER BY created_at DESC LIMIT 1`, home, p.ID, seen, start).Scan(&id, &reason, &state)
 			return e == nil && (state == "done" || state == "failed"), nil
 		})
 		var open []string
