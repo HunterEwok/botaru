@@ -35,6 +35,49 @@ type Monitor struct {
 	OnAck    func(eventid, message string)
 
 	mu sync.Mutex
+	// downUntil makes the API answer 503 until then (F-5) and twice sends the next problem
+	// webhook twice (F-6); refused and repeated count them.
+	downUntil         time.Time
+	twice             bool
+	refused, repeated int
+	// doubled is the event of the last webhook that went out twice.
+	doubled string
+	served  int
+}
+
+// Served counts the API requests the monitor answered.
+func (m *Monitor) Served() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.served
+}
+
+// Down makes the API answer 503 for a time (F-5).
+func (m *Monitor) Down(d time.Duration) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.downUntil = time.Now().Add(d)
+}
+
+// Twice sends the next webhook of an opened problem twice (F-6).
+func (m *Monitor) Twice() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.twice = true
+}
+
+// Doubled is the event of the last problem webhook sent twice, "" for none.
+func (m *Monitor) Doubled() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.doubled
+}
+
+// FaultCounts are the API requests refused while down and the webhooks sent twice.
+func (m *Monitor) FaultCounts() (refused, repeated int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.refused, m.repeated
 }
 
 // The scripts of a tenant's first web machine the catalog allows (examples/tenants/demo/catalog.yaml).
@@ -72,6 +115,18 @@ func itemIDs(w *World) map[string]string {
 }
 
 func (m *Monitor) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	m.mu.Lock()
+	down := time.Now().Before(m.downUntil)
+	if down {
+		m.refused++
+	} else {
+		m.served++
+	}
+	m.mu.Unlock()
+	if down {
+		http.Error(w, "Service Unavailable", http.StatusServiceUnavailable)
+		return
+	}
 	var req struct {
 		Method string          `json:"method"`
 		Params json.RawMessage `json:"params"`
@@ -343,6 +398,27 @@ func (m *Monitor) Notify(ctx context.Context, w *World, c Change) error {
 	if err != nil {
 		return err
 	}
+	m.mu.Lock()
+	twice := m.twice && c.Opened
+	if twice {
+		m.twice = false
+	}
+	m.mu.Unlock()
+	if err := m.post(ctx, hook, body); err != nil || !twice {
+		return err
+	}
+	if err := m.post(ctx, hook, body); err != nil {
+		return err
+	}
+	m.mu.Lock()
+	m.repeated++
+	m.doubled = c.Problem.EventID
+	m.mu.Unlock()
+	return nil
+}
+
+// post sends one problem webhook.
+func (m *Monitor) post(ctx context.Context, hook string, body []byte) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, hook, bytes.NewReader(body))
 	if err != nil {
 		return err

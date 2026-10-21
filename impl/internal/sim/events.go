@@ -27,6 +27,7 @@ const (
 	KindFuse     = "FUSE"
 	KindGit      = "FARM GIT"
 	KindLoad     = "LOAD"
+	KindFault    = "FAULT"
 )
 
 // Line is one event of a run: printed to the console and written as a JSON line to

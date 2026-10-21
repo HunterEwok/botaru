@@ -295,6 +295,7 @@ call would (the example profile prices), so the fuse can be tried without a key.
 | `manager-directive` | `bob` directs the farm manager with `/manager role pipeline-reader ...` | the directive task completed, from the channel |
 | `erasure` | `dave` asks the bot to forget him, then an operator offboards him | both erasure requests ran every step to the end, and the principal is offboarded |
 | `translator-refuses` | `bob` asks the translator for something outside its vocabulary and for something vague | `unsupported` and `ambiguous`, neither with a run |
+| `farm-faults` | the farm faults one after another in the home tenant, each with `alice` asking `/logs` why the site is slow: `F-3`, `F-4`, `F-2`, then `F-1` (on the replica that holds the lease of a slow call) with `F-5` meanwhile, `F-6` on a failed nginx, `F-7` and `F-8` (while a slow call runs) | each task completed through its fault (under `F-3` it may instead end `runs_exhausted` with the provider's reason kept, and the next task after the fault completes); the front answered errors and held calls; the killed plugin's call ended in error; the silent replica's lease expired, `alarm.worker.stale` fired and resolved; the monitor refused requests while away, raised no export alarm and served again; one problem event for the webhook sent twice; the drain was set while an attempt ran, that task completed, the start ended the drain and a task after it completed |
 | `scaffold-evolution` | the analysis of `ops-reader` runs in the evolution mode; the stand plays the operator with the farm git | `proposal_manifest_created`: a manifest change was created and its variant is `pending` in `variant.list` (an analysis that ends without one is printed, and the schedule runs it once more); `commission_recommended`: after the lens reviews of `reviewer-a` and `reviewer-b` it is `recommended` (a guarded field: the security and operational lenses gave at least 3); `gate_passed`: the merge gate on the farm git at the applied commit passed (diff, lint and coupling passed, and the regression and holdout steps of the stand's suite), recorded through P2 `proposal.gate` as `bob`; `accepted_and_realized`: the digest brought the card to `bob`, the policy accepted it (`realizing`, with its trial), and the patch with `Botaru-Proposal` committed to the farm git and applied moved it to `realized`; `reverted_and_rule_recorded`: the revert in one step (`gate.Revert` with `harm_observed`, then apply) moved it to `reverted`, the Tenant manifest has its hash from before again (EVO-10), the variant has the outcome `reverted`, `review_rule.list` holds the rule of the approach `Tenant.spec.dispatch.rules[].timeouts.attempt:up` (EVO-3), and the next analysis that proposes it again is refused with `rejected(review_rule)` |
 
 Before the analysis runs, `incident-and-commission` and `scaffold-evolution` write the history of the world into the
@@ -345,8 +346,8 @@ little later a person asks about it; now and then a person of the lab asks a dat
 |---|---|
 | `approve N`, `reject N`, `details N` | presses the button of card N as the person of its chat (approve accepts a proposal) |
 | `say PERSON TEXT` | the person writes TEXT in their direct chat, for example `say bob /logs is the site up?` |
-| `fault NAME` | breaks the world now: `nginx-down`, `slow-site`, `disk-filling` |
-| `heal` | clears the faults |
+| `fault NAME [TENANT]` | breaks the world now: `nginx-down`, `slow-site`, `disk-filling`; or puts a farm fault on, `F-1` to `F-8` (below), in TENANT or the home tenant |
+| `heal` | clears the faults of the world and the farm faults still on (a silent replica starts again on its own time) |
 | `insights on`, `insights off` | runs or pauses the analysis of `ops-reader`, whose proposals go to the commission |
 | `evolve on`, `evolve off` | the mock model's analyses propose a manifest change, or changes of the kind `none` |
 | `gate ID` | runs the merge gate of a manifest change on the farm git and records the verdict through P2 `proposal.gate` |
@@ -407,6 +408,42 @@ An analysis turn switches its tenant's schedule `ops-insight` on until the first
 most 75 seconds, and off again; each switch is a commit of
 the farm git. Every rate is per tenant, so the farm sees the sum over its tenants.
 
+A profile can also put farm faults on (below) at their times; `every` repeats one, and `tenant` names its tenant
+(the home tenant when empty). `load.json` then counts them by code and tenant (`faults`) with what the provider
+front and the monitor counted (`fault_counts`):
+
+```yaml
+faults:
+  - {code: F-1, at: 10m, tenant: lab-dept}   # tenant counts for F-1 only
+  - {code: F-3, at: 20m, every: 30m}
+```
+
+### Farm faults (`F-1` to `F-8`)
+
+Besides the world the bots look after, the stand breaks the farm itself (`internal/sim/faults.go`). `F-1`, `F-3`, `F-4`, `F-5`
+and `F-8` end on their own and `F-7` acts once; `F-2` and `F-6` stay armed until the next tool call or problem webhook takes them, or
+`heal`. The table gives what the core is to show for each. `F-1` acts in one tenant; the others act on the
+whole farm (one provider front, one monitoring system, one store, one core), so the events and `load.json` count
+them as `farm`. They come from the console (`fault F-3`), a load
+profile (`faults`) and the scenario `farm-faults`, which plays them all on the mock model.
+
+| Code | Fault | Expected outcome |
+|---|---|---|
+| `F-1` | the running replica that holds the newest attempt lease of the tenant (or, with none, a replica of its role with the most replicas) stops as a crash would: no pulses, the lease is not released; it starts again after 150 s with the same enrollment | the lease expires and the attempt is dispatched again, to another replica of the role if one runs (then within two lease terms); the task completes; `alarm.worker.stale` for the silent worker (after two minutes of silence), resolved when it calls again |
+| `F-2` | the next plugin process a toolhost starts is killed (`SIGKILL`) when its tool call comes in | that tool call ends in `error`; the bot sees a tool error, the attempt goes on or is retried; the next call starts a new process. A plugin is a process per call (`toolhost`), so "the next one" is the one in flight |
+| `F-3` | for 2 minutes the provider answers `500`, `529` or `429` to the next 3 model calls and to a quarter of the others | the gateway maps `500` and `529` to `provider_unavailable` and `429` to `provider_rate_limited`; the agent ends the attempt at the failed call without spending it, the task waits for the provider (`provider_quota`) and starts the attempt over from its first call, so the model calls and tool calls before the failure are made again; an attempt in which the model had answered before the failure counts a run, so a task of several calls may end `runs_exhausted` (`retry.max_runs`) while the fault lasts; work after the fault completes |
+| `F-4` | the provider waits 30 s before every model call for 2 minutes | the calls stay under the gateway deadline (at least 60 s) and succeed late; no alarm |
+| `F-5` | the monitoring API answers `503` for 2 minutes | the monitor plugin and the adapter get errors; the alarm export waits and retries; `alarm.monitor.export_stalled` only after 15 minutes, so not here; the API serves again afterwards |
+| `F-6` | the next webhook of an opened problem comes twice | the adapter submits the same event twice under one update id; the core keeps one `ext.monitor.problem.v1` event |
+| `F-7` | every store connection of the run's database is cut (`pg_terminate_backend`) | the transactions in flight fail once; the pool reconnects; the next work completes |
+| `F-8` | a core rollout: the farm operator drains the core (`core.drain`), the running attempts finish (at most 2 minutes), and the core starts again over the same store | while draining, claims answer `not_ready` and running attempts keep their leases; the start ends the drain and hands out work again |
+
+The provider faults happen in a front the stand puts between P4 and the provider, the mock or the real one: while
+`F-3` is on, the front answers its share of the model calls itself with the provider's error shape, without
+calling the provider; `F-4` holds a call before passing it on. `F-8` restarts the core the way the core's own test
+control does (`test/process.stop` with `kind: core`: the epoch, the leases of the downtime, the end of the drain);
+the P1 and P2 listeners stay up, so the workers see the same addresses.
+
 ## The money fuse
 
 `-max-eur` is a hard cap on the spend in the store (table `spend`: reserved and settled lines with their
@@ -462,6 +499,7 @@ line (`time`, `kind`, `text`, `data`):
 | `MONITOR` | an alarm exported to the monitoring system, a script run, a note on a problem |
 | `DIRECTOR` | a scenario starts, a task changed state (with its result as the core keeps it), a policy decision |
 | `CHECK` | a check of a scenario: `PASS`, `FAIL`, or `GAP` for a step a known gap of the core stops |
+| `FAULT` | a farm fault put on (`F-1` to `F-8`) with its expected outcome; the restart of a silent replica and the steps of a core rollout |
 | `FUSE` | the money fuse |
 | `FARM GIT` | a commit of the farm git applied, a merge gate run with its steps, a patch or a revert committed |
 

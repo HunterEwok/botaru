@@ -48,6 +48,9 @@ func main() {
 		os.Exit(code)
 	}
 	// The toolhosts start the own plugins as children of this binary (DEP-7).
+	if len(os.Args) > 1 && (os.Args[1] == "plugin" || os.Args[1] == "simplugin") {
+		sim.CrashOnCall()
+	}
 	if len(os.Args) > 1 && os.Args[1] == "plugin" {
 		if len(os.Args) < 3 {
 			fmt.Fprintln(os.Stderr, "usage: botaru-sim plugin KIND [flags]")
@@ -455,7 +458,7 @@ func continuous(ctx context.Context, d *sim.Director, o options, stdin io.Reader
 	defer cancel()
 	lines := make(chan string)
 	if o.interactive {
-		fmt.Fprintln(stdout, "commands: approve N | reject N | details N | say PERSON TEXT | fault NAME | heal | insights on|off | evolve on|off | "+
+		fmt.Fprintln(stdout, "commands: approve N | reject N | details N | say PERSON TEXT | fault NAME|F-N [TENANT] | heal | insights on|off | evolve on|off | "+
 			"gate ID | realize ID | revert ID [REASON] | variants | rules | cards | status | quit")
 		go func() {
 			sc := bufio.NewScanner(stdin)
@@ -567,7 +570,16 @@ func command(ctx context.Context, d *sim.Director, line string, out io.Writer) b
 		_, err = d.S.Say(f[1], f[1]+"-dm", strings.Join(f[2:], " "))
 	case "fault":
 		if len(f) < 2 {
-			err = errors.New("fault NAME: nginx-down, slow-site or disk-filling")
+			err = errors.New("fault NAME [TENANT]: nginx-down, slow-site or disk-filling, or a farm fault " + strings.Join(sim.FaultCodes(), ", "))
+			break
+		}
+		if sim.FarmFaultOf(f[1]) != nil {
+			tenant := ""
+			if len(f) > 2 {
+				tenant = f[2]
+			}
+			// F-8 waits for the drain; the console goes on meanwhile.
+			d.S.InjectFaultLater(f[1], tenant, func(err error) { fmt.Fprintln(out, "error:", err) })
 			break
 		}
 		err = breakWorld(ctx, d, f[1])

@@ -3,6 +3,7 @@
 package sim
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -23,6 +24,7 @@ import (
 
 	"github.com/HunterEwok/botaru/impl/internal/core"
 	"github.com/HunterEwok/botaru/impl/internal/evals"
+	"github.com/HunterEwok/botaru/impl/internal/gateway"
 	"github.com/HunterEwok/botaru/impl/internal/ids"
 	"github.com/HunterEwok/botaru/impl/internal/monitor/zabbix"
 	"github.com/HunterEwok/botaru/impl/internal/p1client"
@@ -105,6 +107,12 @@ type Stand struct {
 	spent   int64
 	stopped chan struct{}
 	cancel  context.CancelFunc
+	// runCtx is the stand's run, which ends at Close; front stands between P4 and the provider
+	// for the farm faults F-3 and F-4.
+	runCtx context.Context
+	front  *providerFront
+	// closing is set once Close begins: no new background work starts (spawn).
+	closing bool
 	done    sync.WaitGroup
 	closers []func()
 	fuseMu  sync.Mutex
@@ -186,7 +194,7 @@ func Start(ctx context.Context, cfg Config) (_ *Stand, err error) {
 	}
 	s.Mon.OnAck = func(id, msg string) { s.log.Add(KindMonitor, "note on problem "+id+": "+msg, nil) }
 
-	model := evals.ModelConfig{Real: true, BaseURL: cfg.BaseURL, Key: cfg.Key}
+	target, key := cmp.Or(cfg.BaseURL, gateway.AnthropicURL), cfg.Key
 	if !cfg.Real {
 		u, stop, err := serve(s.Brain)
 		if err != nil {
@@ -198,8 +206,18 @@ func Start(ctx context.Context, cfg Config) (_ *Stand, err error) {
 			}
 		}()
 		s.closeLater(stop)
-		model = evals.ModelConfig{Real: true, BaseURL: u, Key: "sim-mock-key"}
+		target, key = u, "sim-mock-key"
 	}
+	// P4 reaches the provider through the front of the farm faults.
+	if s.front, err = newProviderFront(target, cfg.Seed); err != nil {
+		return nil, err
+	}
+	fu, stopFront, err := serve(s.front)
+	if err != nil {
+		return nil, err
+	}
+	s.closeLater(stopFront)
+	model := evals.ModelConfig{Real: true, BaseURL: fu, Key: key}
 	skills, err := skillFolders(cfg.Root)
 	if err != nil {
 		return nil, err
@@ -229,10 +247,11 @@ func Start(ctx context.Context, cfg Config) (_ *Stand, err error) {
 			if kind == "pipeline" {
 				kind = "queue"
 			}
+			env := []string{CrashEnv + "=" + crashFile(cfg.Work)}
 			if slices.Contains(SimPluginKinds, kind) {
-				return append([]string{cfg.Exe, "simplugin", kind}, args...), nil
+				return append([]string{cfg.Exe, "simplugin", kind}, args...), env
 			}
-			return append([]string{cfg.Exe, "plugin", kind}, args...), nil
+			return append([]string{cfg.Exe, "plugin", kind}, args...), env
 		},
 		Roles:    farmRoles,
 		Tenants:  tenants,
@@ -298,7 +317,7 @@ func Start(ctx context.Context, cfg Config) (_ *Stand, err error) {
 		}
 	}
 	runCtx, cancel := context.WithCancel(context.Background())
-	s.cancel = cancel
+	s.cancel, s.runCtx = cancel, runCtx
 	for _, t := range f.Tenants {
 		for range t.Workers("data-job") {
 			if err := s.startJob(ctx, runCtx, t.Name); err != nil {
@@ -568,6 +587,9 @@ func (s *Stand) startAdapter(ctx context.Context, tenant string) error {
 
 // Close stops the simulator's workers and the bench.
 func (s *Stand) Close() {
+	s.mu.Lock()
+	s.closing = true
+	s.mu.Unlock()
 	if s.cancel != nil {
 		s.cancel()
 	}

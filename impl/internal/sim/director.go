@@ -90,6 +90,8 @@ var Scenarios = []Scenario{
 	{"manager-directive", "bob directs the farm manager with /manager to look at the pipeline reader; the seat runs the directive", directive},
 	{"erasure", "dave asks the bot to forget him, the erasure runs to the end, and an operator offboards him", erasure},
 	{"translator-refuses", "bob asks the translator for something outside its vocabulary and for something vague: no draft, no run", translatorRefuses},
+	{"farm-faults", "the farm's own faults one after another: provider errors and slowness, a plugin process killed, a replica silent " +
+		"while the monitoring API is away, a webhook twice, the store connections cut and a core rollout; each with its expected outcome", farmFaults},
 }
 
 // Find is the scenario of a name.
@@ -177,6 +179,7 @@ func (d *Director) RunScenarios(ctx context.Context, names []string) error {
 
 // Heal clears the faults and lets the problems close.
 func (d *Director) Heal(ctx context.Context) error {
+	d.S.HealFarm()
 	err := Update(d.S.cfg.Work, func(w *World) error {
 		clear(w.Faults)
 		for _, h := range w.Hosts {
@@ -248,7 +251,12 @@ func (d *Director) waitProblem(ctx context.Context, reason string) (*Problem, er
 // taskEnd waits for the task of a message key to end and returns its state, reason and
 // result.
 func (d *Director) taskEnd(ctx context.Context, key string) (state, reason string, result map[string]any, err error) {
-	err = d.S.waitFor(ctx, d.Timeout, func() (bool, error) {
+	return d.taskEndWithin(ctx, key, d.Timeout)
+}
+
+// taskEndWithin is taskEnd with a wait of its own.
+func (d *Director) taskEndWithin(ctx context.Context, key string, timeout time.Duration) (state, reason string, result map[string]any, err error) {
+	err = d.S.waitFor(ctx, timeout, func() (bool, error) {
 		var raw []byte
 		e := d.S.Bench.Store().Pool.QueryRow(ctx, `SELECT state, coalesce(reason, ''), result FROM tasks WHERE tenant = ANY($2) AND idempotency_key = $1`, key, d.S.TenantNames()).
 			Scan(&state, &reason, &raw)
@@ -260,7 +268,7 @@ func (d *Director) taskEnd(ctx context.Context, key string) (state, reason strin
 		return state == "completed" || state == "failed" || state == "canceled", nil
 	})
 	if errors.Is(err, context.DeadlineExceeded) {
-		err = fmt.Errorf("the task of the message did not end within %v (state %q)", d.Timeout, state)
+		err = fmt.Errorf("the task of the message did not end within %v (state %q)", timeout, state)
 	}
 	return
 }

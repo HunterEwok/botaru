@@ -66,6 +66,7 @@ func startStand(t *testing.T, maxMicros int64) (*Stand, *syncBuffer) {
 // TestScenarios runs every scripted scenario on the mock model: each check of the director
 // passes, and nothing of the host was touched (the world's stubs answered every program).
 func TestScenarios(t *testing.T) {
+	t.Parallel()
 	s, console := startStand(t, 5_000_000)
 	d := &Director{S: s, Approve: "safe", Timeout: 90 * time.Second, Seed: 42}
 	ctx, cancel := context.WithCancel(t.Context())
@@ -73,7 +74,10 @@ func TestScenarios(t *testing.T) {
 	go d.HandleCards(ctx)
 	var names []string
 	for _, sc := range Scenarios {
-		names = append(names, sc.Name)
+		// The farm's own faults take minutes of fault time; TestFarmFaults runs them beside.
+		if sc.Name != "farm-faults" {
+			names = append(names, sc.Name)
+		}
 	}
 	if err := d.RunScenarios(ctx, names); err != nil {
 		t.Fatalf("%v\n%s", err, console)
@@ -127,5 +131,27 @@ func TestFuse(t *testing.T) {
 	time.Sleep(5 * time.Second)
 	if s.Brain.Calls() != calls {
 		t.Fatalf("model calls after the fuse: %d -> %d\n%s", calls, s.Brain.Calls(), console)
+	}
+}
+
+// TestFarmFaults runs the farm's own faults F-1 to F-8 on the mock model, beside TestScenarios:
+// every expected outcome holds.
+func TestFarmFaults(t *testing.T) {
+	t.Parallel()
+	s, console := startStand(t, 5_000_000)
+	d := &Director{S: s, Approve: "safe", Timeout: 90 * time.Second, Seed: 42}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	go d.HandleCards(ctx)
+	if err := d.RunScenarios(ctx, []string{"farm-faults"}); err != nil {
+		t.Fatalf("%v\n%s", err, console)
+	}
+	for _, r := range d.Results() {
+		if !r.OK {
+			t.Errorf("%s %s: %s", r.Scenario, r.Check, r.Detail)
+		}
+	}
+	if t.Failed() {
+		t.Log(console)
 	}
 }
