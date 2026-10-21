@@ -31,6 +31,11 @@ export BOTARU_SIM_PROVIDER_KEY=...
 
 # The farm of the cloud load test: four tenants, sixteen machines, the scenarios in its first tenant.
 ./botaru-sim -mock -farm standard -scenario all -out ./sim-out
+
+# The load test on the standard farm: first the money plan on the mock, then the real run of the same flags.
+# Set -max-eur of the real run to the plan's recommendation.
+./botaru-sim -mock -farm standard -load standard -duration 1h -dry-plan -out ./sim-out
+./botaru-sim -real -farm standard -load standard -duration 1h -auto-approve safe -max-eur 20 -export ./export -out ./sim-out
 ```
 
 The DSN names a PostgreSQL server; each run creates a fresh database on it and drops it at the end (`-keep-db`
@@ -555,6 +560,79 @@ another model of the profile after a provider error is a second provider call in
 provider errors the provider sees more calls a minute than `-max-calls-per-min` (never more in flight). Each wait is a model
 event with `limiter_wait_ms`, and the metrics count the calls, the waits and the most calls waiting at once
 (`metrics.json` `observed.limiter`). The wait falls inside the attempt, so it is not in M-2's queue wait.
+
+## Where the stand departs from a real farm
+
+The stand runs the real core and the real workers, but it plays weeks in minutes, has no Zabbix behind its
+monitoring and starts from the example manifests, which are not a farm of their own. So it changes some of what a
+real farm would take from its manifests or its clock. The list below names every such change. The changes loosen
+limits so that a run of minutes can do its work; the one that tightens a limit is `budget-exhaustion`'s day budget.
+
+**The manifests, at every start** (`internal/sim/farm.go`, `tenants.go`):
+
+| Change | Why |
+|---|---|
+| ops-reader's analysis limits rise to 50 runs a week (`insight.max_runs`) and `insight.max_per_week` 10 | a run plays weeks in minutes |
+| ops-reader receives messages, data-job sends sensor notes, `ops.summary.v1` reads the inbox, `data.sensor_watch.v1` is of class `summary` | the sensor notes of the bots (MSG-5); the example's `internal` would refuse every note (MSG-6) |
+| the farm manager role also claims `manager.postmortem.v1` | the example leaves the analysis after an incident to a farm that runs it (MGR-53) |
+| `cleanup_pipeline_tmp` may run in a script; the tenants get the commands `/script` and `/rollout` | the translator and campaign scenarios (SCR-2, R-12) |
+| the groups `system-ops` and `farm-manager-ops`, and schedules every minute (analysis, sensor watch, external checks, nightly sensor check, paused where a scenario turns them on) and the pipelines watch every 2 minutes | the system tasks and the farm manager's controls; schedules of hours would not fire in a run |
+| the incident classes lose `detect.for`, `resolve.for` and `detect.when`, and `disk_filling` is left out | the core has no re-check job of a monitoring problem (MON-5), so a class opens on the alarm alone, at once; with both disk classes every disk fault would open two incidents |
+| the group `ops-oncall` of every tenant holds `incident.manage` | no example group holds it, so the notice of an incident in a tenant without the farm manager would reach nobody (MGR-6, M-9) |
+| `farm_manager.enabled` per the profile's `manager`; with `evolution` the proposals go to `group:deciders`, the digest runs every minute, the evolution and its gate are on, and a dispatcher rule gives `ops.investigate.v1` an attempt deadline of 5 minutes for the evolution to tune | the farm profile ([Farm profiles](#farm-profiles--farm)) |
+| each tenant's catalog names its own machines, with the selectors `all-hosts` and `<kind>-hosts` | one example catalog for many tenants |
+
+**The people** (`farm.go`, `stand.go`, `tenants.go`): `alice` joins `staff`, `runners` and `lead`; `bob` joins the
+new groups `deciders` (`proposal.decide` and `proposal.gate` of `reliability`, `manager.direct`) and `runners`
+(`script.run`); `staff` gets four more task types and `kb.write:vendor-manuals`; the approvers may approve
+`cleanup_pipeline_tmp`. Every further tenant gets copies of the people with Telegram ids of its own.
+
+**Only with `-real`** (`stand.go` `editManifests`, `widenBudgets`): each model profile names the model of its rank
+(or of `-model`) and its price, and budgets too small for one call of that model are raised: a task type's
+`tree_budget_eur` to twice the call reserve of its role, a tenant's `review` and `manager` budget lines to fit their
+work. Nothing is lowered; the money fuse caps the run.
+
+**The store, by hand** (only where a scenario or the console needs it):
+
+- turning the analyses on dates the analyses of the last 61 minutes back by 61 minutes (`stand.go`
+  `SetInsightsIn`): the merge window of the analyses (INS-4) would otherwise hold a run of minutes; used by
+  `incident-and-commission`, `scaffold-evolution`, the load's `R-19` and the console's `insights on`;
+- a parked proposal's `parked_since` is dated back past `park_ttl` (`commission.go` `settle`), so the commission
+  sees it again in the same run;
+- 18 past investigations are written as observation points of the core (`seed.go`, OBV-5), the history the observe
+  loop would have written over weeks, for the commission and the evolution to read.
+- `kb-and-injection` takes its planted knowledge document out of search when it ends, the way a deletion does
+  (KNW-5: the document `deleted`, its fragments gone), since no P2 method deletes an uploaded document.
+
+**The farm git, while a run goes** (commits applied like any change): the schedules of the analysis and the nightly
+sensor check paused and resumed; `budget-exhaustion` sets a tenant's day budget to 0.0001 EUR and back;
+`scaffold-evolution` and the console's `evolve on` replace the instruction of `ops.insight.v1` with the load check
+text; the stand runs the merge gate, `Realize` and the revert of a proposal itself, as the decider and the executor
+would.
+
+**The core and its services:**
+
+- the core runs as a test bench (`TestBench`, APR-9), as the eval bench does: every tenant is of `kind: test`, a
+  model price older than its check date (GW-17) is logged instead of refusing the set, and the `test/*` operations
+  are there (F-8 restarts the core with `test/process.stop`);
+- the monitoring adapter is on, against the stand's monitoring API instead of Zabbix ([The monitoring
+  system](#the-monitoring-system));
+- the plugins of kind `pipeline` run as the oneshot `queue`, and the data, geo, batch and storage plugins as the
+  stand's `simplugin`; the toolhosts of commands and services call stub programs that answer from the world
+  ([No host is touched](#no-host-is-touched));
+- `data-job` runs on the stand's own job worker, which calls no model;
+- at start the stand assigns the farm manager's seat as the farm operator would (`seat.assign`);
+- the model calls pass the provider front (the faults F-3 and F-4) and the limiter (on by default with `-real`, on
+  the mock only when `-max-calls-per-min` or `-max-parallel-calls` is given);
+- every tenant has a canary of its own in its data, the deciders have P2 credentials of their own (the stand acts
+  as them), and every plugin process carries the hook of the fault F-2;
+- after each scenario the world heals, and the holds `contain_auto` and the `manager_breaker` safeguard are
+  released by `hold.release`: the core keeps them until their time ends (MGR-7), longer than a scenario.
+
+Beyond the incident classes' `detect.for` and `resolve.for` above, the stand shortens no wait of the core: lease
+terms, attempt deadlines (the dispatcher rule above keeps the example's 5 minutes), queue limits and timeouts are
+the examples'. Its own waits are the world's step (`-step`, 5 s) and `-timeout` (3 minutes) for each
+step of a scenario.
 
 ## Output
 
