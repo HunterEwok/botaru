@@ -251,7 +251,12 @@ func (d *Director) waitProblem(ctx context.Context, reason string) (*Problem, er
 // taskEnd waits for the task of a message key to end and returns its state, reason and
 // result.
 func (d *Director) taskEnd(ctx context.Context, key string) (state, reason string, result map[string]any, err error) {
-	err = d.S.waitFor(ctx, d.Timeout, func() (bool, error) {
+	return d.taskEndWithin(ctx, key, d.Timeout)
+}
+
+// taskEndWithin is taskEnd with a wait of its own.
+func (d *Director) taskEndWithin(ctx context.Context, key string, timeout time.Duration) (state, reason string, result map[string]any, err error) {
+	err = d.S.waitFor(ctx, timeout, func() (bool, error) {
 		var raw []byte
 		e := d.S.Bench.Store().Pool.QueryRow(ctx, `SELECT state, coalesce(reason, ''), result FROM tasks WHERE tenant = ANY($2) AND idempotency_key = $1`, key, d.S.TenantNames()).
 			Scan(&state, &reason, &raw)
@@ -263,7 +268,7 @@ func (d *Director) taskEnd(ctx context.Context, key string) (state, reason strin
 		return state == "completed" || state == "failed" || state == "canceled", nil
 	})
 	if errors.Is(err, context.DeadlineExceeded) {
-		err = fmt.Errorf("the task of the message did not end within %v (state %q)", d.Timeout, state)
+		err = fmt.Errorf("the task of the message did not end within %v (state %q)", timeout, state)
 	}
 	return
 }

@@ -40,7 +40,9 @@ type Monitor struct {
 	downUntil         time.Time
 	twice             bool
 	refused, repeated int
-	served            int
+	// doubled is the event of the last webhook that went out twice.
+	doubled string
+	served  int
 }
 
 // Served counts the API requests the monitor answered.
@@ -57,11 +59,18 @@ func (m *Monitor) Down(d time.Duration) {
 	m.downUntil = time.Now().Add(d)
 }
 
-// Twice sends the next problem webhook twice (F-6).
+// Twice sends the next webhook of an opened problem twice (F-6).
 func (m *Monitor) Twice() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.twice = true
+}
+
+// Doubled is the event of the last problem webhook sent twice, "" for none.
+func (m *Monitor) Doubled() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.doubled
 }
 
 // FaultCounts are the API requests refused while down and the webhooks sent twice.
@@ -390,16 +399,22 @@ func (m *Monitor) Notify(ctx context.Context, w *World, c Change) error {
 		return err
 	}
 	m.mu.Lock()
-	twice := m.twice
+	twice := m.twice && c.Opened
 	if twice {
 		m.twice = false
-		m.repeated++
 	}
 	m.mu.Unlock()
 	if err := m.post(ctx, hook, body); err != nil || !twice {
 		return err
 	}
-	return m.post(ctx, hook, body)
+	if err := m.post(ctx, hook, body); err != nil {
+		return err
+	}
+	m.mu.Lock()
+	m.repeated++
+	m.doubled = c.Problem.EventID
+	m.mu.Unlock()
+	return nil
 }
 
 // post sends one problem webhook.

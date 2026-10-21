@@ -8,6 +8,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -579,11 +580,7 @@ func command(ctx context.Context, d *sim.Director, line string, out io.Writer) b
 				tenant = f[2]
 			}
 			// F-8 waits for the drain; the console goes on meanwhile.
-			go func() {
-				if _, err := d.S.InjectFault(ctx, f[1], tenant); err != nil {
-					fmt.Fprintln(out, "error:", err)
-				}
-			}()
+			d.S.InjectFaultLater(f[1], tenant, func(err error) { fmt.Fprintln(out, "error:", err) })
 			break
 		}
 		err = breakWorld(ctx, d, f[1])
@@ -835,16 +832,16 @@ func crashOnCall() {
 	}
 	os.Stdin = r
 	go func() {
-		sc := bufio.NewScanner(in)
-		sc.Buffer(make([]byte, 64<<10), 16<<20)
-		for sc.Scan() {
-			if strings.Contains(sc.Text(), `"tools/call"`) && os.Remove(mark) == nil {
+		br := bufio.NewReader(in)
+		for {
+			line, err := br.ReadBytes('\n')
+			if bytes.Contains(line, []byte(`"tools/call"`)) && os.Remove(mark) == nil {
 				_ = syscall.Kill(os.Getpid(), syscall.SIGKILL)
 			}
-			if _, err := w.Write(append(sc.Bytes(), '\n')); err != nil {
+			if _, werr := w.Write(line); werr != nil || err != nil {
+				_ = w.Close()
 				return
 			}
 		}
-		_ = w.Close()
 	}()
 }

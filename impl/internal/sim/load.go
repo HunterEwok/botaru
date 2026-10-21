@@ -3,7 +3,6 @@
 package sim
 
 import (
-	"cmp"
 	"context"
 	"embed"
 	"fmt"
@@ -268,7 +267,8 @@ type loadGen struct {
 type LoadSummary struct {
 	Started map[string]int `json:"started"`
 	Skipped map[string]int `json:"skipped"`
-	// Faults counts the farm faults put on by "code tenant", and FaultCounts what the provider
+	// Faults counts the farm faults put on by "code scope" (the tenant of F-1, farm for the
+	// others), and FaultCounts what the provider
 	// front and the monitor counted of them.
 	Faults      map[string]int `json:"faults,omitempty"`
 	FaultCounts map[string]int `json:"fault_counts,omitempty"`
@@ -329,11 +329,11 @@ func (g *loadGen) faults(ctx context.Context, f LoadFault, count map[string]int)
 			return
 		case <-time.After(wait):
 		}
-		if _, err := g.d.S.InjectFault(ctx, f.Code, f.Tenant); err != nil {
+		if run, err := g.d.S.InjectFault(ctx, f.Code, f.Tenant); err != nil {
 			g.d.S.log.Addf(KindFault, "%s: %v", f.Code, err)
 		} else {
 			g.mu.Lock()
-			count[f.Code+" "+cmp.Or(f.Tenant, g.d.S.Home())]++
+			count[f.Code+" "+run.Scope]++
 			g.mu.Unlock()
 		}
 		if f.Every <= 0 {

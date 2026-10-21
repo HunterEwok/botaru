@@ -3,6 +3,7 @@
 package sim
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -23,6 +24,7 @@ import (
 
 	"github.com/HunterEwok/botaru/impl/internal/core"
 	"github.com/HunterEwok/botaru/impl/internal/evals"
+	"github.com/HunterEwok/botaru/impl/internal/gateway"
 	"github.com/HunterEwok/botaru/impl/internal/ids"
 	"github.com/HunterEwok/botaru/impl/internal/monitor/zabbix"
 	"github.com/HunterEwok/botaru/impl/internal/p1client"
@@ -107,8 +109,10 @@ type Stand struct {
 	cancel  context.CancelFunc
 	// runCtx is the stand's run, which ends at Close; front stands between P4 and the provider
 	// for the farm faults F-3 and F-4.
-	runCtx  context.Context
-	front   *providerFront
+	runCtx context.Context
+	front  *providerFront
+	// closing is set once Close begins: no new background work starts (spawn).
+	closing bool
 	done    sync.WaitGroup
 	closers []func()
 	fuseMu  sync.Mutex
@@ -190,7 +194,7 @@ func Start(ctx context.Context, cfg Config) (_ *Stand, err error) {
 	}
 	s.Mon.OnAck = func(id, msg string) { s.log.Add(KindMonitor, "note on problem "+id+": "+msg, nil) }
 
-	target, key := cfg.BaseURL, cfg.Key
+	target, key := cmp.Or(cfg.BaseURL, gateway.AnthropicURL), cfg.Key
 	if !cfg.Real {
 		u, stop, err := serve(s.Brain)
 		if err != nil {
@@ -583,6 +587,9 @@ func (s *Stand) startAdapter(ctx context.Context, tenant string) error {
 
 // Close stops the simulator's workers and the bench.
 func (s *Stand) Close() {
+	s.mu.Lock()
+	s.closing = true
+	s.mu.Unlock()
 	if s.cancel != nil {
 		s.cancel()
 	}
