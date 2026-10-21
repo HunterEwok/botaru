@@ -644,7 +644,11 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 	// The run fingerprint and the catalog values of the result check are fixed at claim and
 	// written into the attempt (PRV-1, OUT-1); the worker does not set them.
 	slot, profile := attemptSlot(role, tt)
-	// An attempt of the farm manager seat runs on the seat model of the farm charter (MGR-1).
+	// A seat task runs on the role's main slot, whose pair and seat eval were checked, and an
+	// attempt of the farm manager seat on the seat model of the farm charter (MGR-1).
+	if seatOfRecord(rec) != "" {
+		slot, profile = mainSlot(role)
+	}
 	if seatOfRecord(rec) == managerSeatID {
 		if mp := mstr(managerCharter(cat), "model_profile"); mp != "" {
 			slot, profile = "seat", mp

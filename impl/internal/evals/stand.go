@@ -65,13 +65,9 @@ func (b *Bench) Home() string { return b.home() }
 // GoNamed runs a further worker under a name until StopWorker stops it or the bench closes; a
 // name the bench already runs is refused.
 func (b *Bench) GoNamed(name string, w func(context.Context) error) error {
-	b.workersMu.Lock()
-	_, dup := b.workers[name]
-	b.workersMu.Unlock()
-	if dup {
+	if !b.start(b.runCtx, name, w) {
 		return fmt.Errorf("worker %s runs already", name)
 	}
-	b.start(b.runCtx, name, w)
 	return nil
 }
 

@@ -85,7 +85,16 @@ func farmSeedTenants(sd *evals.Seed, f *Farm) {
 		}
 	}
 	sd.People, sd.Chats = people, chats
-	sd.Tenants = append([]string{"farm"}, f.TenantNames()...)
+	// The smoke farm keeps demo as its home and the seed's demo2 with it, as before the profiles.
+	if f.Home().Name == templateTenant {
+		for _, n := range f.TenantNames() {
+			if !slices.Contains(sd.Tenants, n) {
+				sd.Tenants = append(sd.Tenants, n)
+			}
+		}
+	} else {
+		sd.Tenants = append([]string{"farm"}, f.TenantNames()...)
+	}
 	if len(f.Tenants) > 1 {
 		if sd.TenantCanaries == nil {
 			sd.TenantCanaries = map[string]string{}

@@ -567,7 +567,8 @@ func (b *Bench) forTenants(ms []map[string]any) []map[string]any {
 			tenant = str(md["name"])
 		}
 		if tenant != templateTenant {
-			if tenant == "" || len(b.cfg.Tenants) == 0 || tenant == "farm" || b.isTenant(tenant) {
+			// A farm with demo as its home keeps the example demo2 beside it.
+			if tenant == "" || len(b.cfg.Tenants) == 0 || tenant == "farm" || b.isTenant(tenant) || b.home() == templateTenant {
 				out = append(out, m)
 			}
 			continue
@@ -947,10 +948,14 @@ func (b *Bench) startWorkers(ctx, runCtx context.Context, tx *texts.Catalog, bot
 }
 
 // start runs a worker under a context of its own until it ends, StopWorker stops it or the bench
-// closes.
-func (b *Bench) start(runCtx context.Context, name string, run func(context.Context) error) {
-	ctx, cancel := context.WithCancel(runCtx)
+// closes; false, and nothing started, when a worker of the name runs already.
+func (b *Bench) start(runCtx context.Context, name string, run func(context.Context) error) bool {
 	b.workersMu.Lock()
+	if _, dup := b.workers[name]; dup {
+		b.workersMu.Unlock()
+		return false
+	}
+	ctx, cancel := context.WithCancel(runCtx)
 	b.workers[name] = cancel
 	b.workersMu.Unlock()
 	b.done.Add(1)
@@ -959,6 +964,7 @@ func (b *Bench) start(runCtx context.Context, name string, run func(context.Cont
 		defer cancel()
 		_ = run(ctx)
 	}()
+	return true
 }
 
 func (b *Bench) dataPath(host, file string) string { return filepath.Join(b.dataDir, host, file) }

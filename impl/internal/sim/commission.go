@@ -34,7 +34,7 @@ func incidentAndCommission(ctx context.Context, d *Director, sc string) error {
 	}); err != nil {
 		return err
 	}
-	p, err := d.waitProblem(ctx, "disk:db1:/data")
+	p, err := d.waitProblem(ctx, "disk:"+d.S.HomeHost(KindDB)+":/data")
 	if err != nil {
 		return fmt.Errorf("the monitoring problem did not open: %w", err)
 	}

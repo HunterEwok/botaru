@@ -579,6 +579,10 @@ func (b *Bench) step(ctx context.Context, key string, sm map[string]any, timeout
 func (b *Bench) play(ctx context.Context, from, chat, text string, timeout time.Duration) (key, task string, err error) {
 	p := b.seed.Person(from)
 	ch := b.seed.Chat(chat)
+	tenant := p.Tenant
+	if tenant == "" {
+		tenant = b.home()
+	}
 	uid, err := strconv.ParseInt(telegramUserID(p.Identity), 10, 64)
 	if err != nil {
 		return "", "", fmt.Errorf("person %s has no telegram identity", from)
@@ -612,7 +616,7 @@ func (b *Bench) play(ctx context.Context, from, chat, text string, timeout time.
 		if err := b.checkCap(ctx); err != nil {
 			return key, "", err
 		}
-		busy, err := b.pending(ctx, since, p.Tenant)
+		busy, err := b.pending(ctx, since, tenant)
 		if err != nil {
 			return key, "", err
 		}
@@ -625,7 +629,7 @@ func (b *Bench) play(ctx context.Context, from, chat, text string, timeout time.
 			return key, "", err
 		}
 	}
-	err = b.st.Pool.QueryRow(ctx, `SELECT coalesce(max(id), '') FROM tasks WHERE tenant = $2 AND idempotency_key = $1`, key, p.Tenant).Scan(&task)
+	err = b.st.Pool.QueryRow(ctx, `SELECT coalesce(max(id), '') FROM tasks WHERE tenant = $2 AND idempotency_key = $1`, key, tenant).Scan(&task)
 	return key, task, err
 }
 
