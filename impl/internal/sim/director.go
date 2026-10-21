@@ -361,11 +361,12 @@ func (d *Director) HandleCards(ctx context.Context) {
 				if pressedIn[own] || !has("ap") {
 					continue
 				}
-				pressedIn[own] = true
 				d.S.log.Addf(KindDirector, "policy %s: approve card %d (%s of the scenario)", d.Approve, c.No, c.Subject)
 				if err := d.S.Press(c.No, "ap", ""); err != nil {
 					d.S.log.Addf(KindDirector, "pressing card %d: %v", c.No, err)
+					continue
 				}
+				pressedIn[own] = true
 				continue
 			}
 			if handled[c.No] || c.Pressed != "" || !has("ap") && !has("ac") {

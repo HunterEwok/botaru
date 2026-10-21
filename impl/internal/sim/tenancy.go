@@ -132,7 +132,8 @@ func budgetExhaustion(ctx context.Context, d *Director, sc string) error {
 	var state, reason string
 	err = d.S.waitFor(ctx, d.Timeout, func() (bool, error) {
 		_ = db.QueryRow(ctx, `SELECT count(*) FROM audit WHERE tenant = $1 AND at >= $2 AND record->>'ok' = 'false'
-			AND record->>'reason' = 'budget_exhausted'`, tight.Name, start).Scan(&refusals)
+			AND record->>'reason' = 'budget_exhausted'
+				AND record->>'command' = 'task.enqueue' AND record->'actor'->>'principal' LIKE 'human:%'`, tight.Name, start).Scan(&refusals)
 		_ = db.QueryRow(ctx, `SELECT state, coalesce(reason, '') FROM tasks WHERE tenant = $1 AND idempotency_key = $2`, tight.Name, key).Scan(&state, &reason)
 		return refusals > 0 && state == "" || state == "completed" || state == "failed" || state == "canceled", nil
 	})
