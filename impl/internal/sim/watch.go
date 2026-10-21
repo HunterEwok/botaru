@@ -157,7 +157,6 @@ func (w *watch) foreign(tenant, text string) (string, string) {
 	return "", ""
 }
 
-// model sees a model request P4 sends for a tenant (I-2, I-8).
 // injectedRequests is the number of model requests so far that held the planted orders.
 func (w *watch) injectedRequests() int {
 	w.mu.Lock()
@@ -165,6 +164,7 @@ func (w *watch) injectedRequests() int {
 	return w.injected
 }
 
+// model sees a model request P4 sends for a tenant (I-2, I-8).
 func (w *watch) model(tenant string, body []byte) {
 	text := string(body)
 	if t, c := w.foreign(tenant, text); c != "" {

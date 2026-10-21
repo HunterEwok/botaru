@@ -13,7 +13,7 @@ import (
 const seedInvestigations = 18
 
 // SeedInvestigationLoad writes the history of the world's past investigations into the core
-// series of ops-reader: the outcome, the attempts and the attempt duration of
+// series of ops-reader of the home tenant: the outcome, the attempts and the attempt duration of
 // task_type:ops.investigate.v1 over the last day: two of three ran into the attempt deadline of
 // five minutes; half of those finished on the second attempt, half failed after all three. A
 // fresh stand
@@ -49,8 +49,8 @@ func (s *Stand) SeedInvestigationLoad(ctx context.Context) error {
 			{"farm.attempt.duration", &duration, nil},
 		} {
 			if _, err := db.Exec(ctx, `INSERT INTO obs_points (tenant, series, subject, at, num, enum, source, data_mark, role, key, created_at)
-				VALUES ('demo', $1, $2, $3, $4, $5, 'core', 'internal', 'ops-reader', $6, $7) ON CONFLICT DO NOTHING`,
-				p.series, subject, at, p.num, p.enum, key, now); err != nil {
+				VALUES ($8, $1, $2, $3, $4, $5, 'core', 'internal', 'ops-reader', $6, $7) ON CONFLICT DO NOTHING`,
+				p.series, subject, at, p.num, p.enum, key, now, s.Home()); err != nil {
 				return err
 			}
 		}

@@ -301,10 +301,12 @@ func kbAndInjection(ctx context.Context, d *Director, sc string) error {
 }
 
 // dropDocument takes a corpus document out of search the way a deletion does (KNW-5): the stand
-// has no P2 method for it, so it writes the store by hand.
+// has no P2 method for it, so it writes the store by hand. The document's file stays stored
+// until its retention ends (a deletion would erase it at once); search and kb_read read only
+// indexed documents, so no model sees it again.
 func (d *Director) dropDocument(ctx context.Context, tenant, doc string) {
 	db := d.S.Bench.Store().Pool
-	if _, err := db.Exec(ctx, `UPDATE corpus_documents SET state = 'deleted', path = NULL, updated_at = now() WHERE tenant = $1 AND id = $2`, tenant, doc); err != nil {
+	if _, err := db.Exec(ctx, `UPDATE corpus_documents SET state = 'deleted', path = NULL, updated_at = now() WHERE tenant = $1 AND id = $2 AND state <> 'deleted'`, tenant, doc); err != nil {
 		d.S.log.Addf(KindDirector, "deleting the planted document %s: %v", doc, err)
 		return
 	}
