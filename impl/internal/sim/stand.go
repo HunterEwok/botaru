@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"math/rand/v2"
 	"net"
 	"net/http"
@@ -331,7 +332,8 @@ func editManifests(ms []map[string]any, cfg Config) []map[string]any {
 		sp, _ := m["spec"].(map[string]any)
 		model := cfg.Model
 		if model == "" {
-			model = rankModel(cfg.RankModels, int(jsonNum(sp["rank"])))
+			// The rank comes as whatever number type the manifest reader gives (json.Number).
+			model = rankModel(cfg.RankModels, int(num(sp["rank"])))
 		}
 		sp["model"] = model
 		pr, _ := sp["price"].(map[string]any)
@@ -342,8 +344,93 @@ func editManifests(ms []map[string]any, cfg Config) []map[string]any {
 		p := cfg.Prices[model]
 		pr["input"], pr["output"] = p[0], p[1]
 	}
+	widenBudgets(ms)
 	return ms
 }
+
+// widenBudgets raises the budgets of the examples that one worst-case call of a real model
+// would not fit, as the apply lint counts them: the tree budget of a task type below twice the
+// worst call of the profiles of the roles that claim it (tree_budget_below_call), and a manager
+// line below the seat's worst day (manager_line_too_small, MGR-20). The examples are priced for
+// their own illustrative models; the money fuse of the run still caps the spend. Nothing is
+// lowered.
+func widenBudgets(ms []map[string]any) {
+	worst, prices := map[string]float64{}, map[string]map[string]any{}
+	for _, m := range ms {
+		if m["kind"] == "ModelProfile" {
+			sp := mapOf(m["spec"])
+			name, _ := mapOf(m["metadata"])["name"].(string)
+			prices[name] = sp
+			worst[name] = num(sp["max_output_tokens"]) * num(mapOf(sp["price"])["output"]) / 1e6
+		}
+	}
+	purpose := map[string]string{}
+	for _, m := range ms {
+		if m["kind"] == "TaskType" {
+			name, _ := mapOf(m["metadata"])["name"].(string)
+			purpose[name], _ = mapOf(m["spec"])["purpose"].(string)
+		}
+	}
+	need := map[string]float64{}
+	for _, m := range ms {
+		if m["kind"] != "Role" {
+			continue
+		}
+		sp := mapOf(m["spec"])
+		for _, c := range asSlice(sp["claims"]) {
+			t, _ := c.(string)
+			slot := "base"
+			if purpose[t] == "insight" || purpose[t] == "aggregate" {
+				slot = "analysis"
+			}
+			prof, _ := mapOf(sp["models"])[slot].(string)
+			need[t] = max(need[t], worst[prof])
+		}
+	}
+	var seat map[string]any
+	for _, m := range ms {
+		switch m["kind"] {
+		case "TaskType":
+			name, _ := mapOf(m["metadata"])["name"].(string)
+			sp := mapOf(m["spec"])
+			if w := cents(2 * need[name]); w > num(sp["tree_budget_eur"]) {
+				sp["tree_budget_eur"] = w
+			}
+		case "Governance":
+			if p, _ := mapOf(mapOf(m["spec"])["farm_manager"])["model_profile"].(string); p != "" {
+				seat = prices[p]
+			}
+		}
+	}
+	if seat == nil {
+		return
+	}
+	// Three readings of one worst-case incident, 60000 tokens in, three answers at the
+	// profile's max_output_tokens, with the default daily review and post-mortem ceilings.
+	day := cents(1.5 * ((60000*num(mapOf(seat["price"])["input"])+3*num(seat["max_output_tokens"])*num(mapOf(seat["price"])["output"]))/1e6 + 0.8))
+	for _, m := range ms {
+		if m["kind"] != "Tenant" {
+			continue
+		}
+		line := mapOf(mapOf(mapOf(mapOf(m["spec"])["budgets"])["lines"])["manager"])
+		if line == nil || num(line["day_eur"]) >= day {
+			continue
+		}
+		line["day_eur"] = day
+		if month := cents(15 * day); num(line["month_eur"]) < month {
+			line["month_eur"] = month
+		}
+	}
+}
+
+// num reads a number of a manifest, whatever number type the reader gave.
+func num(v any) float64 {
+	f, _ := strconv.ParseFloat(fmt.Sprint(v), 64)
+	return f
+}
+
+// cents rounds an amount in EUR up to whole cents.
+func cents(eur float64) float64 { return math.Ceil(eur*100-1e-9) / 100 }
 
 // rankModel is the model of a rank: the one of the highest rank not above it, else the lowest.
 func rankModel(ranks map[int]string, rank int) string {
@@ -813,18 +900,6 @@ func (s *Stand) SetInsights(ctx context.Context, on bool) error {
 	s.insights = on
 	s.mu.Unlock()
 	return nil
-}
-
-// AgeProposals moves the ended proposals of demo eight days back, out of the role's week; the
-// open ones keep their time.
-func (s *Stand) AgeProposals(ctx context.Context) error {
-	tag, err := s.Bench.Store().Pool.Exec(ctx, `UPDATE proposals SET created_at = created_at - interval '8 days'
-		WHERE tenant = 'demo' AND created_at > now() - interval '7 days' AND NOT (state = ANY($1))`,
-		[]string{"screened", "in_review", "recommended", "presented", "parked"})
-	if err == nil && tag.RowsAffected() > 0 {
-		s.log.Addf(KindDirector, "moved %d ended proposals of demo a week back (the role's week)", tag.RowsAffected())
-	}
-	return err
 }
 
 // Tripped says whether the fuse tripped.

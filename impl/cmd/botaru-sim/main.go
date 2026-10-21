@@ -67,14 +67,15 @@ func main() {
 }
 
 // prices are the list prices of models in USD per million tokens (input, output), checked
-// 2026-10-21 (Haiku 5.5 up to 100K tokens of prompt); the simulator counts them as EUR, which
-// overstates the spend a little and so trips the fuse early rather than late. -price-in and
-// -price-out override them for -model.
+// 2026-10-21; the simulator counts them as EUR, which overstates the spend a little and so trips
+// the fuse early rather than late. A profile has one price, so Haiku 5.5 counts at the price of a
+// prompt over 100K tokens (0.10/0.50 below): a call is never counted below what it costs.
+// -price-in and -price-out override them for -model.
 var prices = map[string][2]float64{
 	"claude-fable-5-1":  {10, 50},
 	"claude-opus-5-5":   {4, 20},
 	"claude-sonnet-5-5": {2, 10},
-	"claude-haiku-5-5":  {0.10, 0.50},
+	"claude-haiku-5-5":  {0.50, 2.50},
 }
 
 // rankModels are the models of a rank run: each model profile gets the model of its rank, the
@@ -371,7 +372,7 @@ func rankList() string {
 }
 
 func writeResults(path string, res []sim.Result, s *sim.Stand, o options) error {
-	raw, err := json.MarshalIndent(map[string]any{"mode": map[bool]string{true: "real", false: "mock"}[o.real], "model": o.model,
+	raw, err := json.MarshalIndent(map[string]any{"mode": map[bool]string{true: "real", false: "mock"}[o.real], "model": map[bool]string{true: o.model}[o.real],
 		"spent_eur": sim.EUR(s.Spent()), "max_eur": o.maxEUR, "fuse_tripped": s.Tripped(), "auto_approve": o.approve, "checks": res}, "", "  ")
 	if err != nil {
 		return err

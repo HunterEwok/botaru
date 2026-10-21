@@ -46,7 +46,7 @@ func TestPrices(t *testing.T) {
 	if _, err := o.check(); err != nil {
 		t.Fatal(err)
 	}
-	if o.priceIn != 0.5 || o.priceOut != 0.5 || o.scenario != "" {
+	if o.priceIn != 0.5 || o.priceOut != 2.5 || o.scenario != "" {
 		t.Fatalf("an override: %+v", o)
 	}
 	o = options{real: true, model: "", maxEUR: 1.5, approve: "safe", dsn: "x", step: 5e9, timeout: 60e9, faultEvery: 60e9}
@@ -59,7 +59,7 @@ func TestPrices(t *testing.T) {
 // highest price the family had.
 func TestPriceOf(t *testing.T) {
 	for model, want := range map[string][2]float64{
-		"claude-haiku-5-5": {0.10, 0.50}, "claude-sonnet-5-5": {2, 10}, "claude-opus-5-5": {4, 20}, "claude-fable-5-1": {10, 50},
+		"claude-haiku-5-5": {0.50, 2.50}, "claude-sonnet-5-5": {2, 10}, "claude-opus-5-5": {4, 20}, "claude-fable-5-1": {10, 50},
 		"claude-opus-9-9": {15, 75}, "claude-fable-9": {10, 50},
 	} {
 		if p, ok := priceOf(model); !ok || p != want {

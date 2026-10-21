@@ -143,7 +143,7 @@ func TestEvolveInstruction(t *testing.T) {
 func TestEditManifests(t *testing.T) {
 	profiles := func() []map[string]any {
 		var ms []map[string]any
-		for _, r := range []any{1, 2.0, int64(3), 4, 7} {
+		for _, r := range []any{1, json.Number("2"), int64(3), 4, 7} {
 			ms = append(ms, map[string]any{"kind": "ModelProfile", "spec": map[string]any{"rank": r, "model": "x", "price": map[string]any{"input": 9.0}}})
 		}
 		return append(ms, map[string]any{"kind": "Role", "spec": map[string]any{"rank": 1}})

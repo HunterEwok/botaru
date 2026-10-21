@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/HunterEwok/botaru/impl/internal/gate"
 	"github.com/HunterEwok/botaru/impl/internal/jcs"
 )
@@ -109,10 +111,17 @@ func incidentAndCommission(ctx context.Context, d *Director, sc string) error {
 	return nil
 }
 
+// openStates are the states of an open proposal (openProposalStates of the core).
+var openStates = []string{"screened", "in_review", "recommended", "presented", "parked"}
+
 // settle waits until a proposal leaves the open states: bob decides its card by the policy, and
 // a recommended manifest change, which the gate-required demo presents only after the merge
 // gate, goes through the gate once, as the operator would run it. It checks nothing.
 func (d *Director) settle(ctx context.Context, prop string) {
+	if d.Approve == "none" {
+		d.S.log.Addf(KindDirector, "proposal %s stays open: no virtual person decides a card (policy none)", prop)
+		return
+	}
 	db := d.S.Bench.Store().Pool
 	gated := false
 	var state string
@@ -127,7 +136,7 @@ func (d *Director) settle(ctx context.Context, prop string) {
 				d.S.log.Addf(KindDirector, "the merge gate of %s: %v", prop, err)
 			}
 		}
-		return !slices.Contains([]string{"screened", "in_review", "recommended", "presented", "parked"}, state), nil
+		return !slices.Contains(openStates, state), nil
 	})
 	if err != nil {
 		d.S.log.Addf(KindDirector, "proposal %s is still %s: it holds the bot's slot of an open proposal", prop, state)
@@ -164,7 +173,7 @@ func labRequests(ctx context.Context, d *Director, sc string) error {
 		// The answer names a fact of the tools' output: the format, the coordinate system, the
 		// size, the deepest value, the band type or the layer's driver.
 		{"alice", "alice-dm", "/geo What is in the bathy-50m raster and the map-areas layer?", "geo_described",
-			[]string{"geo/describe", "geo/describe_vector"}, regexp.MustCompile(`GTiff|GeoTIFF|3857|4000|-312\.4|Float32|GeoJSON`)},
+			[]string{"geo/describe", "geo/describe_vector"}, regexp.MustCompile(`GTiff|GeoTIFF|EPSG:3857|\b4000\s*(x|×|by)\s*3000\b|312\.4|Float32|GeoJSON`)},
 		{"bob", "bob-dm", "/pipeline Why did the last CTD run fail?", "pipeline_explained", nil, regexp.MustCompile(`st-05`)},
 	} {
 		key, err := d.S.Say(ask.who, ask.chat, ask.text)
@@ -210,11 +219,6 @@ func scaffoldEvolution(ctx context.Context, d *Director, sc string) error {
 	db := d.S.Bench.Store().Pool
 	if err := d.ensureInvestigation(ctx); err != nil {
 		return err
-	}
-	// The proposals of the earlier scenarios count to the role's week (max_per_week, INS-4):
-	// the stand moves the ended ones a week back, as if this scenario ran a week later.
-	if err := d.S.AgeProposals(ctx); err != nil {
-		return fmt.Errorf("ageing the proposals: %w", err)
 	}
 	// The world's history: investigations that took repeated and long attempts, so the
 	// analysis reads a load worth a lower queue limit.
@@ -263,13 +267,29 @@ func scaffoldEvolution(ctx context.Context, d *Director, sc string) error {
 			return false, errors.New(last)
 		}
 		retried = true
+		// A proposal of another kind holds the bot's one open slot (PRP-5): it ends first.
+		rows, err := db.Query(ctx, `SELECT id FROM proposals WHERE tenant = 'demo' AND created_at >= $1 AND state = ANY($2)`, start, openStates)
+		if err != nil {
+			return false, err
+		}
+		open, err := pgx.CollectRows(rows, pgx.RowTo[string])
+		if err != nil {
+			return false, err
+		}
+		for _, p := range open {
+			d.settle(ctx, p)
+		}
 		if err := d.S.SetInsights(ctx, false); err != nil {
 			return false, err
 		}
 		return false, d.S.SetInsights(ctx, true)
 	})
 	if err != nil {
-		d.check(sc, "proposal_manifest_created", false, "no manifest change: %v; %s", err, last)
+		msg := err.Error()
+		if last != "" && msg != last {
+			msg += "; " + last
+		}
+		d.check(sc, "proposal_manifest_created", false, "no manifest change: %s", msg)
 		return nil
 	}
 	// The gate runs at the applied commit: the schedule pauses first, so no apply comes between.

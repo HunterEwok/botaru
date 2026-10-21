@@ -16,7 +16,7 @@ import (
 // mock tells them by their instruction.
 var (
 	reReviewLens = regexp.MustCompile(`review-result for the lens ([a-z]+)`)
-	reInsight    = regexp.MustCompile(`(?i)propose at most three changes`)
+	reInsight    = regexp.MustCompile(`(?i)propose one change, the one with the|load check of this stand`)
 	reIncident   = regexp.MustCompile(`(?i)read the incident`)
 )
 

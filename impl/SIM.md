@@ -213,10 +213,9 @@ core series of `ops-reader`: 18 past investigations over the last day (`farm.tas
 analysis has a load to read rather than the one investigation of a fresh stand. The keys are fixed, so a second
 seeding writes nothing. `accepted_and_realized` takes any `max_queued` below 5000, the safe direction a real model
 may choose. The instruction of `ops.insight.v1` names the service levels of these tasks (at most 20%
-failed, fewer than 2.0 attempts on average, attempts not regularly over 180 s) and asks for at least one proposal
-when one is broken; the evolution mode replaces it in the farm git with the load check, whose first proposal is the
-manifest change, and restores it afterwards. `scaffold-evolution` first moves the ended proposals of the earlier
-scenarios a week back, so that they do not count to the role's `max_per_week`.
+failed, fewer than 2.0 attempts on average, attempts not regularly over 180 s) and asks for one proposal when one
+is broken; the evolution mode replaces it in the farm git with the load check, whose first proposal is the
+manifest change, and restores it afterwards.
 
 `-scenario all` runs them in this order. Between scenarios the world is made healthy again, and a tenant admin
 releases the holds the incidents set (`contain_auto`; the core keeps them until they expire). A scenario waits at
@@ -282,12 +281,16 @@ A real run gives each model profile the model of its `spec.rank` (`-model rank`,
 
 | Rank | Profiles of the examples | Model | List price in/out, USD per million tokens |
 |---|---|---|---|
-| 1 | `base-std` (the work of functionaries) | `claude-haiku-5-5` | 0.10 / 0.50 |
+| 1 | `base-std` (the work of functionaries) | `claude-haiku-5-5` | 0.50 / 2.50 (the price above 100K tokens of prompt; 0.10 / 0.50 below) |
 | 2 | `translate-std`, `analysis-std` | `claude-sonnet-5-5` | 2 / 10 |
 | 3 | `seat-std`, `seat-alt`, `review-a`, `review-b` (the commission) | `claude-opus-5-5` | 4 / 20 |
 | 4 | `manager-std` (the farm manager) | `claude-fable-5-1` | 10 / 50 |
 
-`-model ID` puts that one model in every profile instead. The run counts the list price of each model in USD as
+`-model ID` puts that one model in every profile instead. The example budgets are priced for their illustrative
+models, so a real run raises, never lowers, those one worst-case call would not fit as the apply lint counts it:
+a task type's `tree_budget_eur` to twice the worst call of the profiles of the roles that claim it, and a manager
+line to one and a half the seat's worst day (MGR-20). With Fable 5.1 on the farm manager that is about 0.80 EUR per
+incident tree and 3.90 EUR a day; `-max-eur` still caps the run. The run counts the list price of each model in USD as
 EUR (a little more than it costs); an id the table does not know counts at the highest price its family had, and
 any other id needs `-price-in` and `-price-out`, the EUR per million tokens of that model.
 
