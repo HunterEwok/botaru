@@ -18,6 +18,9 @@ var (
 	reReviewLens = regexp.MustCompile(`review-result for the lens ([a-z]+)`)
 	reInsight    = regexp.MustCompile(`(?i)propose one change, the one with the|load check of this stand`)
 	reIncident   = regexp.MustCompile(`(?i)read the incident`)
+	reTranslate  = regexp.MustCompile(`(?i)script draft with propose_script`)
+	reScriptOut  = regexp.MustCompile(`"run_ref": ?"([^"]+)"`)
+	reVague      = regexp.MustCompile(`(?i)\b(something|stuff|somehow|whatever|things?)\b`)
 )
 
 // governance is the next step of a governance task, or ok false for any other task. A step is
@@ -37,6 +40,9 @@ func governance(system, goal, seen string, names []string, offered map[string]ma
 		return nil, insightAnswer(seen, evolve), true
 	case reIncident.MatchString(system):
 		return nil, managerAnswer(goal), true
+	case reTranslate.MatchString(system):
+		call, answer := translate(goal, seen, names, called)
+		return call, answer, true
 	}
 	return nil, "", false
 }
@@ -144,8 +150,58 @@ func insightAnswer(seen string, evolve string) string {
 func managerAnswer(input string) string {
 	f := "The incident is open on the resource named in its block."
 	if l := strings.ToLower(input); strings.Contains(l, "disk") || strings.Contains(l, "free_pct") {
-		f = "The data volume of db1 is almost full; the pipeline temporary files fill it."
+		f = "The data volume of the db machine is almost full; the pipeline temporary files fill it."
 	}
 	raw, _ := json.Marshal(map[string]any{"summary": f + " I propose to keep the automatic hold and to ask the people of the tenant for the cleanup of the pipeline temporary files (cleanup_pipeline_tmp)."})
 	return string(raw)
 }
+
+// translate is the script translator (TRN-2, TRN-3): a request to check the disks and clean up
+// where they are full becomes an investigation and the cleanup action on its verdict; a request
+// about the sites becomes an availability summary. A vague request is ambiguous and anything else
+// unsupported, without a draft. After the draft it answers with the run the core made of it.
+func translate(goal, seen string, names []string, called map[string]int) (map[string]any, string) {
+	out := func(v map[string]any) string {
+		raw, _ := json.Marshal(v)
+		return string(raw)
+	}
+	n := toolName(names, "", "propose_script")
+	if n != "" && called[n] > 0 {
+		if m := reScriptOut.FindStringSubmatch(seen); m != nil && strings.Contains(seen, `"proposed"`) {
+			return nil, out(map[string]any{"outcome": "drafted", "run_ref": m[1]})
+		}
+		return nil, out(map[string]any{"outcome": "unsupported", "missing": []any{"action_unclear"}})
+	}
+	request, _, _ := strings.Cut(goal, "\n")
+	var steps []any
+	switch {
+	case reVague.MatchString(request):
+		return nil, out(map[string]any{"outcome": "ambiguous", "missing": []any{"resource_missing"}})
+	case rePipelineAsk.MatchString(request) && regexp.MustCompile(`(?i)clean`).MatchString(request):
+		// No condition on the run's state: the result field state of pipeline.status.v1 cannot
+		// be named in a condition, since <step>.state is the state of the step (SCR-3).
+		steps = []any{
+			map[string]any{"id": "check", "kind": "task", "type": "pipeline.status.v1", "goal": map[string]any{"assignment": true}},
+			map[string]any{"id": "clean", "kind": "action", "action": "cleanup_pipeline_tmp", "args": map[string]any{"older_than_days": 7},
+				"needs": []any{"check"}},
+		}
+	case reDisk.MatchString(request) && regexp.MustCompile(`(?i)clean|free`).MatchString(request):
+		steps = []any{
+			map[string]any{"id": "check", "kind": "task", "type": "ops.investigate.v1", "goal": map[string]any{"assignment": true}},
+			map[string]any{"id": "clean", "kind": "action", "action": "cleanup_pipeline_tmp", "args": map[string]any{"older_than_days": 7},
+				"needs": []any{"check"}, "when": map[string]any{"ref": "check.verdict", "op": "eq", "value": "cause_found"}},
+		}
+	case reHealthAsk.MatchString(request):
+		steps = []any{map[string]any{"id": "health", "kind": "task", "type": "ops.health.v1", "goal": map[string]any{"assignment": true}}}
+	}
+	if steps == nil || n == "" {
+		return nil, out(map[string]any{"outcome": "unsupported", "missing": []any{"action_unclear"}})
+	}
+	return map[string]any{"type": "tool_use", "name": n, "input": map[string]any{"script": map[string]any{"script": "v1", "steps": steps}}}, ""
+}
+
+// rePipelineAsk is a request about a run of the processing pipeline.
+var rePipelineAsk = regexp.MustCompile(`(?i)\bpipeline\b`)
+
+// reHealthAsk is a request about whether the sites and services work.
+var reHealthAsk = regexp.MustCompile(`(?i)\b(sites?|services?)\b.*\b(up|working|available)\b|\bhealth\b`)

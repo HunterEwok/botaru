@@ -18,8 +18,10 @@ var farmRoles = []string{"data-reader", "data-job", "geo-reader", "pipeline-read
 	"reviewer-a", "reviewer-b", "farm-manager", "farm-manager-reader",
 	"impl/internal/sim/roles/translator/role.yaml", "impl/internal/sim/roles/ops-operator/role.yaml"}
 
-// jobTypes are the task types of data-job the schedules of the stand enqueue.
-var jobTypes = []string{"data.sensor_watch.v1", "pipeline.watch.v1", "check.http.v1"}
+// jobTypes are the task types of data-job the core enqueues as system: those of the stand's
+// schedules, the report a sensor check enqueues for the reporter and the ingest of a knowledge
+// document.
+var jobTypes = []string{"data.sensor_watch.v1", "pipeline.watch.v1", "check.http.v1", "data.sensor_check.v1", "report.sensor.v1", "kb.ingest.v1"}
 
 // farmFiles are the example manifests of the commission, the farm manager and the incident
 // classes.
@@ -33,24 +35,35 @@ var farmFiles = []string{
 }
 
 // farmSeed gives the people of the seed what the farm bots need: alice and bob may ask the data
-// bots, the translator and the operator, alice runs scripts, and bob decides the proposals of the commission and runs the merge gate of a manifest
-// change (group deciders).
+// bots, the translator and the operator, both run scripts, alice runs the monthly report (group
+// lead), and bob decides the proposals of the commission, runs the merge gate of a manifest
+// change (group deciders) and uploads manuals to the knowledge corpus.
 func farmSeed(sd *evals.Seed) {
 	if g := sd.Groups["staff"]; g != nil {
 		caps, _ := g["caps"].([]any)
-		g["caps"] = append(caps, "task:geo.describe.v1", "task:pipeline.status.v1", "task:script.translate.v1", "task:ops.rollout.v1")
+		g["caps"] = append(caps, "task:geo.describe.v1", "task:pipeline.status.v1", "task:script.translate.v1", "task:ops.rollout.v1",
+			"kb.write:vendor-manuals")
 	}
+	sd.Groups["lead"] = map[string]any{"caps": []any{"task:report.monthly.numbers.v1", "task:report.monthly.v1"}, "data_up_to": "internal"}
 	sd.Groups["deciders"] = map[string]any{"caps": []any{"proposal.decide:reliability", "proposal.gate:reliability"}, "data_up_to": "internal"}
 	// alice runs the scripts the translator drafts for her: a script with an action, a gate or a
 	// step that may control services needs script.run, a privileged capability her code
 	// from /me activates (PRM-13).
 	sd.Groups["runners"] = map[string]any{"caps": []any{"script.run"}, "data_up_to": "summary"}
 	for i := range sd.People {
-		if sd.People[i].Name == "bob" && !slices.Contains(sd.People[i].Groups, "deciders") {
-			sd.People[i].Groups = append(sd.People[i].Groups, "deciders")
+		if sd.People[i].Name == "bob" {
+			for _, g := range []string{"deciders", "runners"} {
+				if !slices.Contains(sd.People[i].Groups, g) {
+					sd.People[i].Groups = append(sd.People[i].Groups, g)
+				}
+			}
 		}
-		if sd.People[i].Name == "alice" && !slices.Contains(sd.People[i].Groups, "runners") {
-			sd.People[i].Groups = append(sd.People[i].Groups, "runners")
+		if sd.People[i].Name == "alice" {
+			for _, g := range []string{"runners", "lead"} {
+				if !slices.Contains(sd.People[i].Groups, g) {
+					sd.People[i].Groups = append(sd.People[i].Groups, g)
+				}
+			}
 		}
 	}
 }
@@ -113,7 +126,12 @@ func farmManifests(ms, farm []map[string]any, insights bool) []map[string]any {
 		schedule("pipelines-watch", "*/2 * * * *", "pipeline.watch.v1", false),
 		schedule("sensor-watch", "*/5 * * * *", "data.sensor_watch.v1", false),
 		schedule("ext-checks", "* * * * *", "check.http.v1", false),
+		// The nightly sensor check runs when a scenario or the load turns it on (SetSchedule).
+		schedule(SensorSchedule, "* * * * *", "data.sensor_check.v1", true),
 	)
+	for _, m := range ms[len(ms)-1:] {
+		mapOf(m["spec"])["task"] = map[string]any{"type": "data.sensor_check.v1", "params": map[string]any{"window_h": 24}}
+	}
 	return ms
 }
 

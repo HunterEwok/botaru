@@ -1,0 +1,260 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+package sim
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"slices"
+	"strings"
+	"time"
+)
+
+// The scenarios of the everyday kinds of work beyond the incidents: the availability summary and
+// the free question (R-04), the monthly and the nightly sensor reports (R-09), a CTD file a
+// person sends (R-07) and the knowledge of a tenant (R-21).
+
+// typeEnd waits for the latest task of a type in a tenant created since a time to end, and
+// returns its state, reason and result.
+func (d *Director) typeEnd(ctx context.Context, tenant, typ string, since time.Time) (state, reason string, result map[string]any, err error) {
+	err = d.S.waitFor(ctx, d.Timeout, func() (bool, error) {
+		var raw []byte
+		e := d.S.Bench.Store().Pool.QueryRow(ctx, `SELECT state, coalesce(reason, ''), result FROM tasks WHERE tenant = $1 AND type = $2
+			AND created_at >= $3 ORDER BY created_at DESC LIMIT 1`, tenant, typ, since).Scan(&state, &reason, &raw)
+		if e != nil {
+			return false, nil
+		}
+		result = nil
+		_ = json.Unmarshal(raw, &result)
+		return state == "completed" || state == "failed" || state == "canceled", nil
+	})
+	if errors.Is(err, context.DeadlineExceeded) {
+		err = fmt.Errorf("no task %s of %s ended within %v (state %q)", typ, tenant, d.Timeout, state)
+	}
+	return
+}
+
+// toolsNotDone are the tools of a list the task of a message key did not call to the end.
+func (d *Director) toolsNotDone(ctx context.Context, tenant, key string, tools []string) []string {
+	var missing []string
+	for _, tool := range tools {
+		var done int
+		_ = d.S.Bench.Store().Pool.QueryRow(ctx, `SELECT count(*) FROM toolcalls t JOIN tasks k ON k.id = t.task
+			WHERE k.tenant = $3 AND k.idempotency_key = $1 AND t.tool = $2 AND t.state = 'done'`, key, tool, tenant).Scan(&done)
+		if done == 0 {
+			missing = append(missing, tool)
+		}
+	}
+	return missing
+}
+
+// reports plays the reports of the home tenant: alice asks whether the sites are up and how the
+// day went, runs the monthly report, and the nightly sensor check runs on its schedule; the
+// reporter writes the paragraphs of both reports from the numbers of the jobs.
+func reports(ctx context.Context, d *Director, sc string) error {
+	home := d.S.Home()
+	key, err := d.S.Say("alice", "alice-dm", "/health Are the sites and the API up right now?")
+	if err != nil {
+		return err
+	}
+	state, reason, result, err := d.taskEnd(ctx, key)
+	if err != nil {
+		return err
+	}
+	missing := d.toolsNotDone(ctx, home, key, []string{"checks/latest"})
+	verdict := fmt.Sprint(result["verdict"])
+	d.check(sc, "health_answered", state == "completed" && len(missing) == 0 && (verdict == "up" || verdict == "degraded"),
+		"state %s %s, tools not called %v, verdict %s", state, reason, missing, verdict)
+	key, err = d.S.Say("alice", "alice-dm", "How did the day go on the farm?")
+	if err != nil {
+		return err
+	}
+	state, reason, result, err = d.taskEnd(ctx, key)
+	if err != nil {
+		return err
+	}
+	d.check(sc, "summary_answered", state == "completed" && fmt.Sprint(result["answer"]) != "", "state %s %s: %s", state, reason, clip(fmt.Sprint(result["answer"]), 200))
+
+	start := time.Now().UTC()
+	month := start.AddDate(0, -1, 0).Format("2006-01")
+	if _, err := d.S.Say("alice", "alice-dm", "/run month-report "+month); err != nil {
+		return err
+	}
+	state, reason, nums, err := d.typeEnd(ctx, home, "report.monthly.numbers.v1", start)
+	if err != nil {
+		return err
+	}
+	d.check(sc, "month_numbers", state == "completed" && nums["month"] == month, "state %s %s, result %v", state, reason, nums)
+	state, reason, result, err = d.typeEnd(ctx, home, "report.monthly.v1", start)
+	if err != nil {
+		return err
+	}
+	text := fmt.Sprint(result["text"])
+	d.check(sc, "month_report", state == "completed" && strings.Contains(text, month), "state %s %s: %s", state, reason, clip(text, 200))
+
+	start = time.Now().UTC()
+	if err := d.S.SetSchedule(ctx, home, SensorSchedule, true); err != nil {
+		return err
+	}
+	state, reason, checked, err := d.typeEnd(ctx, home, "data.sensor_check.v1", start)
+	if offErr := d.S.SetSchedule(ctx, home, SensorSchedule, false); offErr != nil && err == nil {
+		err = offErr
+	}
+	if err != nil {
+		return err
+	}
+	d.check(sc, "sensor_check", state == "completed" && jsonNum(checked["sensors_checked"]) > 0, "state %s %s, result %v", state, reason, checked)
+	state, reason, result, err = d.typeEnd(ctx, home, "report.sensor.v1", start)
+	if err != nil {
+		return err
+	}
+	d.check(sc, "sensor_report", state == "completed" && fmt.Sprint(result["text"]) != "", "state %s %s: %s", state, reason, clip(fmt.Sprint(result["text"]), 200))
+	return nil
+}
+
+// ctdFile is the CTD profile of the world a person sends to data-reader.
+const ctdFile = "ctd-st-05.csv"
+
+// describeFile plays a CTD file a person of the lab tenant sends with /describe: data-reader
+// reads it with the data plugin and copies the plugin's numbers into the result.
+func describeFile(ctx context.Context, d *Director, sc string) error {
+	lab := d.S.LabTenant()
+	key, err := d.S.SayWithFile(ctx, d.S.PersonIn(lab, "bob"), d.S.PersonIn(lab, "bob-dm"), "/describe What is in this CTD profile?", ctdFile)
+	if err != nil {
+		return err
+	}
+	state, reason, result, err := d.taskEnd(ctx, key)
+	if err != nil {
+		return err
+	}
+	missing := d.toolsNotDone(ctx, lab, key, []string{"data/describe"})
+	d.check(sc, "ctd_described", state == "completed" && len(missing) == 0 && jsonNum(result["rows"]) > 0,
+		"state %s %s, tools not called %v, rows %v, depth_max_m %v", state, reason, missing, result["rows"], result["depth_max_m"])
+	return nil
+}
+
+// kbManual is the document the knowledge scenario uploads; kbWord is the word the question and
+// the document share.
+const (
+	kbWord   = "thermosalinograph"
+	kbManual = "# Thermosalinograph TSG-9 manual\n\nThe thermosalinograph TSG-9 needs a clean conductivity cell. " +
+		"Flush the cell with fresh water after every cruise and check the pump flow before the next one.\n"
+)
+
+// knowledge plays the knowledge of a tenant: bob uploads a manual to the ingested corpus, the
+// ingest job of data-job cuts it into fragments, and ops-reader answers a question from it with
+// kb_search and kb_read.
+func knowledge(ctx context.Context, d *Director, sc string) error {
+	home := d.S.Home()
+	start := time.Now().UTC()
+	doc, err := d.S.UploadKnowledge(ctx, home, "vendor-manuals", "tsg-9-manual.md", []byte(kbManual))
+	d.check(sc, "manual_uploaded", err == nil && doc != "", "document %s %v", doc, err)
+	if err != nil {
+		return nil
+	}
+	state, reason, result, err := d.typeEnd(ctx, home, "kb.ingest.v1", start)
+	if err != nil {
+		return err
+	}
+	d.check(sc, "manual_indexed", state == "completed" && jsonNum(result["fragments"]) > 0, "state %s %s, result %v", state, reason, result)
+	key, err := d.S.Say("bob", "bob-dm", "/logs What does the manual say about the "+kbWord+"?")
+	if err != nil {
+		return err
+	}
+	state, reason, result, err = d.taskEnd(ctx, key)
+	if err != nil {
+		return err
+	}
+	raw, _ := json.Marshal(result)
+	d.check(sc, "manual_answered", state == "completed" && strings.Contains(strings.ToLower(string(raw)), "conductivity cell"),
+		"state %s %s: %s", state, reason, clip(string(raw), 200))
+	return nil
+}
+
+// scriptRequest is the plain words of the translator scenario: check the last pipeline run and
+// clean up after it. The steps read the pipeline status (internal), so the run card
+// fits the Telegram chat of the lab tenant; a script with a step of a raw_logs task, such as a
+// disk investigation, would carry raw_logs and its card would be withheld there.
+const scriptRequest = "/script Check the last pipeline run and then clean up the pipeline temporary files."
+
+// translatorScript plays the script translator (R-13) in the lab tenant: bob asks in plain words,
+// the translator drafts a script, bob runs it on its card, the status step reads the run of the
+// world and the cleanup step asks for its approval, which the safe policy gives.
+func translatorScript(ctx context.Context, d *Director, sc string) error {
+	lab := d.S.LabTenant()
+	bob, dm := d.S.PersonIn(lab, "bob"), d.S.PersonIn(lab, "bob-dm")
+	cards := len(d.S.Cards())
+	key, err := d.S.Say(bob, dm, scriptRequest)
+	if err != nil {
+		return err
+	}
+	state, reason, result, err := d.taskEnd(ctx, key)
+	if err != nil {
+		return err
+	}
+	run, _ := result["run_ref"].(string)
+	d.check(sc, "script_drafted", state == "completed" && result["outcome"] == "drafted" && run != "", "state %s %s, result %v", state, reason, result)
+	if run == "" {
+		return nil
+	}
+	// bob runs the script on its card (SCR-6).
+	var card *Card
+	err = d.S.waitFor(ctx, time.Minute, func() (bool, error) {
+		for _, c := range d.S.Cards()[cards:] {
+			if c.Chat == dm && c.Pressed == "" && slices.ContainsFunc(c.Buttons, func(b Button) bool { return b.Code() == "ap" }) {
+				card = &c
+				return true, nil
+			}
+		}
+		return false, nil
+	})
+	d.check(sc, "run_card", err == nil, "the card of run %s", run)
+	if err != nil {
+		return nil
+	}
+	if err := d.S.Press(card.No, "ap", bob); err != nil {
+		return err
+	}
+	var runState string
+	err = d.S.waitFor(ctx, d.Timeout, func() (bool, error) {
+		e := d.S.Bench.Store().Pool.QueryRow(ctx, `SELECT state FROM script_runs WHERE id = $1`, run).Scan(&runState)
+		return e == nil && slices.Contains([]string{"completed", "failed", "canceled", "rejected"}, runState), nil
+	})
+	steps := map[string]string{}
+	rows, e := d.S.Bench.Store().Pool.Query(ctx, `SELECT id, state FROM script_steps WHERE run = $1`, run)
+	if e == nil {
+		for rows.Next() {
+			var id, st string
+			if rows.Scan(&id, &st) == nil {
+				steps[id] = st
+			}
+		}
+		rows.Close()
+	}
+	d.check(sc, "script_ran", err == nil && runState == "completed" && steps["check"] == "ok" && steps["clean"] == "ok",
+		"run %s %s, steps %v", run, runState, steps)
+	return nil
+}
+
+// translatorRefuses plays the refusals of the translator (R-14): a request outside its
+// vocabulary is unsupported and a vague one ambiguous, and neither makes a run.
+func translatorRefuses(ctx context.Context, d *Director, sc string) error {
+	for _, ask := range []struct{ text, outcome string }{
+		{"/script Order a new server and install a database on it.", "unsupported"},
+		{"/script Do something about the things that are slow.", "ambiguous"},
+	} {
+		key, err := d.S.Say("bob", "bob-dm", ask.text)
+		if err != nil {
+			return err
+		}
+		state, reason, result, err := d.taskEnd(ctx, key)
+		if err != nil {
+			return err
+		}
+		d.check(sc, "refused_"+ask.outcome, state == "completed" && result["outcome"] == ask.outcome && result["run_ref"] == nil,
+			"state %s %s, result %v", state, reason, result)
+	}
+	return nil
+}

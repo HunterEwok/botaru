@@ -218,7 +218,7 @@ func labRequests(ctx context.Context, d *Director, sc string) error {
 		return e == nil && checks > 0, nil
 	})
 	d.check(sc, "job_checks_ran", err == nil, "%d site check runs of data-job completed", checks)
-	return nil
+	return describeFile(ctx, d, sc)
 }
 
 // evolveField is the field the scaffold evolution changes, and evolveSignature its approach in the
