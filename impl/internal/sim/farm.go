@@ -33,7 +33,7 @@ var farmFiles = []string{
 }
 
 // farmSeed gives the people of the seed what the farm bots need: alice and bob may ask the data
-// bots, and bob decides the proposals of the commission and runs the merge gate of a manifest
+// bots, the translator and the operator, alice runs scripts, and bob decides the proposals of the commission and runs the merge gate of a manifest
 // change (group deciders).
 func farmSeed(sd *evals.Seed) {
 	if g := sd.Groups["staff"]; g != nil {
@@ -41,9 +41,16 @@ func farmSeed(sd *evals.Seed) {
 		g["caps"] = append(caps, "task:geo.describe.v1", "task:pipeline.status.v1", "task:script.translate.v1", "task:ops.rollout.v1")
 	}
 	sd.Groups["deciders"] = map[string]any{"caps": []any{"proposal.decide:reliability", "proposal.gate:reliability"}, "data_up_to": "internal"}
+	// alice runs the scripts the translator drafts for her: a script with an action, a gate or a
+	// step that may control services needs script.run, a privileged capability her code
+	// from /me activates (PRM-13).
+	sd.Groups["runners"] = map[string]any{"caps": []any{"script.run"}, "data_up_to": "summary"}
 	for i := range sd.People {
 		if sd.People[i].Name == "bob" && !slices.Contains(sd.People[i].Groups, "deciders") {
 			sd.People[i].Groups = append(sd.People[i].Groups, "deciders")
+		}
+		if sd.People[i].Name == "alice" && !slices.Contains(sd.People[i].Groups, "runners") {
+			sd.People[i].Groups = append(sd.People[i].Groups, "runners")
 		}
 	}
 }

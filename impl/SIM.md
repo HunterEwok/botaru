@@ -137,8 +137,13 @@ stand changes the example set in a few places so that a scenario sees the whole 
 - `demo` has the commands `/script` (the translator) and `/rollout` (the campaign operator), and `staff` may ask
   both; the action `cleanup_pipeline_tmp` is allowed in scripts (`script.allowed`, SCR-2), which the example
   leaves out; `farm-manager` also claims the analysis after an incident `manager.postmortem.v1` (MGR-53), and the
-  group `farm-manager-ops` holds its capability. A campaign is proposed only by a role of profile `manager`, so
-  `ops-reader` (profile `worker`) proposes none and the campaigns of the stand come from `ops-operator`.
+  group `farm-manager-ops` holds its capability, so every incident that resolves in a tenant with the farm manager
+  gets an analysis task too (one more model call in a real run); `alice` is in the group `runners` with the
+  privileged `script.run` (active through her code from `/me`), so she may run the scripts the translator drafts
+  for her that hold an action, a gate or a step that may control services. A bot proposes a campaign through
+  `propose_campaign` only in a role of profile `manager`, so `ops-reader` (profile `worker`) proposes none; the
+  stand's other campaigns are the fan-out steps of translator scripts. A role file of the stand lies in a folder
+  named as the role.
 
 ### The farm git and the hidden cases
 
