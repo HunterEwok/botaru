@@ -61,7 +61,7 @@ schema filtered by the task's mark.
   field, MAN-3); the toolhost reads each with `file.get` under the call lease (which hands out only those), writes a
   copy into a new directory of its own under `files_dir` (mode 0700, file 0600, named by the ref, not the
   person's file name; a plugin the toolhost starts runs as its user, and a plugin under an OS user of its own cannot read
-  the copy; directories a toolhost left when it ended inside a call are swept at its start once older than an hour), passes the paths by `file_ref` in `_meta["botaru/files"]` and removes the directory after the call.
+  the copy; directories a toolhost left when it ended inside a call of its own OS user are swept at its start once older than three hours, past the longest tool timeout), passes the paths by `file_ref` in `_meta["botaru/files"]` and removes the directory after the call.
 - The result schema reaches the runtime as the extension field `payload.result_schema` of the attempt (MAN-3), so the
   instruction stays exactly the trusted text from git; the runtime appends the request for a JSON answer to the system
   prompt. The projection of the result schema sent to the runtime is a hint: `complete` still checks the full schema.

@@ -324,6 +324,11 @@ func (h *Host) Once(ctx context.Context, waitS int) (bool, error) {
 		h.log.Warn("the attachments of the call could not be read", "work", w.WorkID, "reason", p1client.Reason(err))
 		return true, h.fail(ctx, lease, "exec_failed")
 	}
+	if leaseCtx.Err() != nil {
+		// The lease went while the files were read: the plugin does not start.
+		h.log.Warn("call stopped: the lease was lost", "work", w.WorkID)
+		return true, nil
+	}
 	callCtx, stop := context.WithTimeout(leaseCtx, timeout)
 	defer stop()
 	res, err := h.call(callCtx, plugin, w.WorkID, p, files)
@@ -474,9 +479,10 @@ func (h *Host) removeFiles(dir string) {
 // filesPrefix starts the name of the directory of one call's copies.
 const filesPrefix = "botaru-call-"
 
-// sweepFiles removes the copies a toolhost left behind when it ended inside a call: a
-// directory older than staleFiles outlived any lease (FEN-6), so no live call of another
-// toolhost sharing the directory uses it.
+// sweepFiles removes the copies a toolhost of this OS user left behind when it ended inside a
+// call: a directory older than staleFiles outlived any call, whose timeout is at most an hour
+// (tool-plugin schema), so no live call of another toolhost sharing the directory uses it.
+// Directories of other OS users are not ours to remove.
 func (h *Host) sweepFiles() {
 	base := h.cfg.FilesDir
 	if base == "" {
@@ -490,14 +496,22 @@ func (h *Host) sweepFiles() {
 		if !e.IsDir() || !strings.HasPrefix(e.Name(), filesPrefix) {
 			continue
 		}
-		if info, err := e.Info(); err == nil && time.Since(info.ModTime()) > staleFiles {
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		if st, ok := info.Sys().(*syscall.Stat_t); ok && int(st.Uid) != os.Getuid() {
+			continue
+		}
+		if time.Since(info.ModTime()) > staleFiles {
 			h.removeFiles(filepath.Join(base, e.Name()))
 		}
 	}
 }
 
-// staleFiles is the age past which a call's copies are left behind.
-const staleFiles = time.Hour
+// staleFiles is the age past which a call's copies are left behind: the longest tool timeout
+// (3600 s) with the time to read the files and a margin.
+const staleFiles = 3 * time.Hour
 
 // call runs one tool call in a new plugin process.
 func (h *Host) call(ctx context.Context, p Plugin, workID string, c callPayload, files map[string]string) (*mcp.CallResult, error) {
