@@ -5,8 +5,10 @@ package sim
 import (
 	"bytes"
 	"context"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -68,13 +70,22 @@ func startStand(t *testing.T, maxMicros int64, farm *Farm) (*Stand, *syncBuffer)
 // others, so that the two halves take about the same time.
 var scenariosApart = map[string]bool{"scaffold-evolution": true, "bot-messages": true, "follow-up-memory": true, "erasure": true, "translator-refuses": true}
 
-// tenantsFarm is a farm of two tenants for the scenarios of tenants the smoke farm cannot play: a
-// home with every role on two database machines and a tight-budget tenant without a manager.
+// scenariosOnTenants are the scenarios the smoke farm can play that TestScenarios plays on the
+// farm of tenants instead, where they reach the part a second tenant gives them.
+var scenariosOnTenants = map[string]bool{"manager-work": true}
+
+// tenantsFarm is a farm of three tenants for the scenarios of tenants the smoke farm cannot play:
+// a home with every role on two database machines, a second tenant with the farm manager, and a
+// tight-budget tenant without one.
 const tenantsFarm = `name: tenants
 tenants:
   - name: ops-dept
     hosts: [{id: web1, kind: web}, {id: db1, kind: db}, {id: db2, kind: db}, {id: ctd1, kind: ctd}]
     manager: true
+  - name: lab-dept
+    hosts: [{id: db3, kind: db}]
+    manager: true
+    replicas: {hello: 1, ops-reader: 1, pipeline-reader: 1, reviewer-a: 1, reviewer-b: 1, farm-manager: 1, farm-manager-reader: 1, data-job: 1}
   - name: small-dept
     hosts: [{id: web5, kind: web}, {id: db4, kind: db}]
     tight_budget: true
@@ -82,8 +93,10 @@ tenants:
 `
 
 // TestScenarios runs every scripted scenario on the mock model on stands of their own, the smoke
-// farm's in two halves and the scenarios of several tenants on a farm of two: each check of the
+// farm's in two halves and the scenarios of several tenants on a farm of three: each check of the
 // director passes, and nothing of the host was touched (the world's stubs answered every program).
+// The five parts of TestScenarios and TestFarmFaults are one more than the four processors of a
+// CI runner, so the short part of the tenants starts when the first other part ends.
 func TestScenarios(t *testing.T) {
 	t.Parallel()
 	smoke, err := LoadFarm("smoke")
@@ -100,7 +113,7 @@ func TestScenarios(t *testing.T) {
 	var halves [2][]string
 	for _, n := range FitScenarios(smoke) {
 		// The farm's own faults take minutes of fault time; TestFarmFaults runs them beside.
-		if n == "farm-faults" {
+		if n == "farm-faults" || scenariosOnTenants[n] {
 			continue
 		}
 		half := 0
@@ -111,12 +124,27 @@ func TestScenarios(t *testing.T) {
 	}
 	var several []string
 	for _, n := range FitScenarios(&tenants) {
-		if Find(n).Unfit(smoke) != "" {
+		if Find(n).Unfit(smoke) != "" || scenariosOnTenants[n] {
 			several = append(several, n)
 		}
 	}
-	if len(several) == 0 {
-		t.Fatal("no scenario of several tenants")
+	// Every scenario is in a part, and every scenario a part names exists.
+	played := map[string]bool{"farm-faults": true}
+	for _, n := range slices.Concat(halves[0], halves[1], several) {
+		played[n] = true
+	}
+	for _, sc := range Scenarios {
+		if !played[sc.Name] {
+			t.Errorf("scenario %s is in no part of the tests", sc.Name)
+		}
+	}
+	for n := range maps.Keys(scenariosApart) {
+		if Find(n) == nil {
+			t.Errorf("scenariosApart names no scenario %s", n)
+		}
+	}
+	if t.Failed() {
+		return
 	}
 	parts := []struct {
 		name  string
