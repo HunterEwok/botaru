@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -217,8 +216,12 @@ func labRequests(ctx context.Context, d *Director, sc string) error {
 	return nil
 }
 
-// evolveSignature is the approach of the mock's manifest change in the archive (EVO-5).
-const evolveSignature = "Tenant.spec.limits.max_queued:down"
+// evolveField is the field the scaffold evolution changes, and evolveSignature its approach in the
+// archive (EVO-5).
+const (
+	evolveField     = "spec.dispatch.rules[].timeouts.attempt"
+	evolveSignature = "Tenant." + evolveField + ":up"
+)
 
 // scaffoldEvolution plays the safe scaffold evolution (D-120): ops-reader's analysis proposes a
 // manifest change, the commission recommends it, the merge gate passes it on the farm git, bob
@@ -230,8 +233,8 @@ func scaffoldEvolution(ctx context.Context, d *Director, sc string) error {
 	if err := d.ensureInvestigation(ctx); err != nil {
 		return err
 	}
-	// The world's history: investigations that took repeated and long attempts, so the
-	// analysis reads a load worth a lower queue limit.
+	// The world's history: investigations whose attempts the deadline cut, so the analysis reads
+	// a load worth a longer attempt deadline.
 	if err := d.S.SeedInvestigationLoad(ctx); err != nil {
 		return fmt.Errorf("seeding the observations: %w", err)
 	}
@@ -390,19 +393,18 @@ func scaffoldEvolution(ctx context.Context, d *Director, sc string) error {
 		e := db.QueryRow(ctx, `SELECT state FROM proposals WHERE id = $1`, prop).Scan(&pstate)
 		return e == nil && pstate != "realizing", nil
 	})
-	var queued string
-	_ = db.QueryRow(ctx, `SELECT coalesce(doc->'spec'->'limits'->>'max_queued', '') FROM manifests WHERE kind = 'Tenant' AND tenant = 'demo' AND name = 'demo'`).Scan(&queued)
+	var attempt string
+	_ = db.QueryRow(ctx, `SELECT coalesce(doc->'spec'->'dispatch'->'rules'->0->'timeouts'->>'attempt', '') FROM manifests WHERE kind = 'Tenant' AND tenant = 'demo' AND name = 'demo'`).Scan(&attempt)
 	card := slices.ContainsFunc(d.S.Cards(), func(c Card) bool { return c.Subject == prop && c.Pressed != "" })
 	msg, _ := d.S.repo.git(ctx, "log", "-1", "--format=%B", commit)
 	trailer := strings.Contains(msg, "Botaru-Proposal: "+prop)
-	// A real model may name another value; any lower limit is the safe direction (PRP-3).
-	lowered := false
-	if n, perr := strconv.Atoi(queued); perr == nil && n > 0 && n < 5000 {
-		lowered = true
-	}
-	d.check(sc, "accepted_and_realized", err == nil && pstate == "realized" && lowered && card && trailer,
-		"%s accepted on the card (pressed %v), trial recorded; commit %s (Botaru-Proposal %v) applied, proposal %s, max_queued %s",
-		who, card, commit[:12], trailer, pstate, queued)
+	// A real model may name another value; the core lets the deadline rise up to two times.
+	cur, _ := time.ParseDuration(InvestigateAttempt)
+	nv, perr := time.ParseDuration(attempt)
+	raised := perr == nil && nv > cur
+	d.check(sc, "accepted_and_realized", err == nil && pstate == "realized" && raised && card && trailer,
+		"%s accepted on the card (pressed %v), trial recorded; commit %s (Botaru-Proposal %v) applied, proposal %s, attempt deadline %s",
+		who, card, commit[:12], trailer, pstate, attempt)
 	if pstate != "realized" {
 		return nil
 	}

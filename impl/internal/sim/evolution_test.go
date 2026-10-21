@@ -79,7 +79,7 @@ func TestInsightAnswerEvolve(t *testing.T) {
 	}
 	p := out.Proposals[0]
 	ops := asSlice(mapOf(mapOf(p["change"])["manifest_change"])["ops"])
-	if len(ops) != 1 || mapOf(ops[0])["field"] != "spec.limits.max_queued" || mapOf(ops[0])["value"] != float64(EvolveQueued) {
+	if len(ops) != 1 || mapOf(ops[0])["field"] != evolveField || mapOf(ops[0])["value"] != EvolveAttempt {
 		t.Errorf("evolve ops %v", ops)
 	}
 	if mapOf(p["benefit"])["metric"] != "farm.task.attempts" {

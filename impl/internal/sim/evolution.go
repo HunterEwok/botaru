@@ -321,18 +321,23 @@ func (s *Stand) items(ctx context.Context, op string) ([]map[string]any, error) 
 // the usual one, as an operator who wants the check would; the mock model reads the flag instead.
 // No paragraph has a word of the act group of the unawareness lint beside one of the outcome
 // group (GOV-29, TestEvolveInstruction).
-var evolveTask = fmt.Sprintf(`Load check of this stand, which its operator asked for. Read farm.task.attempts and farm.attempt.duration
-of task_type:ops.investigate.v1 with observations_query.
+var evolveTask = fmt.Sprintf(`Load check of this stand, which its operator asked for. Read farm.task.attempts, farm.attempt.duration
+and farm.task.outcome of task_type:ops.investigate.v1 with observations_query.
 
-When those series have points, the first entry of proposals (proposals[0]) is this change, and
-nothing_found is not an answer: change.kind manifest_change with the single op {"op": "set", "target":
-{"kind": "Tenant", "name": "demo"}, "field": "spec.limits.max_queued", "value": %d} (the current value
-is 5000), with benefit.metric farm.task.attempts, benefit.subject task_type:ops.investigate.v1 and
-benefit.direction down, a cost, a risk, and the values you read as its evidence.
+The investigations have an attempt deadline of %[1]s in the single dispatcher rule of tenant demo
+(spec.dispatch.rules[].timeouts.attempt), and their task deadline is 30m. An attempt cut at that
+deadline starts again from the beginning.
 
-The operator tries the change on this stand and measures it there: a low confidence and no measured
-expected change are fine, and a change of the kind none in its place is not.
-`, EvolveQueued)
+When the series show attempts that last about as long as that deadline and tasks that need more
+than one attempt, the first entry of proposals (proposals[0]) is this change, and nothing_found is not
+an answer: change.kind manifest_change with the single op {"op": "set", "target": {"kind": "Tenant",
+"name": "demo"}, "field": "spec.dispatch.rules[].timeouts.attempt", "value": "%[2]s"}, with
+benefit.metric farm.task.attempts, benefit.subject task_type:ops.investigate.v1 and benefit.direction
+down, a cost, a risk, and the values you read as its evidence.
+
+The operator tries the change on this stand and measures it there; a change of the kind none in its
+place is not an answer.
+`, InvestigateAttempt, EvolveAttempt)
 
 // SetEvolve turns the evolution mode on or off: the mock model proposes the manifest change,
 // and the instruction of ops.insight.v1 in the farm git asks a real model for the load check
