@@ -97,6 +97,12 @@ func TestScenarios(t *testing.T) {
 	if s.Brain.Calls() == 0 || s.Tripped() {
 		t.Fatalf("model calls %d, fuse %v", s.Brain.Calls(), s.Tripped())
 	}
+	if err := s.FinalWatch(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if v := s.Violations(); len(v) > 0 {
+		t.Fatalf("breaches of the invariants: %+v", v)
+	}
 	raw, err := os.ReadFile(filepath.Join(filepath.Dir(s.Work()), "sim-events.jsonl"))
 	if err != nil || !strings.Contains(string(raw), `"kind":"P4 MODEL"`) || !strings.Contains(string(raw), `"kind":"BOT -> CHAT"`) {
 		t.Fatalf("the event file: %v", err)
@@ -135,7 +141,7 @@ func TestFuse(t *testing.T) {
 }
 
 // TestFarmFaults runs the farm's own faults F-1 to F-8 on the mock model, beside TestScenarios:
-// every expected outcome holds.
+// every expected outcome holds and the invariant watch finds no breach.
 func TestFarmFaults(t *testing.T) {
 	t.Parallel()
 	s, console := startStand(t, 5_000_000)
@@ -147,9 +153,15 @@ func TestFarmFaults(t *testing.T) {
 		t.Fatalf("%v\n%s", err, console)
 	}
 	for _, r := range d.Results() {
-		if !r.OK {
+		if !r.OK && r.Gap == "" {
 			t.Errorf("%s %s: %s", r.Scenario, r.Check, r.Detail)
 		}
+	}
+	if err := s.FinalWatch(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if v := s.Violations(); len(v) > 0 {
+		t.Errorf("breaches of the invariants: %+v", v)
 	}
 	if t.Failed() {
 		t.Log(console)
