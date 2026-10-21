@@ -25,6 +25,7 @@ func TestOptions(t *testing.T) {
 		{[]string{"-dsn", ""}, "-dsn"},
 		{[]string{"-max-eur", "0.0000001"}, "-max-eur must be between"},
 		{[]string{"-max-eur", "1e13"}, "-max-eur must be between"},
+		{[]string{"-halt-on-violation", "maybe"}, "-halt-on-violation is yes, no or auto"},
 	} {
 		var out, errb bytes.Buffer
 		code := run(c.args, strings.NewReader(""), &out, &errb)
@@ -35,21 +36,21 @@ func TestOptions(t *testing.T) {
 }
 
 func TestPrices(t *testing.T) {
-	o := options{real: true, model: "claude-sonnet-5-5", maxEUR: 1.5, approve: "safe", dsn: "x", step: 5e9, timeout: 60e9, faultEvery: 60e9}
+	o := options{real: true, model: "claude-sonnet-5-5", maxEUR: 1.5, approve: "safe", dsn: "x", step: 5e9, timeout: 60e9, faultEvery: 60e9, halt: "auto"}
 	if _, err := o.check(); err != nil {
 		t.Fatal(err)
 	}
 	if o.priceIn != 2 || o.priceOut != 10 || o.scenario != "all" {
 		t.Fatalf("defaults: %+v", o)
 	}
-	o = options{real: true, model: "claude-haiku-5-5", maxEUR: 2, priceIn: 0.5, approve: "safe", dsn: "x", step: 5e9, timeout: 60e9, faultEvery: 60e9, interactive: true}
+	o = options{real: true, model: "claude-haiku-5-5", maxEUR: 2, priceIn: 0.5, approve: "safe", dsn: "x", step: 5e9, timeout: 60e9, faultEvery: 60e9, interactive: true, halt: "auto"}
 	if _, err := o.check(); err != nil {
 		t.Fatal(err)
 	}
 	if o.priceIn != 0.5 || o.priceOut != 2.5 || o.scenario != "" {
 		t.Fatalf("an override: %+v", o)
 	}
-	o = options{real: true, model: "", maxEUR: 1.5, approve: "safe", dsn: "x", step: 5e9, timeout: 60e9, faultEvery: 60e9}
+	o = options{real: true, model: "", maxEUR: 1.5, approve: "safe", dsn: "x", step: 5e9, timeout: 60e9, faultEvery: 60e9, halt: "auto"}
 	if _, err := o.check(); err != nil || o.model != "rank" {
 		t.Fatalf("a rank run: %v %+v", err, o)
 	}

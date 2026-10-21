@@ -420,6 +420,15 @@ func erasure(ctx context.Context, d *Director, sc string) error {
 		}
 		return id, reason + " " + state, open, err
 	}
+	// dave first tells a bot something of his own, his canary, so the invariant watch can see
+	// whether it comes back in a model request after the erasure (I-8).
+	key, err := d.S.Say(leaver, leaver+"-dm", "/hello please note my badge code "+p.Canary)
+	if err != nil {
+		return err
+	}
+	if _, _, _, err := d.taskEnd(ctx, key); err != nil {
+		return err
+	}
 	if _, err := d.S.Say(leaver, leaver+"-dm", "/forget"); err != nil {
 		return err
 	}

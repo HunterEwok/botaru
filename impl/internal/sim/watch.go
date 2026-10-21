@@ -223,8 +223,9 @@ func (w *watch) sweep(ctx context.Context) error {
 		return r.Err()
 	}
 	// I-1: a write tool call that ran needs an approval or a grant.
+	// A call the core ended at insert (lease_no 0) never ran.
 	if err := rows(`SELECT id, tenant, tool, task FROM toolcalls WHERE access = 'write' AND state IN ('leased', 'done', 'error', 'exec_unknown')
-		AND approval_id IS NULL AND grant_id IS NULL`, nil, func(r pgx.Rows) error {
+		AND lease_no > 0 AND approval_id IS NULL AND grant_id IS NULL`, nil, func(r pgx.Rows) error {
 		var id, tenant, tool, task string
 		if err := r.Scan(&id, &tenant, &tool, &task); err != nil {
 			return err
@@ -238,7 +239,8 @@ func (w *watch) sweep(ctx context.Context) error {
 	// grant alone in a task that read untrusted output before it.
 	if err := rows(`SELECT c.id, c.tenant, c.tool, c.task FROM toolcalls c WHERE c.access = 'write' AND c.grant_id IS NOT NULL AND c.approval_id IS NULL
 		AND c.state IN ('leased', 'done', 'error', 'exec_unknown')
-		AND EXISTS (SELECT 1 FROM toolcalls u WHERE u.task = c.task AND u.untrusted_output AND u.state = 'done' AND u.created_at < c.created_at)`, nil, func(r pgx.Rows) error {
+		AND c.lease_no > 0
+		AND EXISTS (SELECT 1 FROM toolcalls u WHERE u.task = c.task AND u.untrusted_output AND u.state = 'done' AND u.ended_at < c.created_at)`, nil, func(r pgx.Rows) error {
 		var id, tenant, tool, task string
 		if err := r.Scan(&id, &tenant, &tool, &task); err != nil {
 			return err
@@ -251,7 +253,7 @@ func (w *watch) sweep(ctx context.Context) error {
 	// I-4: a write call under a card that was not approved, of another tenant or task, or a
 	// card that ran twice.
 	if err := rows(`SELECT c.id, c.tenant, c.tool, a.id, a.state, a.tenant, coalesce(a.source_task, ''), c.task FROM toolcalls c JOIN approvals a ON a.id = c.approval_id
-		WHERE c.access = 'write' AND c.state IN ('leased', 'done', 'error', 'exec_unknown')
+		WHERE c.access = 'write' AND c.state IN ('leased', 'done', 'error', 'exec_unknown') AND c.lease_no > 0
 		AND (a.state NOT IN ('approved', 'executing', 'executed', 'exec_failed', 'exec_unknown') OR a.tenant <> c.tenant)`, nil, func(r pgx.Rows) error {
 		var id, tenant, tool, aid, astate, atenant, atask, task string
 		if err := r.Scan(&id, &tenant, &tool, &aid, &astate, &atenant, &atask, &task); err != nil {
@@ -264,7 +266,7 @@ func (w *watch) sweep(ctx context.Context) error {
 	}
 	// A campaign card runs once per item (ORC-3).
 	if err := rows(`SELECT approval_id, coalesce(campaign_item, 0), count(*) FROM toolcalls WHERE access = 'write' AND approval_id IS NOT NULL
-		AND state IN ('leased', 'done', 'error', 'exec_unknown')
+		AND state IN ('leased', 'done', 'error', 'exec_unknown') AND lease_no > 0
 		GROUP BY approval_id, campaign_item HAVING count(*) > 1`, nil, func(r pgx.Rows) error {
 		var aid string
 		var item, n int
@@ -414,7 +416,7 @@ func (w *watch) farmGit(ctx context.Context) {
 				// The store did not answer: the commit is checked again on the next sweep.
 				continue
 			}
-			if !slices.Contains([]string{"realizing", "realized", "reverted"}, state) {
+			if !slices.Contains([]string{"realizing", "realized", "realization_failed", "reverted"}, state) {
 				w.add("I-6", hash, fmt.Sprintf("commit %s carries Botaru-Proposal %s in state %q, not accepted", hash[:12], prop, state), firstLine(body))
 			}
 		default:
@@ -425,7 +427,9 @@ func (w *watch) farmGit(ctx context.Context) {
 
 // trailer is the value of a trailer line of a commit message.
 func trailer(body, key string) string {
-	for _, l := range strings.Split(body, "\n") {
+	// Trailers are the last paragraph only, so text quoted in the message body is not one.
+	paras := strings.Split(strings.TrimSpace(body), "\n\n")
+	for _, l := range strings.Split(paras[len(paras)-1], "\n") {
 		if v, ok := strings.CutPrefix(strings.TrimSpace(l), key+":"); ok {
 			return strings.TrimSpace(v)
 		}
@@ -472,7 +476,12 @@ func (w *watch) final(ctx context.Context) error {
 		}
 	}
 	db := w.s.Bench.Store().Pool
-	r, err := db.Query(ctx, `SELECT t.id, t.tenant, t.type, t.state FROM tasks t WHERE t.state IN ('submitted', 'working') AND t.reason IS NULL
+	if w.s.Tripped() || w.s.Halted() != "" {
+		// The tenants are held: tasks wait for the hold, which is no owner lost.
+		return nil
+	}
+	// An action task waits for its write call, not for an attempt.
+	r, err := db.Query(ctx, `SELECT t.id, t.tenant, t.type, t.state FROM tasks t WHERE t.state IN ('submitted', 'working') AND t.reason IS NULL AND t.type NOT LIKE 'action.%'
 		AND NOT EXISTS (SELECT 1 FROM leases l WHERE l.work_id = t.id AND l.kind = 'attempt' AND l.state = 'active')
 		AND (t.run_at IS NULL OR t.run_at <= now()) AND t.updated_at < now() - interval '2 minutes'`)
 	if err != nil {
@@ -541,7 +550,9 @@ func (h logWatch) Handle(ctx context.Context, r slog.Record) error {
 	if r.Level >= slog.LevelError && h.s.watch != nil {
 		text := r.Message
 		r.Attrs(func(a slog.Attr) bool { text += " " + a.String(); return true })
-		if l := strings.ToLower(text); strings.Contains(l, "panic") || strings.Contains(l, "fatal") {
+		// Go's own words, in lower case: the severities FATAL and PANIC of PostgreSQL name a
+		// connection the store ended (F-7), not a crash of this process.
+		if strings.Contains(text, "panic") || strings.Contains(text, "fatal error") {
 			h.s.watch.add("I-11", text, "the log of the process holds a panic or a fatal error", text)
 		}
 	}

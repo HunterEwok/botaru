@@ -256,12 +256,14 @@ func hashHex(s string) string {
 	return hex.EncodeToString(h[:])
 }
 
-func listen(h http.Handler) (string, func(), error) {
+// listen serves h on a local port; a panic a handler raises is logged at the error level of
+// log (the invariant watch of the simulator reads it).
+func listen(h http.Handler, log *slog.Logger) (string, func(), error) {
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return "", nil, err
 	}
-	srv := &http.Server{Handler: h, ReadHeaderTimeout: 10 * time.Second}
+	srv := &http.Server{Handler: h, ReadHeaderTimeout: 10 * time.Second, ErrorLog: slog.NewLogLogger(log.Handler(), slog.LevelError)}
 	go func() { _ = srv.Serve(l) }()
 	return "http://" + l.Addr().String(), func() { _ = srv.Close() }, nil
 }
@@ -342,7 +344,7 @@ func StartBench(ctx context.Context, cfg BenchConfig) (_ *Bench, err error) {
 	key := cfg.Model.Key
 	if !cfg.Model.Real {
 		b.mock = &mockModel{}
-		u, stop, err := listen(b.mock)
+		u, stop, err := listen(b.mock, cfg.Logger)
 		if err != nil {
 			return nil, err
 		}
@@ -384,17 +386,17 @@ func StartBench(ctx context.Context, cfg BenchConfig) (_ *Bench, err error) {
 		return nil, err
 	}
 	var stop func()
-	if b.p1, stop, err = listen(srv.P1Handler()); err != nil {
+	if b.p1, stop, err = listen(srv.P1Handler(), cfg.Logger); err != nil {
 		return nil, err
 	}
 	b.closers = append(b.closers, stop)
-	if b.p2, stop, err = listen(srv.P2Handler()); err != nil {
+	if b.p2, stop, err = listen(srv.P2Handler(), cfg.Logger); err != nil {
 		return nil, err
 	}
 	b.closers = append(b.closers, stop)
 	botURLs := map[string]string{}
 	for name, bot := range b.bots {
-		u, stop, err := listen(bot)
+		u, stop, err := listen(bot, cfg.Logger)
 		if err != nil {
 			return nil, err
 		}
@@ -405,7 +407,7 @@ func StartBench(ctx context.Context, cfg BenchConfig) (_ *Bench, err error) {
 	if cfg.Monitor != nil {
 		monitor = cfg.Monitor
 	}
-	zbx, stop, err := listen(monitor)
+	zbx, stop, err := listen(monitor, cfg.Logger)
 	if err != nil {
 		return nil, err
 	}

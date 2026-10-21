@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/HunterEwok/botaru/impl/internal/evals"
 )
@@ -92,5 +93,20 @@ func TestTrailer(t *testing.T) {
 	msg := standCommit("The stand set", "the stand set")
 	if trailer(msg, "Botaru-Stand") != "the stand set" || trailer(msg, "Botaru-Proposal") != "" {
 		t.Fatalf("trailers of %q", msg)
+	}
+}
+
+// After a person's erasure is done, a model request with their canary is caught (I-8).
+func TestWatchErased(t *testing.T) {
+	s := watchStand(t)
+	s.watch = newWatch(s, false, "")
+	s.watch.model("b", []byte(`{"messages":[{"content":"note CANARY-NOT-A-SECRET-P-bob-04"}]}`))
+	if v := s.watch.Violations(); len(v) != 0 {
+		t.Fatalf("before the erasure: %+v", v)
+	}
+	s.watch.erased["CANARY-NOT-A-SECRET-P-bob-04"] = time.Now()
+	s.watch.model("b", []byte(`{"messages":[{"content":"note CANARY-NOT-A-SECRET-P-bob-04"}]}`))
+	if v := s.watch.Violations(); len(v) != 1 || v[0].Code != "I-8" {
+		t.Fatalf("after the erasure: %+v", v)
 	}
 }

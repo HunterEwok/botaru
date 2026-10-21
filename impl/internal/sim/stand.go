@@ -1130,7 +1130,14 @@ func (s *Stand) FinalWatch(ctx context.Context) error {
 	if s.watch == nil {
 		return nil
 	}
-	return s.watch.final(ctx)
+	err := s.watch.final(ctx)
+	if s.Halted() != "" {
+		// A halt found now holds the tenants before the run closes, not in the background.
+		if ferr := s.CheckFuse(ctx); ferr != nil {
+			err = errors.Join(err, ferr)
+		}
+	}
+	return err
 }
 
 // EUR writes micro-euros as euros.
