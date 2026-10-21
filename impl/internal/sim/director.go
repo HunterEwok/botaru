@@ -211,32 +211,40 @@ func (d *Director) RunScenarios(ctx context.Context, names []string) error {
 		if sc == nil {
 			return fmt.Errorf("no scenario %s", n)
 		}
-		d.S.log.Addf(KindDirector, "scenario %s: %s", sc.Name, sc.Summary)
-		err := sc.Run(ctx, d, sc.Name)
-		d.setDistrust(false)
-		d.mu.Lock()
-		d.own = nil
-		d.mu.Unlock()
-		if errors.Is(err, errStopped) || d.S.Tripped() {
-			d.check(sc.Name, "finished", false, "stopped by the money fuse")
-			return errStopped
+		if err := d.runScenario(ctx, sc); err != nil {
+			return err
 		}
-		if err != nil {
-			d.check(sc.Name, "finished", false, "%v", err)
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
+	}
+	return nil
+}
+
+// runScenario plays one scenario and heals the world after it; an error stops the run.
+func (d *Director) runScenario(ctx context.Context, sc *Scenario) error {
+	d.S.log.Addf(KindDirector, "scenario %s: %s", sc.Name, sc.Summary)
+	err := sc.Run(ctx, d, sc.Name)
+	d.setDistrust(false)
+	d.mu.Lock()
+	d.own = nil
+	d.mu.Unlock()
+	if errors.Is(err, errStopped) || d.S.Tripped() {
+		d.check(sc.Name, "finished", false, "stopped by the money fuse")
+		return errStopped
+	}
+	if err != nil {
+		d.check(sc.Name, "finished", false, "%v", err)
+		if ctx.Err() != nil {
+			return ctx.Err()
 		}
-		// The world goes back to health between scenarios, also after a failed one.
-		if err := d.Heal(ctx); err != nil {
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			d.check(sc.Name, "healed", false, "%v", err)
+	}
+	// The world goes back to health between scenarios, also after a failed one.
+	if err := d.Heal(ctx); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
 		}
-		if d.AfterScenario != nil {
-			d.AfterScenario(ctx, sc.Name)
-		}
+		d.check(sc.Name, "healed", false, "%v", err)
+	}
+	if d.AfterScenario != nil {
+		d.AfterScenario(ctx, sc.Name)
 	}
 	return nil
 }
