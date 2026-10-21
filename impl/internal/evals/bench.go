@@ -963,6 +963,12 @@ func (b *Bench) start(runCtx context.Context, name string, run func(context.Cont
 		defer b.done.Done()
 		defer cancel()
 		_ = run(ctx)
+		// A worker that ended frees its name; StopWorker deleted it already.
+		b.workersMu.Lock()
+		if _, ok := b.workers[name]; ok && ctx.Err() == nil {
+			delete(b.workers, name)
+		}
+		b.workersMu.Unlock()
 	}()
 	return true
 }

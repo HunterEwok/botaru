@@ -3,6 +3,7 @@
 package sim
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
@@ -13,6 +14,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/oklog/ulid/v2"
 
 	"github.com/HunterEwok/botaru/impl/internal/evals"
 	"github.com/HunterEwok/botaru/impl/internal/ids"
@@ -54,7 +57,7 @@ func farmSeedTenants(sd *evals.Seed, f *Farm) {
 				continue
 			}
 			c := p
-			c.Name, c.Tenant, c.ID = t.Name+"-"+p.Name, t.Name, ids.PrincipalID()
+			c.Name, c.Tenant, c.ID = t.Name+"-"+p.Name, t.Name, copyID(t.Name, p.Name)
 			c.Groups = slices.Clone(p.Groups)
 			c.Chats = nil
 			for _, ch := range p.Chats {
@@ -218,7 +221,9 @@ func catalogFor(sp map[string]any, t *FarmTenant) (map[string]any, error) {
 	text := reTemplateHost.ReplaceAllStringFunc(string(raw), func(h string) string { return rename[h] })
 	text = strings.ReplaceAll(text, UnitCTDQCOf(templateTenant), UnitCTDQCOf(t.Name))
 	var out map[string]any
-	if err := json.Unmarshal([]byte(text), &out); err != nil {
+	dec := json.NewDecoder(strings.NewReader(text))
+	dec.UseNumber()
+	if err := dec.Decode(&out); err != nil {
 		return nil, err
 	}
 	hosts, resources := asSlice(out["hosts"]), asSlice(out["resources"])
@@ -390,4 +395,11 @@ func (s *Stand) TakenBy(ctx context.Context) (map[string]map[string]int, error) 
 		out[tenant][typ] = n
 	}
 	return out, rows.Err()
+}
+
+// copyID is the principal id of a person's copy in a tenant: the same on every call, so the
+// stand's and the bench's copies of the seed name the same principal.
+func copyID(tenant, name string) string {
+	sum := sha256.Sum256([]byte("botaru-sim principal " + tenant + "/" + name))
+	return "human:" + ids.Principal + "_" + ulid.MustNew(0, bytes.NewReader(sum[:])).String()
 }
