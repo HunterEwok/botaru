@@ -108,11 +108,11 @@ func priceOf(model string) ([2]float64, bool) {
 }
 
 type options struct {
-	root, dsn, out, scenario, approve, model, keyFile, providerURL, farm, load string
-	mock, real, interactive, keepDB, verbose, showVersion                      bool
-	maxEUR, priceIn, priceOut                                                  float64
-	duration, faultEvery, step, timeout                                        time.Duration
-	seed                                                                       int64
+	root, dsn, out, scenario, approve, model, keyFile, providerURL, farm, load, halt string
+	mock, real, interactive, keepDB, verbose, showVersion                            bool
+	maxEUR, priceIn, priceOut                                                        float64
+	duration, faultEvery, step, timeout                                              time.Duration
+	seed                                                                             int64
 	// loadProfile is the load profile of -load, read by check.
 	loadProfile *sim.LoadProfile
 }
@@ -143,6 +143,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	fs.DurationVar(&o.timeout, "timeout", 3*time.Minute, "how long a scenario waits for each step")
 	fs.Int64Var(&o.seed, "seed", 42, "the seed of the generated logs, faults and random decisions")
 	fs.BoolVar(&o.keepDB, "keep-db", false, "keep the run's database for a look afterwards")
+	fs.StringVar(&o.halt, "halt-on-violation", "auto", "halt the run at a breach of a security invariant (I-1 to I-8): yes, no, or auto (yes with -real)")
 	fs.BoolVar(&o.verbose, "v", false, "log the bench to the standard error")
 	fs.BoolVar(&o.showVersion, "version", false, "print the version")
 	if err := fs.Parse(args); err != nil {
@@ -197,6 +198,9 @@ func split(s string) []string {
 func (o *options) check() (int, error) {
 	if o.mock && o.real {
 		return 2, errors.New("-mock and -real exclude each other")
+	}
+	if !slices.Contains([]string{"auto", "yes", "no"}, o.halt) {
+		return 2, errors.New("-halt-on-violation is yes, no or auto")
 	}
 	if !slices.Contains(sim.Policies, o.approve) {
 		return 2, fmt.Errorf("-auto-approve is one of %s", strings.Join(sim.Policies, ", "))
@@ -330,6 +334,7 @@ func runWith(o options, stdin io.Reader, stdout, stderr io.Writer) (int, error) 
 	log.Addf(sim.KindDirector, "botaru-sim %s: %s, money fuse %s EUR, auto-approve %s, world in %s", version.Version, mode, sim.EUR(capMicros), o.approve, work)
 	s, err := sim.Start(ctx, sim.Config{Root: root, DSN: dsn, Work: work, Exe: exe, Real: o.real, Key: key, BaseURL: o.providerURL,
 		Model: single, RankModels: ranks, Prices: models, MaxMicros: capMicros, Seed: o.seed, Step: o.step, Log: log, Farm: farm,
+		HaltOnViolation: o.halt == "yes" || o.halt == "auto" && o.real, ViolationsFile: sim.WatchFile(runDir),
 		Logger: slog.New(slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: level}))})
 	if err != nil {
 		return 1, err
@@ -371,6 +376,12 @@ func runWith(o options, stdin io.Reader, stdout, stderr io.Writer) (int, error) 
 		}
 	}
 	_ = s.CheckFuse(context.Background())
+	wctx, wcancel := context.WithTimeout(context.Background(), time.Minute)
+	if err := s.FinalWatch(wctx); err != nil {
+		fmt.Fprintln(stderr, "botaru-sim: the last invariant sweep failed:", err)
+	}
+	wcancel()
+	viol := s.Violations()
 	res := d.Results()
 	if err := writeResults(filepath.Join(runDir, "results.json"), res, s, o); err != nil {
 		return 1, err
@@ -388,14 +399,19 @@ func runWith(o options, stdin io.Reader, stdout, stderr io.Writer) (int, error) 
 	if gaps > 0 {
 		gapNote = fmt.Sprintf(", %d stopped at a known gap of the core", gaps)
 	}
-	fmt.Fprintf(stdout, "\n%d checks, %d failed%s; spend %s EUR of the %s EUR fuse; %d model calls answered by the mock\nevents: %s\n",
-		len(res), failed, gapNote, sim.EUR(s.Spent()), sim.EUR(capMicros), s.Brain.Calls(), filepath.Join(runDir, "sim-events.jsonl"))
+	fmt.Fprintf(stdout, "\n%d checks, %d failed%s; %d breaches of the invariants; spend %s EUR of the %s EUR fuse; %d model calls answered by the mock\nevents: %s\n",
+		len(res), failed, gapNote, len(viol), sim.EUR(s.Spent()), sim.EUR(capMicros), s.Brain.Calls(), filepath.Join(runDir, "sim-events.jsonl"))
+	for _, v := range viol {
+		fmt.Fprintf(stdout, "BREACH %s %s\n", v.Code, v.What)
+	}
 	switch {
+	case s.Halted() != "":
+		return 4, errors.New("a breach of security halted the run: " + s.Halted())
 	case s.Tripped():
 		return 3, errors.New("the money fuse stopped the run")
 	case runErr != nil && !errors.Is(runErr, context.Canceled):
 		return 1, runErr
-	case failed > 0:
+	case failed > 0, len(viol) > 0:
 		return 1, nil
 	}
 	return 0, nil
@@ -413,7 +429,8 @@ func rankList() string {
 
 func writeResults(path string, res []sim.Result, s *sim.Stand, o options) error {
 	raw, err := json.MarshalIndent(map[string]any{"mode": map[bool]string{true: "real", false: "mock"}[o.real], "model": map[bool]string{true: o.model}[o.real],
-		"spent_eur": sim.EUR(s.Spent()), "max_eur": o.maxEUR, "fuse_tripped": s.Tripped(), "auto_approve": o.approve, "checks": res}, "", "  ")
+		"spent_eur": sim.EUR(s.Spent()), "max_eur": o.maxEUR, "fuse_tripped": s.Tripped(), "halted": s.Halted(), "auto_approve": o.approve, "checks": res,
+		"violations": s.Violations()}, "", "  ")
 	if err != nil {
 		return err
 	}

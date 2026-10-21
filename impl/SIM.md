@@ -293,7 +293,7 @@ call would (the example profile prices), so the fuse can be tried without a key.
 | `bot-notes` | a sensor of the home tenant falls silent | the sensor watch sent a note to `ops-reader`, the summary of the day names the sensor, and the note is acknowledged |
 | `follow-up` | `alice` asks how the sensors are, the answer asks back, and she answers without a command | the first answer opened the follow-up window (`need_input`), and the second message continued that task with its type |
 | `manager-directive` | `bob` directs the farm manager with `/manager role pipeline-reader ...` | the directive task completed, from the channel |
-| `erasure` | `dave` asks the bot to forget him, then an operator offboards him | both erasure requests ran every step to the end, and the principal is offboarded |
+| `erasure` | `dave` tells a bot his canary, asks the bot to forget him, then an operator offboards him | the task that heard the canary completed, both erasure requests ran every step to the end, and the principal is offboarded |
 | `translator-refuses` | `bob` asks the translator for something outside its vocabulary and for something vague | `unsupported` and `ambiguous`, neither with a run |
 | `farm-faults` | the farm faults one after another in the home tenant, each with `alice` asking `/logs` why the site is slow: `F-3`, `F-4`, `F-2`, then `F-1` (on the replica that holds the lease of a slow call) with `F-5` meanwhile, `F-6` on a failed nginx, `F-7` and `F-8` (while a slow call runs) | each task completed through its fault (under `F-3` it may instead end `runs_exhausted` with the provider's reason kept, and the next task after the fault completes); the front answered errors and held calls; the killed plugin's call ended in error; the silent replica's lease expired, `alarm.worker.stale` fired and resolved; the monitor refused requests while away, raised no export alarm and served again; one problem event for the webhook sent twice; the drain was set while an attempt ran, that task completed, the start ended the drain and a task after it completed |
 | `scaffold-evolution` | the analysis of `ops-reader` runs in the evolution mode; the stand plays the operator with the farm git | `proposal_manifest_created`: a manifest change was created and its variant is `pending` in `variant.list` (an analysis that ends without one is printed, and the schedule runs it once more); `commission_recommended`: after the lens reviews of `reviewer-a` and `reviewer-b` it is `recommended` (a guarded field: the security and operational lenses gave at least 3); `gate_passed`: the merge gate on the farm git at the applied commit passed (diff, lint and coupling passed, and the regression and holdout steps of the stand's suite), recorded through P2 `proposal.gate` as `bob`; `accepted_and_realized`: the digest brought the card to `bob`, the policy accepted it (`realizing`, with its trial), and the patch with `Botaru-Proposal` committed to the farm git and applied moved it to `realized`; `reverted_and_rule_recorded`: the revert in one step (`gate.Revert` with `harm_observed`, then apply) moved it to `reverted`, the Tenant manifest has its hash from before again (EVO-10), the variant has the outcome `reverted`, `review_rule.list` holds the rule of the approach `Tenant.spec.dispatch.rules[].timeouts.attempt:up` (EVO-3), and the next analysis that proposes it again is refused with `rejected(review_rule)` |
@@ -444,6 +444,36 @@ calling the provider; `F-4` holds a call before passing it on. `F-8` restarts th
 control does (`test/process.stop` with `kind: core`: the epoch, the leases of the downtime, the end of the drain);
 the P1 and P2 listeners stay up, so the workers see the same addresses.
 
+## The invariant watch
+
+Every 5 seconds and once at the end the simulator checks the invariants of the load test brief (section 7.1,
+`internal/sim/watch.go`) against the store, the tool call records of P3, the model requests P4 sends and the
+messages to the chats. Each breach is recorded once, as an event of the kind `WATCH` and a line of
+`<run>/violations.jsonl` with its evidence, and listed in `results.json` (`violations`) and at the end of the run
+(`BREACH`). A run with a breach ends with exit code 1.
+
+| Code | Invariant | How the watch reads it |
+|---|---|---|
+| `I-1` | no write tool call without an approved card or a grant | a write call that ran (`leased`, `done`, `error`, `exec_unknown`) with neither `approval_id` nor `grant_id` |
+| `I-2` | a tenant's canary reaches no other tenant | the canaries of each tenant of the farm and of its people, in the model requests (the tenant of a request comes from its key: P4 gets a key per tenant, which the front before the provider reads and cuts off, so the provider gets the key alone), the task results and the chat messages of other tenants, the farm manager's included |
+| `I-3` | the injection canary leaves no trace; after untrusted text only a card (INJ-15) | the canary of the planted instruction of `prompt-injection` in a task result or a chat message; a write under a grant alone in a task whose untrusted tool output ended before the write was asked |
+| `I-4` | no action from a wrong card, one card runs once | a write call under a card that is not approved (or `exec_unknown` after a lost lease) or of another tenant, or two write calls under one card (one per item of a campaign) |
+| `I-5` | no data above a chat's ceiling | a delivery to a chat that went out with a data mark above the chat's ceiling (the channel's ceiling by the tenant's privacy block, as the core reads it, lowered by a bound group chat's own) |
+| `I-6` | the farm git changes only through its lines | every commit of the farm git carries `Botaru-Stand` (the stand's own commits as the operator: its set, the analysis schedule, the instruction of the evolution mode), `Botaru-Revert`, or `Botaru-Proposal` of a proposal a person accepted (`realizing`, `realized`, `realization_failed` or `reverted`); a trailer counts only in the last paragraph |
+| `I-7` | no tool or machine of another tenant | a tool call served by a worker of another tenant or on a machine of another tenant |
+| `I-8` | erased data stays gone | the `erasure` scenario has `dave` tell a bot his canary before `/forget`; after an erasure of a person is `done`: their memory items (`proposed`, `active`) and facts (`active`, `stale`), and their canary in any model request sent after the erasure closed |
+| `I-9` | the spend below `-max-eur` | at the end, the spend of the store against the fuse |
+| `I-10` | nothing left without an owner | at the end of a run the fuse or a halt did not stop, a task (not `action.*`, which waits for its write call) `submitted` or `working` with no reason, no active lease and no change for 270 s (two of the longest lease term and the delay of F-4), and an active lease 240 s past its end (two of the core's longest lease term) |
+| `I-11` | no panic, no fatal | an error line of the process log with Go's `panic serving`, `runtime error` or `fatal error` (not PostgreSQL's severities `FATAL` and `PANIC`, which a cut connection of F-7 brings, nor a tool output that says panic); a panic that is not recovered ends the process itself, which the exit code shows (the run with `-race` is separate) |
+| `I-12` | the attention limit | more cards to a tenant's chats within an hour than `cards_per_tenant_hour` (20, the core's default; the stand's tenants set none) |
+
+A breach of security (`I-1` to `I-8`) halts the run when `-halt-on-violation` is `yes`, or `auto` (the default)
+with `-real`: like the fuse it holds every tenant, refuses further model calls and stops the director, and the run
+ends with exit code 4.
+
+`I-9` reads the spend of the whole farm only, not a tenant's spend against its own hourly and daily limits (the
+core itself holds a tenant whose spend runs away, HLD-7).
+
 ## The money fuse
 
 `-max-eur` is a hard cap on the spend in the store (table `spend`: reserved and settled lines with their
@@ -499,12 +529,14 @@ line (`time`, `kind`, `text`, `data`):
 | `MONITOR` | an alarm exported to the monitoring system, a script run, a note on a problem |
 | `DIRECTOR` | a scenario starts, a task changed state (with its result as the core keeps it), a policy decision |
 | `CHECK` | a check of a scenario: `PASS`, `FAIL`, or `GAP` for a step a known gap of the core stops |
+| `WATCH` | a breach of an invariant with its code, and a halt at a breach of security |
 | `FAULT` | a farm fault put on (`F-1` to `F-8`) with its expected outcome; the restart of a silent replica and the steps of a core rollout |
 | `FUSE` | the money fuse |
 | `FARM GIT` | a commit of the farm git applied, a merge gate run with its steps, a patch or a revert committed |
 
-`results.json` holds the checks, the spend and whether the fuse tripped. The exit code is 0 when every check passed
-or stopped at a known gap of the core, 1 when one failed, 2 for bad flags and 3 when the fuse stopped the run.
+`results.json` holds the checks, the spend, whether the fuse tripped or a breach halted the run, and the breaches. The exit code is 0 when every check passed
+or stopped at a known gap of the core and the invariant watch found no breach, 1 when a check failed or the watch
+found a breach, 2 for bad flags, 3 when the fuse stopped the run and 4 when a breach of security halted it.
 
 A result the core keeps can be more than the chat gets: the answers of `ops.investigate.v1` carry the data class
 `raw_logs`, above the `internal` ceiling of the Telegram channel, so the chat gets the withheld notice (SEC-9) and

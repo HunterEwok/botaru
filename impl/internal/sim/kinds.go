@@ -420,6 +420,18 @@ func erasure(ctx context.Context, d *Director, sc string) error {
 		}
 		return id, reason + " " + state, open, err
 	}
+	// dave first tells a bot something of his own, his canary, so the invariant watch can see
+	// whether it comes back in a model request after the erasure (I-8).
+	key, err := d.S.Say(leaver, leaver+"-dm", "/hello please note my badge code "+p.Canary)
+	if err != nil {
+		return err
+	}
+	// The watch needs that task to reach the model, else I-8 has nothing to look for.
+	hello, why, _, err := d.taskEnd(ctx, key)
+	if err != nil {
+		return err
+	}
+	d.check(sc, "canary_told", hello == "completed", "the task of his /hello: %s %s", hello, why)
 	if _, err := d.S.Say(leaver, leaver+"-dm", "/forget"); err != nil {
 		return err
 	}

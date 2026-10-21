@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"math/rand/v2"
 	"net/http"
 	"net/http/httputil"
@@ -113,7 +114,16 @@ type providerFront struct {
 	// injected counts the errors it answered by status and delayed the calls it held.
 	injected map[int]int
 	delayed  int
+	// observe sees each model request with the tenant its key names (the invariant watch).
+	observe func(tenant string, body []byte)
+	// halted says the run is halted: a model request is then refused, the one that caused the
+	// halt included, so it never reaches the provider.
+	halted func() bool
 }
+
+// tenantKeyMark joins the provider key and the tenant in the key P4 sends the front; the front
+// cuts it off, so the provider gets the key alone.
+const tenantKeyMark = "~sim-tenant="
 
 func newProviderFront(target string, seed int64) (*providerFront, error) {
 	u, err := url.Parse(target)
@@ -152,6 +162,29 @@ var providerErrors = map[int]struct{ typ, msg string }{
 
 func (p *providerFront) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	model := r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/messages")
+	tenant := ""
+	if k := r.Header.Get("x-api-key"); strings.Contains(k, tenantKeyMark) {
+		key, t, _ := strings.Cut(k, tenantKeyMark)
+		r.Header.Set("x-api-key", key)
+		tenant = t
+	}
+	if model && p.observe != nil {
+		body, err := io.ReadAll(io.LimitReader(r.Body, 64<<20))
+		_ = r.Body.Close()
+		if err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		r.Body = io.NopCloser(bytes.NewReader(body))
+		r.ContentLength = int64(len(body))
+		p.observe(tenant, body)
+	}
+	if model && p.halted != nil && p.halted() {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		fmt.Fprint(w, `{"type":"error","error":{"type":"api_error","message":"the stand halted the run"}}`)
+		return
+	}
 	p.mu.Lock()
 	on := model && time.Now().Before(p.until)
 	code, delay := 0, time.Duration(0)
