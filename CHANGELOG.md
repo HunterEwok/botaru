@@ -39,6 +39,9 @@ Entries are grouped by area; within a group the newest entry comes first.
   private directory (`files_dir`, the system temporary directory by default), passes the paths in
   `_meta["botaru/files"]` and removes them after the call. Under a call lease `file.get` hands out only an
   attachment of the call's task that its arguments name.
+- The oneshot queue plugin takes the number of a campaign item (APR-7): an action campaign's write call carries
+  `<campaign id>:<n>`, which the queue refused as a write without a number, so every item of an action campaign on
+  the oneshot mechanism failed with `exec_failed`; the request file of an item is `<campaign id>-<n>.json`.
 - A task of `system` may enqueue the children its group `system-ops` lists (PRM-10, PRM-6, flow 5): the built-in
   `enqueue_child` and P1 `enqueue` under an attempt lease took the child's rights from the memberships of the
   initiator, which `system` does not have, and refused a scheduled sensor check its report (`type_not_allowed`).
