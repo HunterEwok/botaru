@@ -33,6 +33,12 @@ Entries are grouped by area; within a group the newest entry comes first.
 
 ### Reference Implementation (impl/)
 
+- An analysis of a role's own results (`purpose: insight`) and an aggregate run on the role's `analysis` slot, as
+  the apply lint already priced them (PRF-1), and their calls are held to the position's analysis ceiling (GW-7):
+  the claim took the main slot `base` before, so the analysis of `ops-reader` ran on the profile of its base work.
+  Such a task waits for the provider pair of the analysis profile. Upgrade: a tenant whose `models_allowed` lacks a
+  role's analysis profile, or a charter whose `analysis_max_rank` is below that profile's rank, now refuses these
+  calls; check both before upgrading.
 - The runtime gets the full result schema and fixes its answer before `complete` (impl/ARCHITECTURE.md "The
   attempt record"): the claim payload carries `full_result_schema` beside the unchanged `result_schema`, with the
   `enum_from` values of the attempt and the patterns of `x-botaru-format`; `botaru-agent` shows it to the model with

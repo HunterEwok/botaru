@@ -408,7 +408,8 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 	tv := cat.Tenants[w.Tenant]
 	// A pair (workspace, model pool) that waits for the provider gets no attempt, and the
 	// runtime is not started for it (D18, D19, GW-10, GW-11).
-	if wait, err := pairWait(ctx, tx, now, cat, w.Tenant, role); err != nil {
+	_, mainProfile := mainSlot(role)
+	if wait, err := pairWait(ctx, tx, now, cat, w.Tenant, mainProfile); err != nil {
 		return nil, err
 	} else if wait != "" {
 		return nil, markWaiting(ctx, tx, now, w.Tenant, claims, nil, wait)
@@ -549,6 +550,23 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		} else {
 			acting = actingOf{}
 		}
+		// An analysis or an aggregate runs on the role's analysis slot, whose pair may wait
+		// while the main one does not (D18, D19).
+		if seatOfRecord(rec) == "" {
+			if _, p := attemptSlot(role, cat.TaskTypes[typ]); p != mainProfile {
+				wait, err := pairWait(ctx, tx, now, cat, w.Tenant, p)
+				if err != nil {
+					return nil, err
+				}
+				if wait != "" {
+					if err := markWaiting(ctx, tx, now, w.Tenant, nil, []string{id}, wait); err != nil {
+						return nil, err
+					}
+					skip = append(skip, id)
+					continue
+				}
+			}
+		}
 		// The initiator's rights are checked again under the task lock: a person disabled or
 		// ungranted after enqueue gets no work done in their name (PRM-8).
 		if reason, err := c.accessLost(ctx, tx, now, tv, accessPrincipal(initiator, rec), "task:"+typ, cat.TaskTypes[typ].DataClass); err != nil {
@@ -625,8 +643,12 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 	}
 	// The run fingerprint and the catalog values of the result check are fixed at claim and
 	// written into the attempt (PRV-1, OUT-1); the worker does not set them.
-	slot, profile := mainSlot(role)
-	// An attempt of the farm manager seat runs on the seat model of the farm charter (MGR-1).
+	slot, profile := attemptSlot(role, tt)
+	// A seat task runs on the role's main slot, whose pair and seat eval were checked, and an
+	// attempt of the farm manager seat on the seat model of the farm charter (MGR-1).
+	if seatOfRecord(rec) != "" {
+		slot, profile = mainSlot(role)
+	}
 	if seatOfRecord(rec) == managerSeatID {
 		if mp := mstr(managerCharter(cat), "model_profile"); mp != "" {
 			slot, profile = "seat", mp
@@ -670,7 +692,7 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 	if _, err := tx.Exec(ctx, `UPDATE leases SET fingerprint = $3, attempt = $4 WHERE work_id = $1 AND lease_no = $2`, id, leaseNo, att.Fingerprint, attRaw); err != nil {
 		return nil, err
 	}
-	// The model handle of the role's main slot and the tools handle of a role with tools (SEC-3):
+	// The model handle of the attempt's slot and the tools handle of a role with tools (SEC-3):
 	// bound to this lease and epoch. A role with no plugin tools gets one when the core offers it
 	// a built-in tool.
 	handles := map[string]any{"tools": nil, "model": nil, "session": nil, "memory": nil}
@@ -803,8 +825,21 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 	return item, nil
 }
 
-// mainSlot picks the slot of the attempt's model handle: base, then analysis, then seat, then
-// the first by name.
+// attemptSlot picks the slot of an attempt's model handle: an analysis of the role's own results
+// and an aggregate run on the role's analysis slot (PRF-1, the slot the apply lint prices their
+// tree budget by), any other task on the main slot.
+func attemptSlot(role manifest.Role, tt manifest.TaskType) (string, string) {
+	if tt.Purpose == "insight" || tt.Purpose == "aggregate" {
+		if p, ok := role.Models["analysis"]; ok {
+			return "analysis", p
+		}
+	}
+	return mainSlot(role)
+}
+
+// mainSlot picks the main slot of a role: base, then analysis, then seat, then the first by
+// name. The role's other work runs on it, and the provider pair of the role is checked by it
+// before a task is picked.
 func mainSlot(role manifest.Role) (string, string) {
 	for _, s := range []string{"base", "analysis", "seat"} {
 		if p, ok := role.Models[s]; ok {

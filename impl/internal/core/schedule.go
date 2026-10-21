@@ -201,7 +201,7 @@ func (c *Core) runSchedule(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 }
 
 // circuitOpenFor says whether every role that claims the type waits for an open provider
-// circuit of its main model slot; a type no role claims does not wait.
+// circuit of the slot the type runs on; a type no role claims does not wait.
 func circuitOpenFor(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tenant, typ string) (bool, error) {
 	claimed := false
 	for _, name := range slices.Sorted(mapKeys(cat.Roles)) {
@@ -210,7 +210,8 @@ func circuitOpenFor(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog,
 			continue
 		}
 		claimed = true
-		wait, err := pairWait(ctx, tx, now, cat, tenant, role)
+		_, profile := attemptSlot(role, cat.TaskTypes[typ])
+		wait, err := pairWait(ctx, tx, now, cat, tenant, profile)
 		if err != nil {
 			return false, err
 		}
