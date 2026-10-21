@@ -73,10 +73,10 @@ func TestScenarios(t *testing.T) {
 	defer cancel()
 	go d.HandleCards(ctx)
 	var names []string
-	for _, sc := range Scenarios {
+	for _, n := range FitScenarios(s.Farm()) {
 		// The farm's own faults take minutes of fault time; TestFarmFaults runs them beside.
-		if sc.Name != "farm-faults" {
-			names = append(names, sc.Name)
+		if n != "farm-faults" {
+			names = append(names, n)
 		}
 	}
 	if err := d.RunScenarios(ctx, names); err != nil {

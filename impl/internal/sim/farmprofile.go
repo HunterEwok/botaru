@@ -129,6 +129,16 @@ func (f *Farm) check() error {
 // Home is the home tenant: the tenant of the scenarios.
 func (f *Farm) Home() *FarmTenant { return f.Tenants[0] }
 
+// TenantWith is the first tenant that runs a worker of the role, nil when none does.
+func (f *Farm) TenantWith(role string) *FarmTenant {
+	for _, t := range f.Tenants {
+		if t.Workers(role) > 0 {
+			return t
+		}
+	}
+	return nil
+}
+
 // Tenant finds a tenant by name.
 func (f *Farm) Tenant(name string) *FarmTenant {
 	for _, t := range f.Tenants {

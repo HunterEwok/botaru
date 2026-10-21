@@ -345,6 +345,28 @@ func AppendLog(work, host, file, line string) error {
 	return appendLines(logPath(work, host, file), []string{line})
 }
 
+// RemoveLogLines takes the lines that contain a text out of a log of the world: a scenario takes
+// back what it planted, so that no later scenario reads it. A line the physics appends in the
+// same instant may be lost, which costs nothing.
+func RemoveLogLines(work, host, file, text string) error {
+	path := logPath(work, host, file)
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	var keep []string
+	for _, l := range strings.SplitAfter(string(raw), "\n") {
+		if l != "" && !strings.Contains(l, text) {
+			keep = append(keep, l)
+		}
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, []byte(strings.Join(keep, "")), 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
+}
+
 // writeChecks writes the results of the HTTP checks of each tenant's first web machine as the
 // external checker would.
 func writeChecks(work string, w *World, r *rand.Rand) error {

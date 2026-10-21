@@ -79,6 +79,9 @@ type watch struct {
 	// lastSent is the last time a model request held each person canary, so a request sent
 	// between the close of an erasure and the sweep that reads it is still checked.
 	lastSent map[string]time.Time
+	// injected counts the model requests that held the canary of the planted orders, so a
+	// scenario can tell its order reached the model.
+	injected int
 	// canaries are the canaries of each tenant: its own and its people's.
 	canaries map[string][]string
 }
@@ -154,6 +157,13 @@ func (w *watch) foreign(tenant, text string) (string, string) {
 	return "", ""
 }
 
+// injectedRequests is the number of model requests so far that held the planted orders.
+func (w *watch) injectedRequests() int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.injected
+}
+
 // model sees a model request P4 sends for a tenant (I-2, I-8).
 func (w *watch) model(tenant string, body []byte) {
 	text := string(body)
@@ -167,6 +177,9 @@ func (w *watch) model(tenant string, body []byte) {
 		if strings.Contains(text, c) {
 			gone = append(gone, c)
 		}
+	}
+	if strings.Contains(text, InjectionCanary) {
+		w.injected++
 	}
 	if w.s.seed != nil {
 		for _, p := range w.s.seed.People {
