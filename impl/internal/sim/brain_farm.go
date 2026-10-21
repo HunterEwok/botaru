@@ -38,7 +38,19 @@ func governance(system, goal, seen string, names []string, offered map[string]ma
 			}
 		}
 		return nil, insightAnswer(seen, evolve), true
+	case reInspectTask.MatchString(system):
+		return nil, inspectAnswer(goal), true
 	case reIncident.MatchString(system):
+		// The manager asks the reading bot to read the tenant for the incident once, and
+		// fetches its findings once (MGR-25).
+		if n := toolName(names, "", "inspect_request"); n != "" {
+			if inc := reIncidentID.FindString(goal); called[n] == 0 && inc != "" {
+				return map[string]any{"type": "tool_use", "name": n, "input": map[string]any{"op": "request", "incident": inc}}, "", true
+			}
+			if m := reInspectID.FindStringSubmatch(seen); called[n] == 1 && m != nil {
+				return map[string]any{"type": "tool_use", "name": n, "input": map[string]any{"op": "findings", "inspect": m[1]}}, "", true
+			}
+		}
 		return nil, managerAnswer(goal), true
 	case reTranslate.MatchString(system):
 		call, answer := translate(goal, seen, names, called)
@@ -202,6 +214,41 @@ func translate(goal, seen string, names []string, called map[string]int) (map[st
 
 // rePipelineAsk is a request about a run of the processing pipeline.
 var rePipelineAsk = regexp.MustCompile(`(?i)\bpipeline\b`)
+
+// reInspectTask is the reading a farm manager asks for (manager.inspect.v1).
+var reInspectTask = regexp.MustCompile(`(?i)hand in findings`)
+
+// inspectAnswer hands in one finding manager-finding/v1 on the subject of the incident in the
+// input block, the type of what it saw, without evidence ids, since the mock reads nothing
+// (MGR-25). The subject of a disk incident is a machine (resource db1), which the core does not
+// take as an object of the tenant, and its volume (db1:/data) does not fit the id pattern, so
+// a resource subject, like a kind a finding cannot name, becomes the task type of
+// investigations.
+func inspectAnswer(goal string) string {
+	subject := map[string]any{"kind": "tasktype", "id": "ops.investigate.v1"}
+	kind := "none"
+	for _, o := range jsonObjects(goal) {
+		in := mapOf(mapOf(o["params"])["input"])
+		if in == nil {
+			continue
+		}
+		if s := mapOf(in["subject"]); s != nil && slices.Contains([]string{"worker", "task", "role", "tasktype", "schedule"}, fmt.Sprint(s["kind"])) {
+			subject = map[string]any{"kind": s["kind"], "id": s["id"]}
+		}
+		if strings.Contains(fmt.Sprint(in["class"]), "disk") {
+			kind = "disk_growth"
+		}
+	}
+	raw, _ := json.Marshal(map[string]any{"findings": []any{map[string]any{"kind": kind, "subject": subject, "evidence": []any{}, "confidence": "medium"}}})
+	return string(raw)
+}
+
+// reIncidentID is an incident id in the input of a manager task; reInspectID the reading a
+// request of inspect_request enqueued.
+var (
+	reIncidentID = regexp.MustCompile(`\binc_[A-Za-z0-9]{1,60}\b`)
+	reInspectID  = regexp.MustCompile(`"inspect": ?"(t_[A-Za-z0-9]{1,60})"`)
+)
 
 // reHealthAsk is a request about whether the sites and services work.
 var reHealthAsk = regexp.MustCompile(`(?i)\b(sites?|services?)\b.*\b(up|working|available)\b|\bhealth\b`)

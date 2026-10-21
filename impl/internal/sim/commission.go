@@ -72,6 +72,19 @@ func incidentAndCommission(ctx context.Context, d *Director, sc string) error {
 		return e == nil && (istate == "resolved" || istate == "closed"), nil
 	})
 	d.check(sc, "incident_resolved", err == nil, "incident %s %s", incident, istate)
+	// The reading the manager asked for (MGR-25) and the analysis after the incident (MGR-53).
+	rstate, rreason, _, err := d.typeEnd(ctx, d.S.Home(), "manager.inspect.v1", start)
+	if err != nil {
+		return err
+	}
+	var findings int
+	_ = db.QueryRow(ctx, `SELECT count(*) FROM findings WHERE tenant = $1 AND incident = $2`, d.S.Home(), incident).Scan(&findings)
+	d.check(sc, "manager_read", rstate == "completed" && findings > 0, "reading %s %s, %d findings", rstate, rreason, findings)
+	astate, areason, _, err := d.typeEnd(ctx, d.S.Home(), "manager.postmortem.v1", start)
+	if err != nil {
+		return err
+	}
+	d.check(sc, "postmortem", astate == "completed", "analysis after the incident %s %s", astate, areason)
 
 	// 2. The commission. The world's history first: investigations with repeated and long
 	// attempts, so the analysis has series to read (one investigation alone gives too little).

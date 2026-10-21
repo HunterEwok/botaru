@@ -74,6 +74,7 @@ var Scenarios = []Scenario{
 	{"bot-notes", "a sensor falls silent; data-job sends a sensor note to ops-reader, and the summary of the day " +
 		"names the sensor", botNotes},
 	{"follow-up", "alice asks about the sensors, the answer asks back, and her next words continue that task in the follow-up window", followUp},
+	{"manager-directive", "bob directs the farm manager with /manager to look at the pipeline reader; the seat runs the directive", directive},
 	{"translator-refuses", "bob asks the translator for something outside its vocabulary and for something vague: no draft, no run", translatorRefuses},
 }
 

@@ -340,3 +340,22 @@ func followUp(ctx context.Context, d *Director, sc string) error {
 		"state %s %s, type %s, continues %q of %q", state, reason, typ, continues, first)
 	return nil
 }
+
+// directive plays a person's directive to the farm manager (R-18): bob directs it with /manager
+// to look at the pipeline reader, and the seat runs the directive task.
+func directive(ctx context.Context, d *Director, sc string) error {
+	home := d.S.Home()
+	start := time.Now().UTC()
+	if _, err := d.S.Say("bob", "bob-dm", "/manager role pipeline-reader Look at why the last pipeline run failed and tell me."); err != nil {
+		return err
+	}
+	state, reason, result, err := d.typeEnd(ctx, home, "manager.directive.v1", start)
+	if err != nil {
+		return err
+	}
+	var by string
+	_ = d.S.Bench.Store().Pool.QueryRow(ctx, `SELECT coalesce(record->'directive'->>'via', '') FROM tasks WHERE tenant = $1 AND type = 'manager.directive.v1'
+		AND created_at >= $2 ORDER BY created_at DESC LIMIT 1`, home, start).Scan(&by)
+	d.check(sc, "directive_done", state == "completed" && by == "channel", "state %s %s, via %q: %v", state, reason, by, result)
+	return nil
+}

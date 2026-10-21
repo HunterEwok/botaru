@@ -23,8 +23,8 @@ var farmRoles = []string{"data-reader", "data-job", "geo-reader", "pipeline-read
 // document.
 var jobTypes = []string{"data.sensor_watch.v1", "pipeline.watch.v1", "check.http.v1", "data.sensor_check.v1", "report.sensor.v1", "kb.ingest.v1"}
 
-// farmFiles are the example manifests of the commission, the farm manager and the incident
-// classes.
+// farmFiles are the example manifests of the commission, the farm manager, the incident
+// classes, the sensor note and the analysis after an incident.
 var farmFiles = []string{
 	"examples/tenants/demo/commission.yaml",
 	"examples/tenants/demo/governance.yaml",
@@ -33,12 +33,15 @@ var farmFiles = []string{
 	"examples/incidents/disk-full.yaml",
 	"examples/incidents/store-low.yaml",
 	"examples/messagetypes/report.sensor_note.v1.yaml",
+	// The bench takes the types the example roles claim; farm-manager claims the analysis after
+	// an incident only on the stand (farmManifests).
+	"examples/tasktypes/manager.postmortem.v1.yaml",
 }
 
 // farmSeed gives the people of the seed what the farm bots need: alice and bob may ask the data
 // bots, the translator and the operator, both run scripts, alice runs the monthly report (group
 // lead), and bob decides the proposals of the commission, runs the merge gate of a manifest
-// change (group deciders) and uploads manuals to the knowledge corpus.
+// change, directs the farm manager (group deciders) and uploads manuals to the knowledge corpus.
 func farmSeed(sd *evals.Seed) {
 	if g := sd.Groups["staff"]; g != nil {
 		caps, _ := g["caps"].([]any)
@@ -46,7 +49,7 @@ func farmSeed(sd *evals.Seed) {
 			"kb.write:vendor-manuals")
 	}
 	sd.Groups["lead"] = map[string]any{"caps": []any{"task:report.monthly.numbers.v1", "task:report.monthly.v1"}, "data_up_to": "internal"}
-	sd.Groups["deciders"] = map[string]any{"caps": []any{"proposal.decide:reliability", "proposal.gate:reliability"}, "data_up_to": "internal"}
+	sd.Groups["deciders"] = map[string]any{"caps": []any{"proposal.decide:reliability", "proposal.gate:reliability", "manager.direct"}, "data_up_to": "internal"}
 	// alice runs the scripts the translator drafts for her: a script with an action, a gate or a
 	// step that may control services needs script.run, a privileged capability her code
 	// from /me activates (PRM-13).
@@ -136,7 +139,9 @@ func farmManifests(ms, farm []map[string]any, insights bool) []map[string]any {
 	}
 	ms = append(ms,
 		group("system-ops", sysCaps...),
-		group("farm-manager-ops", "task:manager.incident.respond.v1", "task:manager.postmortem.v1", "control.apply:hold", "control.apply:quarantine",
+		// The seat's group also enqueues the readings the manager asks for (MGR-25) and the
+		// directives of people (MGR-4).
+		group("farm-manager-ops", "task:manager.incident.respond.v1", "task:manager.postmortem.v1", "task:manager.inspect.v1", "task:manager.directive.v1", "control.apply:hold", "control.apply:quarantine",
 			"control.apply:drain", "control.apply:preempt", "control.apply:cancel"),
 		schedule("ops-insight", "* * * * *", "ops.insight.v1", !insights),
 		schedule("pipelines-watch", "*/2 * * * *", "pipeline.watch.v1", false),
