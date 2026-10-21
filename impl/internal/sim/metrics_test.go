@@ -4,6 +4,7 @@ package sim
 
 import (
 	"compress/gzip"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -63,6 +64,30 @@ func TestM2Peaks(t *testing.T) {
 	tasks = append(tasks, peopleTask{created: calm, state: "submitted"})
 	if m := m2(tasks, in); m.Status != "fail" || m.Detail == "" {
 		t.Fatalf("a starving queue: %+v", m)
+	}
+	// A task held by a hold waits for the hold; a task its deadline failed in the queue counts.
+	tasks[3].held = true
+	if m := m2(tasks, in); m.Status != "pass" {
+		t.Fatalf("a held task: %+v", m)
+	}
+	tasks = append(tasks, peopleTask{created: calm, ended: calm.Add(15 * time.Minute), state: "failed", reason: "deadline_exceeded"})
+	if m := m2(tasks, in); m.Status != "fail" {
+		t.Fatalf("a task failed in the queue: %+v", m)
+	}
+}
+
+// M-7 counts a person's task once, whether the task or a bot's request in it was refused.
+func TestM7(t *testing.T) {
+	var tasks []peopleTask
+	for i := range 40 {
+		tasks = append(tasks, peopleTask{id: fmt.Sprint(i), state: "completed"})
+	}
+	tasks[0].state, tasks[0].reason = "failed", "service_rate_limited"
+	if m := m7(tasks, 0, map[string]bool{"0": true}); m.Status != "pass" || !strings.Contains(m.Value, "1 against 40") {
+		t.Fatalf("%+v", m)
+	}
+	if m := m7(tasks, 1, map[string]bool{"1": true, "2": true}); m.Status != "fail" {
+		t.Fatalf("%+v", m)
 	}
 }
 

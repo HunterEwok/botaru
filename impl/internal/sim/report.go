@@ -6,6 +6,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -147,7 +148,9 @@ func (r *Reporter) AfterScenario(ctx context.Context, name string) {
 // run's folder and copies them with the compressed events to the export folder. The spend of
 // results.json is the stand column of metrics.json, read in the same pass. When the metrics
 // cannot be read (the final pass tries twice), results.json is written still, with the spend
-// the fuse read and the error, and Write returns the error with nil metrics.
+// the fuse read and the error, and Write returns the error with nil metrics. A file that cannot be
+// written is returned as an error with the metrics read. A periodic write the end of the run cut
+// short writes nothing.
 func (r *Reporter) Write(ctx context.Context, final bool) (*Metrics, error) {
 	r.writeMu.Lock()
 	defer r.writeMu.Unlock()
@@ -158,7 +161,8 @@ func (r *Reporter) Write(ctx context.Context, final bool) (*Metrics, error) {
 	in := metricsInput{start: r.start, loadStart: r.loadStart, load: r.load, final: final, samples: append([]procSample(nil), r.samples...),
 		budgetWaiting: map[string]map[string]bool{}}
 	for t, ids := range r.budgetWaiting {
-		in.budgetWaiting[t] = ids
+		// sample adds to the inner maps under r.mu while the metrics read them.
+		in.budgetWaiting[t] = maps.Clone(ids)
 	}
 	loadSum := r.loadSum
 	r.mu.Unlock()
@@ -166,6 +170,10 @@ func (r *Reporter) Write(ctx context.Context, final bool) (*Metrics, error) {
 	m, merr := r.S.computeMetrics(ctx, in)
 	if merr != nil && final && ctx.Err() == nil {
 		m, merr = r.S.computeMetrics(ctx, in)
+	}
+	if merr != nil && !final && ctx.Err() != nil {
+		// A periodic write cut short by the end of the run leaves the last good files.
+		return nil, merr
 	}
 	spent := EUR(r.S.Spent())
 	if m != nil {
@@ -211,18 +219,18 @@ func (r *Reporter) Write(ctx context.Context, final bool) (*Metrics, error) {
 		return nil
 	}
 	if err := put(r.Dir); err != nil {
-		return nil, err
+		return m, errors.Join(merr, err)
 	}
 	if r.Export != "" {
 		dst := filepath.Join(r.Export, filepath.Base(r.Dir))
 		if err := os.MkdirAll(dst, 0o755); err != nil {
-			return nil, err
+			return m, errors.Join(merr, err)
 		}
 		if err := put(dst); err != nil {
-			return nil, err
+			return m, errors.Join(merr, err)
 		}
 		if err := gzipAtomic(filepath.Join(r.Dir, "sim-events.jsonl"), filepath.Join(dst, "sim-events.jsonl.gz")); err != nil {
-			return nil, err
+			return m, errors.Join(merr, err)
 		}
 	}
 	return m, merr

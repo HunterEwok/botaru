@@ -238,7 +238,7 @@ func (s *Stand) takeSample(ctx context.Context, prev cpuTimes) (procSample, cpuT
 	pool := s.Bench.Store().Pool
 	st := pool.Stat()
 	sm.PoolConns, sm.PoolMax = st.TotalConns(), st.MaxConns()
-	_ = pool.QueryRow(ctx, `SELECT count(*) FROM pg_stat_activity WHERE datname = current_database()`).Scan(&sm.DBConns)
+	_ = pool.QueryRow(ctx, `SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND backend_type = 'client backend'`).Scan(&sm.DBConns)
 	return sm, now
 }
 
@@ -251,6 +251,9 @@ type peopleTask struct {
 	created, ended                 time.Time
 	firstLease                     *time.Time
 	attempts                       int
+	// held says a hold that stops claims is active in the task's tenant (the hold of a runaway
+	// spend, the fuse): its wait is the hold's, not the queue's.
+	held bool
 }
 
 // metricsInput is what a report reads besides the store.
@@ -262,10 +265,6 @@ type metricsInput struct {
 	budgetWaiting         map[string]map[string]bool
 	results               []Result
 }
-
-// passedCommission are the states a proposal reaches only after its commission recommended it
-// (spec/lifecycles/proposal.md); an expired one counts when it had been presented.
-var passedCommission = []string{"recommended", "presented", "declined", "noted", "realizing", "realized", "realization_failed", "reverted"}
 
 // warmup is the time after the start of the load the growth of the process is measured from
 // (M-12), and the least time after it a growth is measured over.
@@ -287,14 +286,15 @@ func (s *Stand) computeMetrics(ctx context.Context, in metricsInput) (*Metrics, 
 	var tasks []peopleTask
 	rows, err := db.Query(ctx, `SELECT t.id, t.tenant, t.type, t.state, coalesce(t.reason, ''), t.created_at, t.updated_at,
 		(SELECT min(l.created_at) FROM leases l WHERE l.work_id = t.id AND l.kind = 'attempt'),
-		(SELECT count(*) FROM leases l WHERE l.work_id = t.id AND l.kind = 'attempt')
+		(SELECT count(*) FROM leases l WHERE l.work_id = t.id AND l.kind = 'attempt'),
+		EXISTS (SELECT 1 FROM holds h WHERE h.state = 'active' AND 'no_claim' = ANY(h.effects) AND (h.scope_kind = 'farm' OR h.scope_tenant = t.tenant))
 		FROM tasks t WHERE t.record->>'enqueued_by' LIKE 'channel:%' AND t.created_at >= $1`, in.start)
 	if err != nil {
 		return nil, err
 	}
 	for rows.Next() {
 		var t peopleTask
-		if err := rows.Scan(&t.id, &t.tenant, &t.typ, &t.state, &t.reason, &t.created, &t.ended, &t.firstLease, &t.attempts); err != nil {
+		if err := rows.Scan(&t.id, &t.tenant, &t.typ, &t.state, &t.reason, &t.created, &t.ended, &t.firstLease, &t.attempts, &t.held); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -370,12 +370,32 @@ func (s *Stand) computeMetrics(ctx context.Context, in metricsInput) (*Metrics, 
 	if err != nil {
 		return nil, err
 	}
+	// A person's own request refused, and the people's tasks in which a bot's request was refused
+	// (the attention limit refuses mostly those: the bot gets an error and its task goes on).
 	var peopleLimited int
 	if err := db.QueryRow(ctx, `SELECT count(*) FROM audit WHERE record->>'ok' = 'false' AND record->>'reason' = 'service_rate_limited'
 		AND record->'actor'->>'principal' LIKE 'human:%' AND at >= $1`, in.start).Scan(&peopleLimited); err != nil {
 		return nil, err
 	}
-	m.Thresholds = append(m.Thresholds, loadOnly(m6), loadOnly(m7(tasks, peopleLimited)))
+	limitedTasks := map[string]bool{}
+	lr, err := db.Query(ctx, `SELECT DISTINCT record->'actor'->>'task' FROM audit WHERE record->>'ok' = 'false'
+		AND record->>'reason' = 'service_rate_limited' AND record->'actor'->>'task' IS NOT NULL AND at >= $1`, in.start)
+	if err != nil {
+		return nil, err
+	}
+	for lr.Next() {
+		var id string
+		if err := lr.Scan(&id); err != nil {
+			lr.Close()
+			return nil, err
+		}
+		limitedTasks[id] = true
+	}
+	lr.Close()
+	if err := lr.Err(); err != nil {
+		return nil, err
+	}
+	m.Thresholds = append(m.Thresholds, loadOnly(m6), loadOnly(m7(tasks, peopleLimited, limitedTasks)))
 	m8, m9, err := s.m8m9(ctx, in.start, now)
 	if err != nil {
 		return nil, err
@@ -479,10 +499,15 @@ func m2(tasks []peopleTask, in metricsInput) Metric {
 		switch {
 		case t.firstLease != nil:
 			w = max(t.firstLease.Sub(t.created), 0)
-		case t.state == "submitted" && !slices.Contains(ruleReasons, t.reason):
+		case slices.Contains(ruleReasons, t.reason):
+			continue
+		case t.state == "submitted" && !t.held:
 			// Not taken yet: it has waited at least this long.
 			w = max(in.now.Sub(t.created), 0)
 			open++
+		case t.state == "failed" || t.state == "canceled":
+			// Ended without ever being taken (its deadline passed in the queue).
+			w = max(t.ended.Sub(t.created), 0)
 		default:
 			continue
 		}
@@ -537,8 +562,26 @@ func (s *Stand) m3(ctx context.Context, start, now time.Time) (Metric, error) {
 		WHERE t.record->>'enqueued_by' LIKE 'schedule:%' AND t.created_at >= $1`, start, now).Scan(&onTime, &late); err != nil {
 		return mt, err
 	}
-	if err := db.QueryRow(ctx, `SELECT count(*) FROM events WHERE type = 'schedule.skipped' AND coalesce(data->>'reason', '') <> 'paused'
-		AND time >= $1`, start).Scan(&skipped); err != nil {
+	// A slot skipped for any reason but a pause is not on time; the reasons are shown, since a
+	// fault of the run (an open provider circuit, a hold) skips slots too.
+	reasons := map[string]int{}
+	rows, err := db.Query(ctx, `SELECT coalesce(data->>'reason', ''), count(*)::int FROM events WHERE type = 'schedule.skipped'
+		AND coalesce(data->>'reason', '') <> 'paused' AND time >= $1 GROUP BY 1`, start)
+	if err != nil {
+		return mt, err
+	}
+	for rows.Next() {
+		var reason string
+		var n int
+		if err := rows.Scan(&reason, &n); err != nil {
+			rows.Close()
+			return mt, err
+		}
+		reasons[orDash(reason)] = n
+		skipped += n
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
 		return mt, err
 	}
 	all := onTime + late + skipped
@@ -550,6 +593,9 @@ func (s *Stand) m3(ctx context.Context, start, now time.Time) (Metric, error) {
 	mt.Status = pass(share(onTime, all) >= 0.99)
 	if late+skipped > 0 {
 		mt.Detail = fmt.Sprintf("late %d, skipped %d", late, skipped)
+		for _, r := range slices.Sorted(maps.Keys(reasons)) {
+			mt.Detail += fmt.Sprintf("; %s %d", r, reasons[r])
+		}
 	}
 	return mt, nil
 }
@@ -691,13 +737,13 @@ func (s *Stand) m6(ctx context.Context, in metricsInput, refused map[string]map[
 	return mt, nil
 }
 
-// m7 is the share of service_rate_limited refusals of people's work (their enqueue refused, or
-// their task ended with it) against people's tasks.
-func m7(tasks []peopleTask, peopleLimited int) Metric {
+// m7 is the share of service_rate_limited refusals of people's work (their enqueue refused, their
+// task ended with it, or a bot working their task was refused) against people's tasks.
+func m7(tasks []peopleTask, peopleLimited int, limitedTasks map[string]bool) Metric {
 	mt := Metric{Code: "M-7", Name: "service_rate_limited refusals", Threshold: "<= 5% of people's tasks (above: the load profile does not fit the limits)"}
 	n := peopleLimited
 	for _, t := range tasks {
-		if t.state != "completed" && t.reason == "service_rate_limited" {
+		if t.state != "completed" && t.reason == "service_rate_limited" || limitedTasks[t.id] {
 			n++
 		}
 	}
@@ -796,8 +842,9 @@ func (s *Stand) m10(ctx context.Context, in metricsInput) (Metric, error) {
 		}
 		var n int
 		if err := s.Bench.Store().Pool.QueryRow(ctx, `SELECT count(*) FROM proposals WHERE tenant = $1
-			AND (state = ANY($2) OR state = 'expired' AND presented_at IS NOT NULL) AND created_at >= $3`,
-			t.Name, passedCommission, in.start).Scan(&n); err != nil {
+			AND (presented_at IS NOT NULL OR state = 'recommended' OR state = 'dismissed' AND record->>'state_reason' = 'gate_failed')
+			AND created_at >= $2`,
+			t.Name, in.start).Scan(&n); err != nil {
 			return mt, err
 		}
 		parts = append(parts, fmt.Sprintf("%s %d", t.Name, n))
@@ -980,7 +1027,7 @@ func (s *Stand) observed(ctx context.Context, in metricsInput, tasks []peopleTas
 	db := s.Bench.Store().Pool
 	var opening []time.Duration
 	// From the alarm episode that opened the incident to the incident.
-	r, err := db.Query(ctx, `SELECT i.opened_at - e.opened_at FROM incidents i JOIN alarm_episodes e ON e.id = i.episode
+	r, err := db.Query(ctx, `SELECT i.opened_at - e.opened_at FROM incidents i JOIN alarm_episodes e ON e.id = i.episodes[1]
 		WHERE i.opened_at >= $1`, in.start)
 	if err != nil {
 		return o, err
