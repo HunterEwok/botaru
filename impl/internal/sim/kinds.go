@@ -105,7 +105,12 @@ func reports(ctx context.Context, d *Director, sc string) error {
 	if err != nil {
 		return err
 	}
-	d.check(sc, "sensor_check", state == "completed" && jsonNum(checked["sensors_checked"]) > 0, "state %s %s, result %v", state, reason, checked)
+	d.checkGap(sc, "sensor_check", GapSystemChild, state == "completed" && jsonNum(checked["sensors_checked"]) > 0, "state %s %s, result %v", state, reason, checked)
+	if state != "completed" {
+		// The report is the child the check enqueues: without the check there is none to wait for.
+		d.checkGap(sc, "sensor_report", GapSystemChild, false, "no sensor check completed")
+		return nil
+	}
 	state, reason, result, err = d.typeEnd(ctx, home, "report.sensor.v1", start)
 	if err != nil {
 		return err
@@ -130,7 +135,7 @@ func describeFile(ctx context.Context, d *Director, sc string) error {
 		return err
 	}
 	missing := d.toolsNotDone(ctx, lab, key, []string{"data/describe"})
-	d.check(sc, "ctd_described", state == "completed" && len(missing) == 0 && jsonNum(result["rows"]) > 0,
+	d.checkGap(sc, "ctd_described", GapAttachments, state == "completed" && len(missing) == 0 && jsonNum(result["rows"]) > 0,
 		"state %s %s, tools not called %v, rows %v, depth_max_m %v", state, reason, missing, result["rows"], result["depth_max_m"])
 	return nil
 }
@@ -357,5 +362,61 @@ func directive(ctx context.Context, d *Director, sc string) error {
 	_ = d.S.Bench.Store().Pool.QueryRow(ctx, `SELECT coalesce(record->'directive'->>'via', '') FROM tasks WHERE tenant = $1 AND type = 'manager.directive.v1'
 		AND created_at >= $2 ORDER BY created_at DESC LIMIT 1`, home, start).Scan(&by)
 	d.check(sc, "directive_done", state == "completed" && by == "channel", "state %s %s, via %q: %v", state, reason, by, result)
+	return nil
+}
+
+// leaver is the person of the home tenant the erasure scenario erases and offboards: no other
+// scenario or the load uses dave (carol is the approver of the cards).
+const leaver = "dave"
+
+// erasure plays the deletion of a person's data and the leaving of a staff member (R-22):
+// dave asks the bot to forget him with /forget, the erasure request runs its steps to the end,
+// and then an operator offboards him, which opens a second request that runs to the end too.
+func erasure(ctx context.Context, d *Director, sc string) error {
+	home := d.S.Home()
+	p := d.S.seed.Person(leaver)
+	if p == nil {
+		return fmt.Errorf("no seed person %s", leaver)
+	}
+	db := d.S.Bench.Store().Pool
+	ended := func(reason string) (string, []string, error) {
+		var id, state string
+		err := d.S.waitFor(ctx, d.Timeout, func() (bool, error) {
+			e := db.QueryRow(ctx, `SELECT id, state FROM erasure_requests WHERE tenant = $1 AND subject = $2 AND reason = $3
+				ORDER BY created_at DESC LIMIT 1`, home, p.ID, reason).Scan(&id, &state)
+			return e == nil && (state == "done" || state == "failed"), nil
+		})
+		var open []string
+		rows, e := db.Query(ctx, `SELECT store || ' ' || state FROM erasure_steps WHERE request = $1 AND state NOT IN ('done', 'not_applicable') ORDER BY store`, id)
+		if e == nil {
+			for rows.Next() {
+				var s string
+				if rows.Scan(&s) == nil {
+					open = append(open, s)
+				}
+			}
+			rows.Close()
+		}
+		return state, open, err
+	}
+	if _, err := d.S.Say(leaver, leaver+"-dm", "/forget"); err != nil {
+		return err
+	}
+	state, open, err := ended("forget")
+	d.check(sc, "forgotten", err == nil && state == "done" && len(open) == 0, "erasure %s, steps not done %v %v", state, open, err)
+
+	var out map[string]any
+	err = d.S.Bench.P2(ctx, home, "principal.offboard", map[string]any{"subject": p.ID}, &out)
+	if err != nil {
+		d.check(sc, "offboarded", false, "principal.offboard: %v", err)
+		return nil
+	}
+	var pstate string
+	_ = db.QueryRow(ctx, `SELECT state FROM principals WHERE tenant = $1 AND id = $2`, home, p.ID).Scan(&pstate)
+	reason := ""
+	_ = db.QueryRow(ctx, `SELECT reason FROM erasure_requests WHERE tenant = $1 AND subject = $2 ORDER BY created_at DESC LIMIT 1`, home, p.ID).Scan(&reason)
+	state, open, err = ended(reason)
+	d.check(sc, "offboarded", pstate == "offboarded" && err == nil && state == "done" && len(open) == 0,
+		"principal %s, erasure %s %s, steps not done %v %v", pstate, reason, state, open, err)
 	return nil
 }

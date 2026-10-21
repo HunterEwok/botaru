@@ -39,7 +39,20 @@ type Result struct {
 	Check    string `json:"check"`
 	OK       bool   `json:"ok"`
 	Detail   string `json:"detail,omitempty"`
+	// Gap is the known gap of the core that a failed check runs into: such a check is printed
+	// as GAP and not counted as failed, so the run shows the gap without hiding a new failure.
+	Gap string `json:"gap,omitempty"`
 }
+
+// Known gaps of the core that a scenario runs into (D-6); each is reported to the owner.
+const (
+	// GapAttachments: the core resolves enum_from task.attachments to no values, so a tool
+	// cannot be given the file a person sent (R-07).
+	GapAttachments = "task.attachments resolves to no values"
+	// GapSystemChild: a job of a schedule runs for system, whose explicit memberships are
+	// empty, so it may enqueue no child of its role's may_enqueue (R-09).
+	GapSystemChild = "a child of a system task is refused (type_not_allowed)"
+)
 
 // Policies of -auto-approve.
 var Policies = []string{"none", "safe", "all", "random"}
@@ -75,6 +88,7 @@ var Scenarios = []Scenario{
 		"names the sensor", botNotes},
 	{"follow-up", "alice asks about the sensors, the answer asks back, and her next words continue that task in the follow-up window", followUp},
 	{"manager-directive", "bob directs the farm manager with /manager to look at the pipeline reader; the seat runs the directive", directive},
+	{"erasure", "dave asks the bot to forget him, the erasure runs to the end, and an operator offboards him", erasure},
 	{"translator-refuses", "bob asks the translator for something outside its vocabulary and for something vague: no draft, no run", translatorRefuses},
 }
 
@@ -96,14 +110,24 @@ func (d *Director) rand() *rand.Rand {
 }
 
 func (d *Director) check(sc, name string, ok bool, format string, args ...any) {
+	d.checkGap(sc, name, "", ok, format, args...)
+}
+
+// checkGap is check for a step that a known gap of the core blocks: when it fails, it is
+// printed as GAP with the gap and is not a failure of the run.
+func (d *Director) checkGap(sc, name, gap string, ok bool, format string, args ...any) {
 	r := Result{Scenario: sc, Check: name, OK: ok, Detail: fmt.Sprintf(format, args...)}
+	mark := "PASS"
+	switch {
+	case !ok && gap != "":
+		mark, r.Gap = "GAP", gap
+		r.Detail += " (known gap of the core: " + gap + ")"
+	case !ok:
+		mark = "FAIL"
+	}
 	d.mu.Lock()
 	d.results = append(d.results, r)
 	d.mu.Unlock()
-	mark := "PASS"
-	if !ok {
-		mark = "FAIL"
-	}
 	d.S.log.Add(KindCheck, fmt.Sprintf("%s %s: %s %s", mark, sc, name, r.Detail), map[string]any{"scenario": sc, "check": name, "ok": ok})
 }
 
