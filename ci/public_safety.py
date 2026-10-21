@@ -348,10 +348,10 @@ def scan(rp, text, lines=True):
             err(m.start(), 'coordinates_place', 'latitude or longitude with a fraction: points to a place')
     for m in TENANT.finditer(text):
         v = m.group(1) or m.group(2) or m.group(3)
-        # In Go code a quoted map key tenant with an unquoted value takes it from a variable;
-        # a tenant name there is a quoted string. YAML inside a Go string keeps its bare key and is checked.
+        # In Go code a quoted map key tenant whose value is the unquoted variable tenant (or tenantID)
+        # reads a variable; any other value, and YAML inside a Go string, is checked.
         if rp.endswith('.go') and m.group(1) and re.match(r'[{,]?"tenant(?:_id)?":', m.group(0)) \
-                and text[m.start(1) - 1] not in '"\'`':
+                and text[m.start(1) - 1] not in '"\'`' and v in ('tenant', 'tenantID'):
             continue
         if v not in OK_TENANTS:
             err(m.start(), 'tenant_not_example', f'tenant {v}: public files use only demo, demo2 and farm')
