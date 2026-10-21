@@ -116,14 +116,16 @@ var openStates = []string{"screened", "in_review", "recommended", "presented", "
 
 // settle waits until a proposal leaves the open states: bob decides its card by the policy, and
 // a recommended manifest change, which the gate-required demo presents only after the merge
-// gate, goes through the gate once, as the operator would run it. It checks nothing.
+// gate, goes through the gate once, as the operator would run it. A parked proposal leaves only
+// by park_ttl (PRP-6), so its park is dated back once, as if that time had passed. It checks
+// nothing.
 func (d *Director) settle(ctx context.Context, prop string) {
 	if d.Approve == "none" {
 		d.S.log.Addf(KindDirector, "proposal %s stays open: no virtual person decides a card (policy none)", prop)
 		return
 	}
 	db := d.S.Bench.Store().Pool
-	gated := false
+	gated, aged := false, false
 	var state string
 	err := d.S.waitFor(ctx, 2*d.Timeout+time.Minute, func() (bool, error) {
 		var kind string
@@ -134,6 +136,14 @@ func (d *Director) settle(ctx context.Context, prop string) {
 			gated = true
 			if _, _, err := d.S.GateProposal(ctx, prop); err != nil {
 				d.S.log.Addf(KindDirector, "the merge gate of %s: %v", prop, err)
+			}
+		}
+		if state == "parked" && !aged {
+			aged = true
+			if _, err := db.Exec(ctx, `UPDATE proposals SET record = jsonb_set(record, '{parked_since}', '"2000-01-01T00:00:00Z"') WHERE id = $1 AND state = 'parked'`, prop); err != nil {
+				d.S.log.Addf(KindDirector, "dating back the park of %s: %v", prop, err)
+			} else {
+				d.S.log.Addf(KindDirector, "proposal %s is parked: its park is dated back past park_ttl", prop)
 			}
 		}
 		return !slices.Contains(openStates, state), nil
