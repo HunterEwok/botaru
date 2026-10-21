@@ -352,7 +352,9 @@ analyses of the last hour back, INS-4); `proposals_per_run` counts every proposa
 commission's and the farm manager's alike, before each analysis, so one analysis that writes several may pass it;
 `manager_tasks_per_hour` counts the larger of the farm manager's tasks of a tenant in the store in the last hour
 and the works of the load that open an incident there (`R-03`, `R-17`) in that hour. Zero is no cap. A home tenant
-analysis waits while the console or a scenario has the home analysis on (`insights_on`). Every started and skipped work is an event of the kind `LOAD` with its code
+analysis is skipped while the console or a scenario has the home analysis on (`insights_on`). The manager cap
+counts one task per incident; an incident that also brings the analysis after it (`manager.postmortem.v1`) costs
+up to two. Every started and skipped work is an event of the kind `LOAD` with its code
 and tenant; at the end the run writes `load.json` (the counts by code and tenant, the skipped ones by reason)
 and prints the counts by code. The codes are those of the load test brief:
 

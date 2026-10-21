@@ -486,6 +486,19 @@ func (g *loadGen) analysis(ctx context.Context, tenant string) error {
 	g.mu.Unlock()
 	g.count(g.started, "R-19 "+tenant)
 	g.d.S.log.Add(KindLoad, fmt.Sprintf("R-19 in %s: %s", tenant, analysisWhat), map[string]any{"code": "R-19", "tenant": tenant, "class": classAnalysis})
+	// The off-switch runs whatever happens to the on-switch or the run, and once more on an
+	// error: a schedule left on would analyse every minute past the cap.
+	defer func() {
+		if tenant == g.d.S.Home() && g.d.S.Insights() {
+			return // the console turned the home analysis on meanwhile
+		}
+		off := context.WithoutCancel(ctx)
+		if err := g.d.S.SetInsightsIn(off, tenant, false); err != nil {
+			if err := g.d.S.SetInsightsIn(off, tenant, false); err != nil {
+				g.d.S.log.Addf(KindDirector, "load: the analysis schedule of %s stays on: %v", tenant, err)
+			}
+		}
+	}()
 	if err := g.d.S.SetInsightsIn(ctx, tenant, true); err != nil {
 		return err
 	}
@@ -496,7 +509,7 @@ func (g *loadGen) analysis(ctx context.Context, tenant string) error {
 			break
 		}
 	}
-	return g.d.S.SetInsightsIn(context.WithoutCancel(ctx), tenant, false)
+	return nil
 }
 
 // sleepCtx sleeps for d; false when the context ended first.
