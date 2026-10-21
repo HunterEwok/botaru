@@ -331,6 +331,10 @@ func reportMD(m *Metrics, results []Result, viol []Violation) string {
 	fmt.Fprintf(&b, "- Approvals with cards: %d, decided before they expired %s.\n", o.Approvals, pct(o.DecidedInTime))
 	fmt.Fprintf(&b, "- Processor: the stand process %.0f%% on average, %.0f%% at most (100%% is one processor); the host %.0f%% on average, %.0f%% at most.\n",
 		o.CPU.ProcessMean, o.CPU.ProcessMax, o.CPU.HostMean, o.CPU.HostMax)
+	if l := o.Limiter; l != nil {
+		fmt.Fprintf(&b, "- The stand's limiter (%d calls a minute, %d at once): %d calls, %d held, %.0f s in all, median %.1f s, 95th percentile %.1f s; at most %d waiting.\n",
+			l.PerMinute, l.Parallel, l.Calls, l.Held, l.TotalS, l.Wait.P50, l.Wait.P95, l.MaxQueued)
+	}
 	p := m.Process
 	fmt.Fprintf(&b, "- Process: %d samples; memory %.0f MB resident, %.0f MB heap; %d goroutines; store connections %d now, pool peak %d of %d, database peak %d.\n",
 		p.Samples, p.RSSMB, p.HeapMB, p.Goroutines, p.DBConns, p.PoolPeak, p.PoolMax, p.DBPeak)

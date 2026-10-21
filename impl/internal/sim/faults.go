@@ -123,6 +123,10 @@ type providerFront struct {
 	// halted says the run is halted: a model request is then refused, the one that caused the
 	// halt included, so it never reaches the provider.
 	halted func() bool
+	// limit holds the model calls to the limits of the run (nil: none); held sees each call it
+	// held with its tenant and its wait.
+	limit *limiter
+	held  func(tenant string, wait time.Duration)
 }
 
 // tenantKeyMark joins the provider key and the tenant in the key P4 sends the front; the front
@@ -209,6 +213,24 @@ func (p *providerFront) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		p.observe(tenant, body)
 	}
 	if model && p.halted != nil && p.halted() {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		fmt.Fprint(w, `{"type":"error","error":{"type":"api_error","message":"the stand halted the run"}}`)
+		return
+	}
+	if model && p.limit != nil {
+		wait, err := p.limit.acquire(r.Context())
+		if err != nil {
+			// P4 gave up on the call (its deadline) while it waited.
+			return
+		}
+		defer p.limit.release()
+		if wait >= time.Millisecond && p.held != nil {
+			p.held(tenant, wait)
+		}
+	}
+	if model && p.limit != nil && p.halted != nil && p.halted() {
+		// The run halted while the call waited.
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusServiceUnavailable)
 		fmt.Fprint(w, `{"type":"error","error":{"type":"api_error","message":"the stand halted the run"}}`)

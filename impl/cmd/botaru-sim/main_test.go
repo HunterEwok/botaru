@@ -26,6 +26,8 @@ func TestOptions(t *testing.T) {
 		{[]string{"-max-eur", "0.0000001"}, "-max-eur must be between"},
 		{[]string{"-max-eur", "1e13"}, "-max-eur must be between"},
 		{[]string{"-halt-on-violation", "maybe"}, "-halt-on-violation is yes, no or auto"},
+		{[]string{"-dry-plan", "-real", "-max-eur", "1"}, "-dry-plan runs on the mock"},
+		{[]string{"-max-calls-per-min", "-2"}, "must not be negative"},
 	} {
 		var out, errb bytes.Buffer
 		code := run(c.args, strings.NewReader(""), &out, &errb)
@@ -53,6 +55,22 @@ func TestPrices(t *testing.T) {
 	o = options{real: true, model: "", maxEUR: 1.5, approve: "safe", dsn: "x", step: 5e9, timeout: 60e9, faultEvery: 60e9, halt: "auto"}
 	if _, err := o.check(); err != nil || o.model != "rank" {
 		t.Fatalf("a rank run: %v %+v", err, o)
+	}
+}
+
+// The limiter holds a real run to 30 calls a minute and 8 at once by default, and a mock run not
+// at all; a dry plan fuses at 1000 EUR of mock spend.
+func TestLimits(t *testing.T) {
+	base := options{maxEUR: 1.5, approve: "safe", dsn: "x", step: 5e9, timeout: 60e9, faultEvery: 60e9, halt: "auto", maxCallsPerMin: -1, maxParallel: -1}
+	o := base
+	o.real, o.model = true, "rank"
+	if _, err := o.check(); err != nil || o.maxCallsPerMin != 30 || o.maxParallel != 8 {
+		t.Fatalf("a real run: %v %+v", err, o)
+	}
+	o = base
+	o.maxEUR, o.dryPlan = 0, true
+	if _, err := o.check(); err != nil || o.maxCallsPerMin != 0 || o.maxParallel != 0 || o.maxEUR != 1000 {
+		t.Fatalf("a dry plan: %v %+v", err, o)
 	}
 }
 

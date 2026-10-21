@@ -56,6 +56,10 @@ type Config struct {
 	// model the metrics price a mock run's tokens at.
 	ProviderPrices map[string][2]float64
 	EstimateModels map[int]string
+	// MaxCallsPerMin and MaxParallelCalls hold the model calls before the provider (0: no
+	// limit).
+	MaxCallsPerMin   int
+	MaxParallelCalls int
 	// MaxMicros is the money fuse: the spend of the store at which every tenant is held.
 	MaxMicros int64
 	// HaltOnViolation halts the run at a breach of a security invariant (I-1 to I-8), as the
@@ -122,8 +126,10 @@ type Stand struct {
 	// for the farm faults F-3 and F-4.
 	runCtx context.Context
 	front  *providerFront
-	// profiles are the model profiles of the applied set by name: their rank (the metrics).
+	// profiles are the model profiles of the applied set by name: their rank (the metrics), and
+	// maxOut their output limit (the worst call of the plan).
 	profiles map[string]int
+	maxOut   map[string]float64
 	// faultRuns are the farm faults put on, in order (the metrics: M-5).
 	faultRuns []FaultRun
 	// closing is set once Close begins: no new background work starts (spawn).
@@ -239,6 +245,11 @@ func Start(ctx context.Context, cfg Config) (_ *Stand, err error) {
 		}
 	}
 	s.front.halted = func() bool { return s.Halted() != "" }
+	s.front.limit = newLimiter(cfg.MaxCallsPerMin, cfg.MaxParallelCalls)
+	s.front.held = func(tenant string, wait time.Duration) {
+		s.log.Add(KindModel, fmt.Sprintf("the limiter held a model call of %s for %s", orDash(tenant), wait.Round(time.Millisecond)),
+			map[string]any{"tenant": tenant, "limiter_wait_ms": wait.Milliseconds()})
+	}
 	fu, stopFront, err := serve(s.front)
 	if err != nil {
 		return nil, err
@@ -1352,19 +1363,22 @@ func (s *Stand) onModelCall(req, resp []byte, status int) {
 
 // noteProfiles keeps the rank of each model profile of a set the stand applies.
 func (s *Stand) noteProfiles(ms []map[string]any) {
-	ranks := map[string]int{}
+	ranks, maxOut := map[string]int{}, map[string]float64{}
 	for _, m := range ms {
 		if m["kind"] == "ModelProfile" {
 			name, _ := mapOf(m["metadata"])["name"].(string)
-			ranks[name] = int(num(mapOf(m["spec"])["rank"]))
+			sp := mapOf(m["spec"])
+			ranks[name] = int(num(sp["rank"]))
+			maxOut[name] = num(sp["max_output_tokens"])
 		}
 	}
 	// Merged, not replaced: the spend of a profile a later set left out is still priced.
 	s.mu.Lock()
 	if s.profiles == nil {
-		s.profiles = map[string]int{}
+		s.profiles, s.maxOut = map[string]int{}, map[string]float64{}
 	}
 	maps.Copy(s.profiles, ranks)
+	maps.Copy(s.maxOut, maxOut)
 	s.mu.Unlock()
 }
 
