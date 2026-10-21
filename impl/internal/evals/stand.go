@@ -8,6 +8,7 @@ import (
 	"maps"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/HunterEwok/botaru/impl/internal/core"
@@ -85,11 +86,51 @@ func (b *Bench) StopWorker(name string) bool {
 	b.workersMu.Lock()
 	cancel, ok := b.workers[name]
 	delete(b.workers, name)
+	cut := b.cuts[name]
 	b.workersMu.Unlock()
 	if ok {
+		if cut != nil {
+			cut.Store(true)
+		}
 		cancel()
 	}
 	return ok
+}
+
+// RestartWorker starts again a bench worker that StopWorker stopped, as a new process of the
+// same worker: the same enrollment and token. It fails for a name the bench never started or
+// one that runs.
+func (b *Bench) RestartWorker(name string) error {
+	b.workersMu.Lock()
+	run, cut := b.runs[name], b.cuts[name]
+	_, running := b.workers[name]
+	b.workersMu.Unlock()
+	if run == nil {
+		return fmt.Errorf("no bench worker %s", name)
+	}
+	if running {
+		return fmt.Errorf("worker %s runs already", name)
+	}
+	if cut != nil {
+		cut.Store(false)
+	}
+	if !b.start(b.runCtx, name, run) {
+		return fmt.Errorf("worker %s runs already", name)
+	}
+	return nil
+}
+
+// WorkerName is the bench name of a worker by its id in the core, "" for a worker the bench
+// did not start itself.
+func (b *Bench) WorkerName(id string) string {
+	b.workersMu.Lock()
+	defer b.workersMu.Unlock()
+	for n, w := range b.workerIDs {
+		if strings.EqualFold(w, id) {
+			return n
+		}
+	}
+	return ""
 }
 
 // StoreNow is the store clock.

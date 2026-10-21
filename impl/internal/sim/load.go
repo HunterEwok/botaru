@@ -3,6 +3,7 @@
 package sim
 
 import (
+	"cmp"
 	"context"
 	"embed"
 	"fmt"
@@ -34,6 +35,17 @@ type LoadProfile struct {
 	Peaks     []LoadPeak    `yaml:"peaks"`
 	Caps      LoadCaps      `yaml:"caps"`
 	Works     []LoadWork    `yaml:"works"`
+	// Faults are the farm faults of the run (F-1 to F-8), each at its time.
+	Faults []LoadFault `yaml:"faults"`
+}
+
+// LoadFault puts a farm fault on At after the start, then every Every if set, in a tenant (the
+// home tenant when empty).
+type LoadFault struct {
+	Code   string        `yaml:"code"`
+	At     time.Duration `yaml:"at"`
+	Every  time.Duration `yaml:"every"`
+	Tenant string        `yaml:"tenant"`
 }
 
 // LoadPeak multiplies every rate by Factor from At after the start for For.
@@ -106,6 +118,13 @@ func (p *LoadProfile) check() error {
 			return fmt.Errorf("load %s: work %s repeated or with a bad rate", p.Name, w.Code)
 		}
 		seen[w.Code] = true
+	}
+	for i, f := range p.Faults {
+		ff := FarmFaultOf(f.Code)
+		if ff == nil || f.At < 0 || f.Every < 0 {
+			return fmt.Errorf("load %s: fault %q unknown or with a negative time (known: %s)", p.Name, f.Code, strings.Join(FaultCodes(), ", "))
+		}
+		p.Faults[i].Code = ff.Code
 	}
 	for _, k := range p.Peaks {
 		if k.Factor <= 0 || k.For <= 0 {
@@ -249,6 +268,10 @@ type loadGen struct {
 type LoadSummary struct {
 	Started map[string]int `json:"started"`
 	Skipped map[string]int `json:"skipped"`
+	// Faults counts the farm faults put on by "code tenant", and FaultCounts what the provider
+	// front and the monitor counted of them.
+	Faults      map[string]int `json:"faults,omitempty"`
+	FaultCounts map[string]int `json:"fault_counts,omitempty"`
 }
 
 // RunLoad runs the load profile until the context ends and returns what it started and skipped.
@@ -258,6 +281,14 @@ func (d *Director) RunLoad(ctx context.Context, p *LoadProfile, seed int64) Load
 	g := &loadGen{d: d, p: p, r: rand.New(rand.NewPCG(uint64(seed), 17)), step: d.S.cfg.Step, started: map[string]int{}, skipped: map[string]int{}, analysing: map[string]int{}, costly: map[string][]time.Time{}, faulty: map[string]bool{}}
 	d.S.log.Addf(KindDirector, "load %s: %d kinds of work over %s", p.Name, len(p.Works), strings.Join(d.S.TenantNames(), ", "))
 	start := time.Now()
+	faults := map[string]int{}
+	for _, f := range p.Faults {
+		g.wg.Add(1)
+		go func() {
+			defer g.wg.Done()
+			g.faults(ctx, f, faults)
+		}()
+	}
 	t := time.NewTicker(time.Second)
 	defer t.Stop()
 loop:
@@ -282,7 +313,34 @@ loop:
 	g.wg.Wait()
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	return LoadSummary{Started: g.started, Skipped: g.skipped}
+	sum := LoadSummary{Started: g.started, Skipped: g.skipped}
+	if len(p.Faults) > 0 {
+		sum.Faults, sum.FaultCounts = faults, d.S.FaultCounts()
+	}
+	return sum
+}
+
+// faults puts one fault of the profile on at its times until the run ends.
+func (g *loadGen) faults(ctx context.Context, f LoadFault, count map[string]int) {
+	wait := f.At
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(wait):
+		}
+		if _, err := g.d.S.InjectFault(ctx, f.Code, f.Tenant); err != nil {
+			g.d.S.log.Addf(KindFault, "%s: %v", f.Code, err)
+		} else {
+			g.mu.Lock()
+			count[f.Code+" "+cmp.Or(f.Tenant, g.d.S.Home())]++
+			g.mu.Unlock()
+		}
+		if f.Every <= 0 {
+			return
+		}
+		wait = f.Every
+	}
 }
 
 // poisson draws a Poisson number with the mean (Knuth; the means here are far below one).

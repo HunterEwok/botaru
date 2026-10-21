@@ -48,6 +48,9 @@ func main() {
 		os.Exit(code)
 	}
 	// The toolhosts start the own plugins as children of this binary (DEP-7).
+	if len(os.Args) > 1 && (os.Args[1] == "plugin" || os.Args[1] == "simplugin") {
+		crashOnCall()
+	}
 	if len(os.Args) > 1 && os.Args[1] == "plugin" {
 		if len(os.Args) < 3 {
 			fmt.Fprintln(os.Stderr, "usage: botaru-sim plugin KIND [flags]")
@@ -455,7 +458,7 @@ func continuous(ctx context.Context, d *sim.Director, o options, stdin io.Reader
 	defer cancel()
 	lines := make(chan string)
 	if o.interactive {
-		fmt.Fprintln(stdout, "commands: approve N | reject N | details N | say PERSON TEXT | fault NAME | heal | insights on|off | evolve on|off | "+
+		fmt.Fprintln(stdout, "commands: approve N | reject N | details N | say PERSON TEXT | fault NAME|F-N [TENANT] | heal | insights on|off | evolve on|off | "+
 			"gate ID | realize ID | revert ID [REASON] | variants | rules | cards | status | quit")
 		go func() {
 			sc := bufio.NewScanner(stdin)
@@ -567,7 +570,20 @@ func command(ctx context.Context, d *sim.Director, line string, out io.Writer) b
 		_, err = d.S.Say(f[1], f[1]+"-dm", strings.Join(f[2:], " "))
 	case "fault":
 		if len(f) < 2 {
-			err = errors.New("fault NAME: nginx-down, slow-site or disk-filling")
+			err = errors.New("fault NAME [TENANT]: nginx-down, slow-site or disk-filling, or a farm fault " + strings.Join(sim.FaultCodes(), ", "))
+			break
+		}
+		if sim.FarmFaultOf(f[1]) != nil {
+			tenant := ""
+			if len(f) > 2 {
+				tenant = f[2]
+			}
+			// F-8 waits for the drain; the console goes on meanwhile.
+			go func() {
+				if _, err := d.S.InjectFault(ctx, f[1], tenant); err != nil {
+					fmt.Fprintln(out, "error:", err)
+				}
+			}()
 			break
 		}
 		err = breakWorld(ctx, d, f[1])
@@ -799,4 +815,36 @@ func loadLine(l *sim.LoadSummary) string {
 		}
 	}
 	return strings.Join(out, ", ")
+}
+
+// crashOnCall is the farm fault F-2 in a plugin process: when a tool call comes in and the mark
+// is there, the process that removes the mark kills itself (SIGKILL), so the call is in flight
+// when it dies. A process that serves no tool call (a tool list) leaves the mark alone.
+func crashOnCall() {
+	mark := os.Getenv(sim.CrashEnv)
+	if mark == "" {
+		return
+	}
+	if _, err := os.Stat(mark); err != nil {
+		return
+	}
+	in := os.Stdin
+	r, w, err := os.Pipe()
+	if err != nil {
+		return
+	}
+	os.Stdin = r
+	go func() {
+		sc := bufio.NewScanner(in)
+		sc.Buffer(make([]byte, 64<<10), 16<<20)
+		for sc.Scan() {
+			if strings.Contains(sc.Text(), `"tools/call"`) && os.Remove(mark) == nil {
+				_ = syscall.Kill(os.Getpid(), syscall.SIGKILL)
+			}
+			if _, err := w.Write(append(sc.Bytes(), '\n')); err != nil {
+				return
+			}
+		}
+		_ = w.Close()
+	}()
 }

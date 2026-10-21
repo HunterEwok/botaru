@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -204,6 +205,13 @@ type Bench struct {
 	// worker can be stopped alone.
 	workersMu sync.Mutex
 	workers   map[string]context.CancelFunc
+	// runs are the bench workers by name and workerIDs their ids in the core, for a restart
+	// after StopWorker and for finding the worker of a lease.
+	runs      map[string]func(context.Context) error
+	workerIDs map[string]string
+	// cuts cut a worker's P1 connection while StopWorker has it stopped, so that what it
+	// sends on its way out (a release) never reaches the core, as with a crash.
+	cuts map[string]*atomic.Bool
 }
 
 // tenants are the bench tenants, the home first.
@@ -261,7 +269,7 @@ func StartBench(ctx context.Context, cfg BenchConfig) (_ *Bench, err error) {
 		cfg.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
 	b := &Bench{cfg: cfg, ops: map[string]string{}, personOps: map[string]string{}, bots: map[string]*fakeBotAPI{}, updates: &atomic.Int64{}, people: map[string]string{}, ungranted: map[string][]string{}, ungrantedWhy: map[string]string{}, pendingGroups: map[string][]string{}, Profiles: map[string]string{},
-		roles: map[string][]string{}, workers: map[string]context.CancelFunc{}}
+		roles: map[string][]string{}, workers: map[string]context.CancelFunc{}, runs: map[string]func(context.Context) error{}, workerIDs: map[string]string{}, cuts: map[string]*atomic.Bool{}}
 	for _, t := range b.tenants() {
 		b.bots[t.Name] = &fakeBotAPI{observe: cfg.OnBotAPI, seq: b.updates}
 	}
@@ -831,17 +839,26 @@ func (b *Bench) confirmPending(ctx context.Context) error {
 // enroll enrolls a worker of the tenant the request names (the home tenant without one) as that
 // tenant's operator and returns its P1 token.
 func (b *Bench) enroll(ctx context.Context, req map[string]any) (string, error) {
+	tok, _, err := b.enrollID(ctx, req)
+	return tok, err
+}
+
+// enrollID enrolls a worker and returns its P1 token and its id.
+func (b *Bench) enrollID(ctx context.Context, req map[string]any) (string, string, error) {
 	var out struct {
-		Token string `json:"token"`
+		Token  string `json:"token"`
+		Worker struct {
+			ID string `json:"id"`
+		} `json:"worker"`
 	}
 	tenant := str(req["tenant"])
 	if tenant == "" {
 		tenant = b.home()
 	}
 	if err := b.P2(ctx, tenant, "worker.enroll", req, &out); err != nil {
-		return "", err
+		return "", "", err
 	}
-	return out.Token, nil
+	return out.Token, out.Worker.ID, nil
 }
 
 // startWorkers enrolls and starts the channel and the agents of every bench tenant and the
@@ -867,37 +884,45 @@ func (b *Bench) startWorkers(ctx, runCtx context.Context, tx *texts.Catalog, bot
 		return err
 	}
 	type worker struct {
-		name string
-		run  func(context.Context) error
+		name, id string
+		run      func(context.Context) error
+		cut      *atomic.Bool
+	}
+	// p1 is a worker's P1 client over a connection StopWorker can cut.
+	p1 := func(tok string) (*p1client.Client, *atomic.Bool) {
+		cut := &atomic.Bool{}
+		return &p1client.Client{BaseURL: b.p1, Token: tok, HTTP: &http.Client{Timeout: 90 * time.Second, Transport: cutTransport{cut}}}, cut
 	}
 	var workers []worker
 	slices.Sort(b.agentRoles)
 	for _, t := range b.tenants() {
-		tok, err := b.enroll(ctx, map[string]any{"tenant": t.Name, "role": "telegram", "kind": "channel", "target": "telegram"})
+		tok, chID, err := b.enrollID(ctx, map[string]any{"tenant": t.Name, "role": "telegram", "kind": "channel", "target": "telegram"})
 		if err != nil {
 			return err
 		}
-		ch := telegram.New(telegram.Config{Core: &p1client.Client{BaseURL: b.p1, Token: tok}, Channel: benchChannel, BotAPI: botURLs[t.Name], BotToken: "EVAL:TOKEN",
+		chP1, chCut := p1(tok)
+		ch := telegram.New(telegram.Config{Core: chP1, Channel: benchChannel, BotAPI: botURLs[t.Name], BotToken: "EVAL:TOKEN",
 			Texts: tx, LinkAllowlist: b.linkAllowlist, PollTimeoutS: 1, Logger: b.cfg.Logger})
 		if err := ch.Hello(ctx); err != nil {
 			return err
 		}
-		workers = append(workers, worker{t.Name + "/telegram", ch.Run})
+		workers = append(workers, worker{t.Name + "/telegram", chID, ch.Run, chCut})
 		for _, role := range b.agentRoles {
 			n := 1
 			if t.Agents != nil {
 				n = t.Agents[role]
 			}
 			for i := range n {
-				tok, err := b.enroll(ctx, map[string]any{"tenant": t.Name, "role": role, "kind": "agent"})
+				tok, id, err := b.enrollID(ctx, map[string]any{"tenant": t.Name, "role": role, "kind": "agent"})
 				if err != nil {
 					return err
 				}
-				ag := agent.New(agent.Config{Core: &p1client.Client{BaseURL: b.p1, Token: tok}, MaxTokens: 2000, Logger: b.cfg.Logger})
+				agP1, agCut := p1(tok)
+				ag := agent.New(agent.Config{Core: agP1, MaxTokens: 2000, Logger: b.cfg.Logger})
 				if err := ag.Hello(ctx); err != nil {
 					return err
 				}
-				workers = append(workers, worker{fmt.Sprintf("%s/%s/%d", t.Name, role, i+1), ag.Run})
+				workers = append(workers, worker{fmt.Sprintf("%s/%s/%d", t.Name, role, i+1), id, ag.Run, agCut})
 			}
 		}
 	}
@@ -934,11 +959,12 @@ func (b *Bench) startWorkers(ctx, runCtx context.Context, tx *texts.Catalog, bot
 		if tenant == "" {
 			tenant = b.home()
 		}
-		tok, err := b.enroll(ctx, map[string]any{"tenant": tenant, "role": "toolhost", "kind": "toolhost", "plugins": names, "placement": "host", "host": h.Host})
+		tok, id, err := b.enrollID(ctx, map[string]any{"tenant": tenant, "role": "toolhost", "kind": "toolhost", "plugins": names, "placement": "host", "host": h.Host})
 		if err != nil {
 			return err
 		}
-		th, err := toolhost.New(toolhost.Config{Core: &p1client.Client{BaseURL: b.p1, Token: tok}, Placement: "host", Plugins: ps,
+		thP1, thCut := p1(tok)
+		th, err := toolhost.New(toolhost.Config{Core: thP1, Placement: "host", Plugins: ps,
 			KillAfter: 2 * time.Second, Logger: b.cfg.Logger})
 		if err != nil {
 			return err
@@ -946,9 +972,12 @@ func (b *Bench) startWorkers(ctx, runCtx context.Context, tx *texts.Catalog, bot
 		if err := th.Hello(ctx); err != nil {
 			return fmt.Errorf("toolhost %s: %w", h.Host, err)
 		}
-		workers = append(workers, worker{fmt.Sprintf("%s/toolhost/%s/%d", tenant, h.Host, i+1), th.Run})
+		workers = append(workers, worker{fmt.Sprintf("%s/toolhost/%s/%d", tenant, h.Host, i+1), id, th.Run, thCut})
 	}
 	for _, w := range workers {
+		b.workersMu.Lock()
+		b.runs[w.name], b.workerIDs[w.name], b.cuts[w.name] = w.run, w.id, w.cut
+		b.workersMu.Unlock()
 		b.start(runCtx, w.name, w.run)
 	}
 	return nil
@@ -1408,4 +1437,17 @@ func (b *Bench) dropLaterResources(ms []map[string]any) error {
 		sp["resources"] = kept
 	}
 	return nil
+}
+
+// cutTransport fails every request while cut is set, as a dead process's would never arrive.
+type cutTransport struct{ cut *atomic.Bool }
+
+func (t cutTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	if t.cut.Load() {
+		if r.Body != nil {
+			_ = r.Body.Close()
+		}
+		return nil, errors.New("the worker is stopped")
+	}
+	return http.DefaultTransport.RoundTrip(r)
 }
