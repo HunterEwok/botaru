@@ -130,6 +130,7 @@ func TestCheckResult(t *testing.T) {
 type fakeCore struct {
 	mu        sync.Mutex
 	answers   []string
+	cut       bool // the first model answer is a tool call the output limit cut
 	model     [][]byte
 	completes []map[string]any
 	claimed   bool
@@ -164,6 +165,13 @@ func (f *fakeCore) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{}`))
 	case "/v1/p4/anthropic/v1/messages":
 		f.model = append(f.model, body)
+		if f.cut {
+			f.cut = false
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": "msg_0", "type": "message", "role": "assistant", "model": "m",
+				"content":     []any{map[string]any{"type": "tool_use", "id": "toolu_1", "name": "logs__tail", "input": map[string]any{}}},
+				"stop_reason": "max_tokens", "usage": map[string]any{"input_tokens": 1, "output_tokens": 1}})
+			return
+		}
 		text := f.answers[0]
 		if len(f.answers) > 1 {
 			f.answers = f.answers[1:]
@@ -222,5 +230,40 @@ func TestAgentSchemaRepairTurn(t *testing.T) {
 	}
 	if _, ok := facts["peak"]; ok {
 		t.Errorf("a null optional field was handed in: %v", facts)
+	}
+}
+
+// A tool call the output limit cut does not run: the next call carries an error tool_result for
+// it, as the API requires after every tool_use, and the answer after it is handed in.
+func TestAgentCutToolCall(t *testing.T) {
+	f := &fakeCore{cut: true, answers: []string{`{"answer":"nginx is down","verdict":"cause_found","services":["nginx"]}`}}
+	srv := httptest.NewServer(f)
+	defer srv.Close()
+	a := New(Config{Core: &p1client.Client{BaseURL: srv.URL, Token: "w"}})
+	if worked, err := a.Once(context.Background(), 0); err != nil || !worked {
+		t.Fatalf("once: %v %v", worked, err)
+	}
+	if len(f.model) != 2 {
+		t.Fatalf("%d model calls, want 2", len(f.model))
+	}
+	var second struct {
+		Messages []struct {
+			Role    string `json:"role"`
+			Content []struct {
+				Type      string `json:"type"`
+				ToolUseID string `json:"tool_use_id"`
+				IsError   bool   `json:"is_error"`
+			} `json:"content"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(f.model[1], &second); err != nil {
+		t.Fatal(err)
+	}
+	last := second.Messages[len(second.Messages)-1]
+	if last.Role != "user" || len(last.Content) != 1 || last.Content[0].Type != "tool_result" || last.Content[0].ToolUseID != "toolu_1" || !last.Content[0].IsError {
+		t.Errorf("the message after the cut call %+v", last)
+	}
+	if len(f.completes) != 1 || f.completes[0]["result"] == nil {
+		t.Fatalf("completes %v", f.completes)
 	}
 }
