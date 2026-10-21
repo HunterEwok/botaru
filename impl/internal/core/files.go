@@ -439,14 +439,16 @@ func (c *Core) FileGet(ctx context.Context, w *Worker, lease string, req FileGet
 			// A tool call reads only an attachment of its task that its arguments name
 			// (TEN-7, D-72).
 			var args []byte
-			if err := tx.QueryRow(ctx, `SELECT task, args FROM toolcalls WHERE id = $1`, l.WorkID).Scan(&task, &args); err != nil {
+			var plugin, tool string
+			if err := tx.QueryRow(ctx, `SELECT task, args, target_plugin, tool FROM toolcalls WHERE id = $1`, l.WorkID).Scan(&task, &args, &plugin, &tool); err != nil {
 				return err
 			}
 			var a map[string]any
 			if err := json.Unmarshal(args, &a); err != nil {
 				return err
 			}
-			named, err := callFiles(ctx, tx, task, a)
+			_, name, _ := cutTool(tool)
+			named, err := callFiles(ctx, tx, cat, plugin, name, task, a)
 			if err != nil {
 				return err
 			}

@@ -135,23 +135,14 @@ func (c *Core) resolveToolsHandle(ctx context.Context, q store.Querier, handle s
 
 func (c *Core) loadGrantTask(ctx context.Context, q store.Querier, g *toolsGrant) error {
 	var rec []byte
-	var body []byte
-	if err := q.QueryRow(ctx, `SELECT type, initiator, record, body FROM tasks WHERE id = $1`, g.Task).Scan(&g.Type, &g.Initiator, &rec, &body); err != nil {
+	if err := q.QueryRow(ctx, `SELECT type, initiator, record FROM tasks WHERE id = $1`, g.Task).Scan(&g.Type, &g.Initiator, &rec); err != nil {
 		return err
 	}
-	// A purged task has no body and so no attachments (RET-3).
-	g.Attachments = nil
-	if body != nil {
-		var b map[string]any
-		if err := json.Unmarshal(body, &b); err != nil {
-			return err
-		}
-		files, err := attachedFiles(b)
-		if err != nil {
-			return err
-		}
-		g.Attachments = files
+	files, err := taskAttachments(ctx, q, g.Task)
+	if err != nil {
+		return err
 	}
+	g.Attachments = files
 	var r struct {
 		MaxTier      int      `json:"max_tier"`
 		DataMark     string   `json:"data_mark"`
@@ -212,7 +203,6 @@ func (c *Core) loadGrantTask(ctx context.Context, q store.Querier, g *toolsGrant
 	if err := q.QueryRow(ctx, `SELECT role FROM workers WHERE id = $1`, g.Worker).Scan(&g.Role); err != nil {
 		return err
 	}
-	var err error
 	g.HostScripts, err = c.hostScripts(ctx, q, g.Tenant)
 	return err
 }

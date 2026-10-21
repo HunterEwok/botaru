@@ -30,14 +30,7 @@ type Brain struct {
 	Home   string
 	calls  atomic.Int64
 	evolve atomic.Bool
-	// noAttachments counts the planned data/describe calls whose file had no values to pick
-	// from: the sign of the known gap GapAttachments.
-	noAttachments atomic.Int64
 }
-
-// NoAttachments is the number of data/describe calls the mock could not make for want of an
-// attachment to name.
-func (b *Brain) NoAttachments() int64 { return b.noAttachments.Load() }
 
 // Calls is the number of answered calls.
 func (b *Brain) Calls() int64 { return b.calls.Load() }
@@ -440,7 +433,6 @@ func (b *Brain) next(system, goal, seen string, names []string, offered map[stri
 		}
 		if s.plugin == "data" && s.tool == "describe" && noValues(offered[n], "file") {
 			// No attachment to name: no value of file passes the schema.
-			b.noAttachments.Add(1)
 			continue
 		}
 		in, ok := fits(offered[n], adapt(offered[n], input, goal))

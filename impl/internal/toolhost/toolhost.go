@@ -97,7 +97,9 @@ func New(cfg Config) (*Host, error) {
 		}
 		by[p.Name] = p
 	}
-	return &Host{cfg: cfg, heartbeatS: 20, log: cfg.Logger, byName: by, fps: map[string]string{}, down: map[string]bool{}}, nil
+	h := &Host{cfg: cfg, heartbeatS: 20, log: cfg.Logger, byName: by, fps: map[string]string{}, down: map[string]bool{}}
+	h.sweepFiles()
+	return h, nil
 }
 
 // maxMessage bounds one message from a plugin.
@@ -296,14 +298,16 @@ func (h *Host) Once(ctx context.Context, waitS int) (bool, error) {
 	if p.Limits.TimeoutS > 0 {
 		timeout = time.Duration(p.Limits.TimeoutS) * time.Second
 	}
-	callCtx, cancel := context.WithTimeout(ctx, timeout)
+	// The lease is kept from here; the attachments are read under it, and the tool's own
+	// timeout starts with the plugin.
+	leaseCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	lost := make(chan struct{})
-	go h.keepLease(callCtx, cancel, lease, until, lost)
+	go h.keepLease(leaseCtx, cancel, lease, until, lost)
 
-	files, dir, err := h.fetchFiles(callCtx, lease, p.Files)
+	files, dir, err := h.fetchFiles(leaseCtx, lease, p.Files)
 	if dir != "" {
-		defer os.RemoveAll(dir)
+		defer h.removeFiles(dir)
 	}
 	if err != nil {
 		select {
@@ -312,9 +316,16 @@ func (h *Host) Once(ctx context.Context, waitS int) (bool, error) {
 			return true, nil
 		default:
 		}
+		if r := p1client.Reason(err); r == "fenced" || r == "lease_mismatch" {
+			// The lease is gone: nothing more is written under it (FEN-6).
+			h.log.Warn("call stopped: the lease was lost", "work", w.WorkID)
+			return true, nil
+		}
 		h.log.Warn("the attachments of the call could not be read", "work", w.WorkID, "reason", p1client.Reason(err))
 		return true, h.fail(ctx, lease, "exec_failed")
 	}
+	callCtx, stop := context.WithTimeout(leaseCtx, timeout)
+	defer stop()
 	res, err := h.call(callCtx, plugin, w.WorkID, p, files)
 	select {
 	case <-lost:
@@ -430,7 +441,7 @@ func (h *Host) fetchFiles(ctx context.Context, lease string, refs []string) (map
 	if len(refs) == 0 {
 		return nil, "", nil
 	}
-	dir, err := os.MkdirTemp(h.cfg.FilesDir, "botaru-call-")
+	dir, err := os.MkdirTemp(h.cfg.FilesDir, filesPrefix)
 	if err != nil {
 		return nil, "", err
 	}
@@ -452,6 +463,41 @@ func (h *Host) fetchFiles(ctx context.Context, lease string, refs []string) (map
 	}
 	return out, dir, nil
 }
+
+// removeFiles removes the copies of a call.
+func (h *Host) removeFiles(dir string) {
+	if err := os.RemoveAll(dir); err != nil {
+		h.log.Error("the copies of a call's attachments were not removed", "dir", dir, "err", err)
+	}
+}
+
+// filesPrefix starts the name of the directory of one call's copies.
+const filesPrefix = "botaru-call-"
+
+// sweepFiles removes the copies a toolhost left behind when it ended inside a call: a
+// directory older than staleFiles outlived any lease (FEN-6), so no live call of another
+// toolhost sharing the directory uses it.
+func (h *Host) sweepFiles() {
+	base := h.cfg.FilesDir
+	if base == "" {
+		base = os.TempDir()
+	}
+	ents, err := os.ReadDir(base)
+	if err != nil {
+		return
+	}
+	for _, e := range ents {
+		if !e.IsDir() || !strings.HasPrefix(e.Name(), filesPrefix) {
+			continue
+		}
+		if info, err := e.Info(); err == nil && time.Since(info.ModTime()) > staleFiles {
+			h.removeFiles(filepath.Join(base, e.Name()))
+		}
+	}
+}
+
+// staleFiles is the age past which a call's copies are left behind.
+const staleFiles = time.Hour
 
 // call runs one tool call in a new plugin process.
 func (h *Host) call(ctx context.Context, p Plugin, workID string, c callPayload, files map[string]string) (*mcp.CallResult, error) {

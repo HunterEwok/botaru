@@ -59,8 +59,9 @@ schema filtered by the task's mark.
   `file_ref` of each attachment of its task.
 - A tool call whose arguments name attachments of its task carries them in the handout (`files`, an extension
   field, MAN-3); the toolhost reads each with `file.get` under the call lease (which hands out only those), writes a
-  copy into a new directory of its own under `files_dir` (mode 0700, file 0600; a plugin runs as the toolhost's
-  user), passes the paths by `file_ref` in `_meta["botaru/files"]` and removes the directory after the call.
+  copy into a new directory of its own under `files_dir` (mode 0700, file 0600, named by the ref, not the
+  person's file name; a plugin the toolhost starts runs as its user, and a plugin under an OS user of its own cannot read
+  the copy; directories a toolhost left when it ended inside a call are swept at its start once older than an hour), passes the paths by `file_ref` in `_meta["botaru/files"]` and removes the directory after the call.
 - The result schema reaches the runtime as the extension field `payload.result_schema` of the attempt (MAN-3), so the
   instruction stays exactly the trusted text from git; the runtime appends the request for a JSON answer to the system
   prompt. The projection of the result schema sent to the runtime is a hint: `complete` still checks the full schema.

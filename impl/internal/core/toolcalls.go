@@ -16,6 +16,7 @@ import (
 	"github.com/HunterEwok/botaru/impl/internal/jcs"
 	"github.com/HunterEwok/botaru/impl/internal/mcp"
 	"github.com/HunterEwok/botaru/impl/internal/redact"
+	"github.com/HunterEwok/botaru/impl/internal/store"
 	"github.com/HunterEwok/botaru/impl/internal/toolspec"
 )
 
@@ -218,7 +219,7 @@ func (c *Core) claimToolcall(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 		}
 		// The attachments of the task the arguments name: the toolhost reads them with
 		// file.get under this lease and hands them to the plugin (D-72, TEN-7).
-		files, err := callFiles(ctx, tx, task, a)
+		files, err := callFiles(ctx, tx, cat, plugin, name, task, a)
 		if err != nil {
 			return nil, err
 		}
@@ -645,45 +646,67 @@ func (c *Core) pluginHealth(ctx context.Context, tx pgx.Tx, now time.Time, w *Wo
 	return nil
 }
 
-// callFiles are the attachments of a task that the arguments of its tool call name, as a
-// whole string argument or an item of a list argument. The schema of the call allowed only
-// the task's own attachments (enum_from: task.attachments).
-func callFiles(ctx context.Context, tx pgx.Tx, task string, args map[string]any) ([]string, error) {
-	var body []byte
-	if err := tx.QueryRow(ctx, `SELECT body FROM tasks WHERE id = $1`, task).Scan(&body); err != nil {
-		return nil, err
-	}
-	if body == nil {
+// callFiles are the attachments of a task that its tool call passes in a parameter with
+// enum_from: task.attachments of the tool's input schema; the schema of the call allowed only
+// the task's own attachments there.
+func callFiles(ctx context.Context, q store.Querier, cat *Catalog, plugin, tool, task string, args map[string]any) ([]string, error) {
+	t, ok := cat.Plugins[plugin].Tool(tool)
+	if !ok {
 		return nil, nil
 	}
-	var b map[string]any
-	if err := json.Unmarshal(body, &b); err != nil {
+	attached, err := taskAttachments(ctx, q, task)
+	if err != nil || len(attached) == 0 {
 		return nil, err
 	}
-	attached, err := attachedFiles(b)
-	if err != nil {
-		return nil, err
-	}
-	return namedFiles(attached, args), nil
+	return namedFiles(attached, t.InputSchema(), args), nil
 }
 
-// namedFiles are the attached files that the arguments name, sorted.
-func namedFiles(attached []string, args map[string]any) []string {
+// taskAttachments are the file_refs of a task's attachments: none for a purged body (RET-3) or
+// a body whose attachments are not a list.
+func taskAttachments(ctx context.Context, q store.Querier, task string) ([]string, error) {
+	var raw []byte
+	if err := q.QueryRow(ctx, `SELECT body->'attachments' FROM tasks WHERE id = $1`, task).Scan(&raw); err != nil {
+		return nil, err
+	}
+	var list []any
+	if raw == nil || json.Unmarshal(raw, &list) != nil {
+		return nil, nil
+	}
+	files, _ := attachedFiles(map[string]any{"attachments": list})
+	return files, nil
+}
+
+// namedFiles are the attached files that the arguments pass where the schema has enum_from:
+// task.attachments, in a property or an item at any depth, sorted.
+func namedFiles(attached []string, schema map[string]any, args map[string]any) []string {
 	var out []string
-	add := func(v any) {
-		if s, ok := v.(string); ok && slices.Contains(attached, s) && !slices.Contains(out, s) {
-			out = append(out, s)
+	var walk func(node any, v any)
+	walk = func(node any, v any) {
+		m, ok := node.(map[string]any)
+		if !ok {
+			return
 		}
-	}
-	for _, v := range args {
-		if l, ok := v.([]any); ok {
-			for _, x := range l {
-				add(x)
+		if m["enum_from"] == "task.attachments" {
+			if s, ok := v.(string); ok && slices.Contains(attached, s) && !slices.Contains(out, s) {
+				out = append(out, s)
 			}
-			continue
 		}
-		add(v)
+		if props, ok := m["properties"].(map[string]any); ok {
+			if vm, ok := v.(map[string]any); ok {
+				for k, ps := range props {
+					walk(ps, vm[k])
+				}
+			}
+		}
+		if items, ok := m["items"]; ok {
+			if vl, ok := v.([]any); ok {
+				for _, x := range vl {
+					walk(items, x)
+				}
+			}
+		}
 	}
+	walk(schema, args)
 	sort.Strings(out)
 	return out
 }
