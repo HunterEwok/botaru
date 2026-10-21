@@ -120,19 +120,20 @@ func unitState(out string) string {
 // as a file into the tenant queue, where the path unit of the tenant starts the root request
 // parser (spec/bindings/os/systemd.md). The request holds only the closed arguments, the tool
 // and the approval or grant number; a repeat of the same number finds its file and is not
-// queued twice (APR-7, FEN-7).
+// queued twice (APR-7, FEN-7). The number of a campaign item is <campaign id>:<n>; its file is
+// named <campaign id>-<n>.
 type Queue struct {
 	Dir string
 }
 
-var workID = regexp.MustCompile(`^[a-z]{1,8}_[0-9A-HJKMNP-TV-Z]{26}$`)
+var workID = regexp.MustCompile(`^[a-z]{1,8}_[0-9A-HJKMNP-TV-Z]{26}(:[1-9][0-9]{0,5})?$`)
 
 // Call queues one run request.
 func (q *Queue) Call(ctx context.Context, tool string, args map[string]any, meta *mcp.Meta) (*mcp.CallResult, error) {
 	if meta == nil || !workID.MatchString(meta.WorkID) {
 		return nil, errors.New("a write without an approval or grant number")
 	}
-	path := filepath.Join(q.Dir, meta.WorkID+".json")
+	path := filepath.Join(q.Dir, strings.Replace(meta.WorkID, ":", "-", 1)+".json")
 	accepted := &mcp.CallResult{Content: []mcp.Content{}, StructuredContent: map[string]any{"code": "accepted", "run": meta.WorkID}}
 	if _, err := os.Stat(path); err == nil {
 		return accepted, nil

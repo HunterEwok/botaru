@@ -15,7 +15,10 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -51,7 +54,10 @@ type Config struct {
 	// is cancelled StopMargin plus KillAfter before it, so it is gone before the lease ends
 	// (FEN-6).
 	StopMargin time.Duration
-	Logger     *slog.Logger
+	// FilesDir is where the toolhost puts the private copies of the task attachments a call
+	// names, one directory per call removed after it; the system temporary directory by default.
+	FilesDir string
+	Logger   *slog.Logger
 }
 
 // Host runs calls one at a time.
@@ -91,7 +97,9 @@ func New(cfg Config) (*Host, error) {
 		}
 		by[p.Name] = p
 	}
-	return &Host{cfg: cfg, heartbeatS: 20, log: cfg.Logger, byName: by, fps: map[string]string{}, down: map[string]bool{}}, nil
+	h := &Host{cfg: cfg, heartbeatS: 20, log: cfg.Logger, byName: by, fps: map[string]string{}, down: map[string]bool{}}
+	h.sweepFiles()
+	return h, nil
 }
 
 // maxMessage bounds one message from a plugin.
@@ -237,6 +245,8 @@ type callPayload struct {
 	Tool     string            `json:"tool"`
 	Args     map[string]any    `json:"args"`
 	Resolved map[string]string `json:"resolved"`
+	// Files are the attachments of the task that the arguments name (D-72).
+	Files []string `json:"files"`
 	// ApprovalID, GrantID and ArgsHash are set on the write call of an action (APR-7).
 	ApprovalID string `json:"approval_id"`
 	GrantID    string `json:"grant_id"`
@@ -288,12 +298,40 @@ func (h *Host) Once(ctx context.Context, waitS int) (bool, error) {
 	if p.Limits.TimeoutS > 0 {
 		timeout = time.Duration(p.Limits.TimeoutS) * time.Second
 	}
-	callCtx, cancel := context.WithTimeout(ctx, timeout)
+	// The lease is kept from here; the attachments are read under it, and the tool's own
+	// timeout starts with the plugin.
+	leaseCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	lost := make(chan struct{})
-	go h.keepLease(callCtx, cancel, lease, until, lost)
+	go h.keepLease(leaseCtx, cancel, lease, until, lost)
 
-	res, err := h.call(callCtx, plugin, w.WorkID, p)
+	files, dir, err := h.fetchFiles(leaseCtx, lease, p.Files)
+	if dir != "" {
+		defer h.removeFiles(dir)
+	}
+	if err != nil {
+		select {
+		case <-lost:
+			h.log.Warn("call stopped: the lease was lost", "work", w.WorkID)
+			return true, nil
+		default:
+		}
+		if r := p1client.Reason(err); r == "fenced" || r == "lease_mismatch" {
+			// The lease is gone: nothing more is written under it (FEN-6).
+			h.log.Warn("call stopped: the lease was lost", "work", w.WorkID)
+			return true, nil
+		}
+		h.log.Warn("the attachments of the call could not be read", "work", w.WorkID, "reason", p1client.Reason(err))
+		return true, h.fail(ctx, lease, "exec_failed")
+	}
+	if leaseCtx.Err() != nil {
+		// The lease went while the files were read: the plugin does not start.
+		h.log.Warn("call stopped: the lease was lost", "work", w.WorkID)
+		return true, nil
+	}
+	callCtx, stop := context.WithTimeout(leaseCtx, timeout)
+	defer stop()
+	res, err := h.call(callCtx, plugin, w.WorkID, p, files)
 	select {
 	case <-lost:
 		// The lease is gone: nothing more is written under it (FEN-6).
@@ -398,13 +436,91 @@ func callWorkID(workID string, c callPayload) string {
 	return workID
 }
 
+// reFileName is the part of a file_ref after "file:", used as the name of its copy.
+var reFileName = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
+
+// fetchFiles reads the attachments a call names with file.get under the call lease and writes
+// each to a new directory only this process's user can read; it returns the path of each copy
+// by file_ref and the directory, which the caller removes after the call.
+func (h *Host) fetchFiles(ctx context.Context, lease string, refs []string) (map[string]string, string, error) {
+	if len(refs) == 0 {
+		return nil, "", nil
+	}
+	dir, err := os.MkdirTemp(h.cfg.FilesDir, filesPrefix)
+	if err != nil {
+		return nil, "", err
+	}
+	out := map[string]string{}
+	for _, ref := range refs {
+		name, ok := strings.CutPrefix(ref, "file:")
+		if !ok || !reFileName.MatchString(name) {
+			return nil, dir, fmt.Errorf("not a file_ref: %q", ref)
+		}
+		var content []byte
+		if err := h.cfg.Core.Call(ctx, "file.get", lease, map[string]any{"file_ref": ref}, &content); err != nil {
+			return nil, dir, err
+		}
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, content, 0o600); err != nil {
+			return nil, dir, err
+		}
+		out[ref] = path
+	}
+	return out, dir, nil
+}
+
+// removeFiles removes the copies of a call.
+func (h *Host) removeFiles(dir string) {
+	if err := os.RemoveAll(dir); err != nil {
+		h.log.Error("the copies of a call's attachments were not removed", "dir", dir, "err", err)
+	}
+}
+
+// filesPrefix starts the name of the directory of one call's copies.
+const filesPrefix = "botaru-call-"
+
+// sweepFiles removes the copies a toolhost of this OS user left behind when it ended inside a
+// call: a directory older than staleFiles outlived any call, whose timeout is at most an hour
+// (tool-plugin schema), so no live call of another toolhost sharing the directory uses it.
+// Directories of other OS users are not ours to remove.
+func (h *Host) sweepFiles() {
+	base := h.cfg.FilesDir
+	if base == "" {
+		base = os.TempDir()
+	}
+	ents, err := os.ReadDir(base)
+	if err != nil {
+		return
+	}
+	for _, e := range ents {
+		if !e.IsDir() || !strings.HasPrefix(e.Name(), filesPrefix) {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		if st, ok := info.Sys().(*syscall.Stat_t); ok && int(st.Uid) != os.Getuid() {
+			continue
+		}
+		if time.Since(info.ModTime()) > staleFiles {
+			h.removeFiles(filepath.Join(base, e.Name()))
+		}
+	}
+}
+
+// staleFiles is the age past which a call's copies are left behind: the longest tool timeout
+// (3600 s) with the time to read the files and a margin.
+const staleFiles = 3 * time.Hour
+
 // call runs one tool call in a new plugin process.
-func (h *Host) call(ctx context.Context, p Plugin, workID string, c callPayload) (*mcp.CallResult, error) {
+func (h *Host) call(ctx context.Context, p Plugin, workID string, c callPayload, files map[string]string) (*mcp.CallResult, error) {
 	var res mcp.CallResult
 	err := h.session(ctx, p, func(s *session) error {
 		meta := mcp.ClientMeta("botaru-toolhost", version.Version)
 		meta.Resolved = c.Resolved
 		meta.WorkID = callWorkID(workID, c)
+		meta.Files = files
 		raw, err := s.request(ctx, "tools/call", mcp.CallParams{Name: c.Tool, Arguments: c.Args, Meta: meta})
 		if err != nil {
 			return err

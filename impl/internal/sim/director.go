@@ -44,16 +44,6 @@ type Result struct {
 	Gap string `json:"gap,omitempty"`
 }
 
-// Known gaps of the core that a scenario runs into (D-6); each is reported to the owner.
-const (
-	// GapAttachments: the core resolves enum_from task.attachments to no values, so a tool
-	// cannot be given the file a person sent (R-07).
-	GapAttachments = "task.attachments resolves to no values"
-	// GapSystemChild: a job of a schedule runs for system, whose explicit memberships are
-	// empty, so it may enqueue no child of its role's may_enqueue (R-09).
-	GapSystemChild = "a child of a system task is refused (type_not_allowed)"
-)
-
 // Policies of -auto-approve.
 var Policies = []string{"none", "safe", "all", "random"}
 

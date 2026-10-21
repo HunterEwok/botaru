@@ -54,8 +54,14 @@ schema filtered by the task's mark.
 - P1 `hello` carries no `describe()` values, so the runtime part has `describe: null`; its driver is the role's
   `runtime.driver`, else the implementation name from `hello`.
 - `catalog.<list>`, `catalog.hosts`, `catalog.services`, `catalog.monitor_triggers` and `catalog.monitor_items` resolve
-  from the tenant's `Catalog` manifest, `reasons.<name>` from `spec/model/<name>-reasons.yaml`; `task.attachments` and
-  any other list resolve to no values, so no value fits.
+  from the tenant's `Catalog` manifest, `reasons.<name>` from `spec/model/<name>-reasons.yaml`; any other list resolves to no
+  values, so no value fits. `task.attachments` resolves to no values here; the tool schema of an attempt lists the
+  `file_ref` of each attachment of its task.
+- A tool call whose arguments name attachments of its task carries them in the handout (`files`, an extension
+  field, MAN-3); the toolhost reads each with `file.get` under the call lease (which hands out only those), writes a
+  copy into a new directory of its own under `files_dir` (mode 0700, file 0600, named by the ref, not the
+  person's file name; a plugin the toolhost starts runs as its user, and a plugin under an OS user of its own cannot read
+  the copy; directories a toolhost left when it ended inside a call of its own OS user are swept at its start once older than three hours, past the longest tool timeout), passes the paths by `file_ref` in `_meta["botaru/files"]` and removes the directory after the call.
 - The result schema reaches the runtime as the extension field `payload.result_schema` of the attempt (MAN-3), so the
   instruction stays exactly the trusted text from git; the runtime appends the request for a JSON answer to the system
   prompt. The projection of the result schema sent to the runtime is a hint: `complete` still checks the full schema.

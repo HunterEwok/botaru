@@ -146,12 +146,16 @@ func ServePlugin(kind string, args []string) error {
 
 type dataPlugin struct{ work, tenant string }
 
-func (d *dataPlugin) call(_ context.Context, tool string, args map[string]any, _ *mcp.Meta) (*mcp.CallResult, error) {
+func (d *dataPlugin) call(_ context.Context, tool string, args map[string]any, meta *mcp.Meta) (*mcp.CallResult, error) {
 	arg := func(n string) string { v, _ := args[n].(string); return v }
 	switch tool {
 	case "describe":
 		if ds := arg("dataset"); ds != "" {
 			return d.geo(ds, "bathy-50m")
+		}
+		// An attachment of the task comes as a file_ref with the toolhost's copy in the meta.
+		if meta != nil && meta.Files[arg("file")] != "" {
+			return describePath(meta.Files[arg("file")])
 		}
 		return d.describeFile(arg("file"))
 	case "describe_vector":
@@ -222,7 +226,12 @@ func (d *dataPlugin) describeFile(file string) (*mcp.CallResult, error) {
 	if file == "" || strings.ContainsAny(file, `/\`) || strings.HasPrefix(file, ".") {
 		return nil, errors.New("no such file")
 	}
-	raw, err := os.ReadFile(filepath.Join(dataDir(d.work, d.tenant), file))
+	return describePath(filepath.Join(dataDir(d.work, d.tenant), file))
+}
+
+// describePath counts the records of the CTD file at path.
+func describePath(path string) (*mcp.CallResult, error) {
+	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, errors.New("no such file")
 	}

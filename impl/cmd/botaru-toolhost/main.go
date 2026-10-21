@@ -32,6 +32,8 @@ type settings struct {
 	Placement string            `yaml:"placement"`
 	Plugins   []toolhost.Plugin `yaml:"plugins"`
 	KillAfter string            `yaml:"kill_after"`
+	// FilesDir is where the copies of the attachments a call names are kept during the call.
+	FilesDir string `yaml:"files_dir"`
 }
 
 func main() {
@@ -78,7 +80,7 @@ func run(log *slog.Logger, coreURL, tokenFile, settingsFile string) error {
 	}
 	h, err := toolhost.New(toolhost.Config{
 		Core:      &p1client.Client{BaseURL: coreURL, Token: token, HTTP: &http.Client{Timeout: 2 * time.Minute}},
-		Placement: s.Placement, Plugins: s.Plugins, KillAfter: killAfter, Logger: log,
+		Placement: s.Placement, Plugins: s.Plugins, KillAfter: killAfter, FilesDir: s.FilesDir, Logger: log,
 	})
 	if err != nil {
 		return err

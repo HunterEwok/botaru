@@ -149,7 +149,8 @@ func (c *Core) markOrder(mark string) (int, bool) {
 // catalog.monitor_triggers the trigger ids of monitor_triggers, catalog.monitor_items their
 // items, catalog.<list> the
 // values of the resources with that list whose data class is not above the task's mark;
-// task.attachments is empty, because this version has no files; reasons.<name> gives the ids
+// task.attachments is empty here, because it depends on the task: the tool schema of an
+// attempt fills it with the task's attachments (modelSchema); reasons.<name> gives the ids
 // of spec/model/<name>-reasons.yaml. An unknown list resolves to no values, so no value fits.
 func (c *Core) resolveEnumFrom(cat *Catalog, tenant, mark string, names map[string]bool) map[string][]any {
 	return c.resolveEnumFor(cat, tenant, mark, "", names)

@@ -113,7 +113,13 @@ func mayEnqueueTypes(cat *Catalog, g *toolsGrant) []string {
 	if !ok || tv == nil || g.Purpose != "" && g.Purpose != "work" {
 		return nil
 	}
-	groups := groupClosure(tv, g.InitiatorGroups)
+	// A child keeps the initiator, and enqueue checks system against its own group system-ops,
+	// not against memberships (PRM-10), so the same groups decide here.
+	initiator := g.InitiatorGroups
+	if g.Initiator == "system" {
+		initiator = []string{"system-ops"}
+	}
+	groups := groupClosure(tv, initiator)
 	var out []string
 	for _, t := range role.MayEnqueue {
 		if _, ok := cat.TaskTypes[t]; ok && !strings.HasPrefix(t, "action.") && hasCap(tv, groups, "task:"+t) && g.coHave(tv, "task:"+t) {

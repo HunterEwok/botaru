@@ -100,7 +100,6 @@ func reports(ctx context.Context, d *Director, sc string) error {
 		"state %s %s, %s CTD QC runs: %s", state, reason, runs, clip(text, 200))
 
 	start = time.Now().UTC()
-	refused := d.S.childRefused.Load()
 	if err := d.S.SetSchedule(ctx, home, SensorSchedule, true); err != nil {
 		return err
 	}
@@ -111,15 +110,10 @@ func reports(ctx context.Context, d *Director, sc string) error {
 	if err != nil {
 		return err
 	}
-	// A failure is the known gap only when the core refused the check's child as such.
-	gap := ""
-	if d.S.childRefused.Load() > refused {
-		gap = GapSystemChild
-	}
-	d.checkGap(sc, "sensor_check", gap, state == "completed" && jsonNum(checked["sensors_checked"]) > 0, "state %s %s, result %v", state, reason, checked)
+	d.check(sc, "sensor_check", state == "completed" && jsonNum(checked["sensors_checked"]) > 0, "state %s %s, result %v", state, reason, checked)
 	if state != "completed" {
 		// The report is the child the check enqueues: without the check there is none to wait for.
-		d.checkGap(sc, "sensor_report", gap, false, "no sensor check completed")
+		d.check(sc, "sensor_report", false, "no sensor check completed")
 		return nil
 	}
 	state, reason, result, err = d.typeEnd(ctx, home, "report.sensor.v1", start)
@@ -137,7 +131,6 @@ const ctdFile = "ctd-st-05.csv"
 // reads it with the data plugin and copies the plugin's numbers into the result.
 func describeFile(ctx context.Context, d *Director, sc string) error {
 	lab := d.S.LabTenant()
-	unnamed := d.S.Brain.NoAttachments()
 	key, err := d.S.SayWithFile(ctx, d.S.PersonIn(lab, "bob"), d.S.PersonIn(lab, "bob-dm"), "/describe What is in this CTD profile?", ctdFile)
 	if err != nil {
 		return err
@@ -147,12 +140,7 @@ func describeFile(ctx context.Context, d *Director, sc string) error {
 		return err
 	}
 	missing := d.toolsNotDone(ctx, lab, key, []string{"data/describe"})
-	// A failure is the known gap only when the bot found no attachment to name.
-	gap := ""
-	if d.S.Brain.NoAttachments() > unnamed {
-		gap = GapAttachments
-	}
-	d.checkGap(sc, "ctd_described", gap, state == "completed" && len(missing) == 0 && jsonNum(result["rows"]) > 0,
+	d.check(sc, "ctd_described", state == "completed" && len(missing) == 0 && jsonNum(result["rows"]) > 0,
 		"state %s %s, tools not called %v, rows %v, depth_max_m %v", state, reason, missing, result["rows"], result["depth_max_m"])
 	return nil
 }

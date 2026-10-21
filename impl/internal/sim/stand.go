@@ -19,7 +19,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/HunterEwok/botaru/impl/internal/core"
@@ -101,9 +100,6 @@ type Stand struct {
 	// channel workers by tenant (SayWithFile).
 	seed      *evals.Seed
 	fileChans map[string]*p1client.Client
-	// childRefused counts the children of a system job the core refused as type_not_allowed:
-	// the sign of the known gap GapSystemChild.
-	childRefused atomic.Int64
 	// insights says whether the analysis schedule of ops-reader runs.
 	insights bool
 	// insightInstruction is the instruction of ops.insight.v1 before the evolution mode
