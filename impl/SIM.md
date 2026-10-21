@@ -28,10 +28,53 @@ export BOTARU_SIM_PROVIDER_KEY=...
 
 # The continuous mode with a console: a fault every 3 minutes, until quit, Ctrl+C or the fuse.
 ./botaru-sim -real -model claude-haiku-5-5 -max-eur 2.00 -interactive -fault-every 3m -out ./sim-out
+
+# The farm of the cloud load test: four tenants, sixteen machines, the scenarios in its first tenant.
+./botaru-sim -mock -farm standard -scenario all -out ./sim-out
 ```
 
 The DSN names a PostgreSQL server; each run creates a fresh database on it and drops it at the end (`-keep-db`
 keeps it). The repository root is found from the working directory (or `-root`, or `$BOTARU_SPEC_ROOT`).
+
+## Farm profiles (`-farm`)
+
+A farm profile (`internal/sim/farms/<name>.yaml`, built into the binary) names the tenants of the stand, the
+machines of each with their kind, and the workers of each bot role per tenant (`replicas`; without it one worker
+of every role). The first tenant is the home of the scenarios and the console.
+
+| Profile | Tenants | Machines | Workers |
+|---|---|---|---|
+| `smoke` (default) | `demo` | `web1`, `db1`, `ctd1` | one of each role |
+| `standard` | `ops-dept`, `lab-dept`, `small-dept`, `other-dept` | 8, 4, 2 and 2 of 16 | 6 `ops-reader` in `ops-dept`, two of the data bots in `lab-dept`, no farm manager in `small-dept` and `other-dept`, and so on |
+
+The tenants of `standard` are named `<name>-dept`: the apply lint refuses a tenant named `ops`, since it reads the
+field name `responses.ops` of the incident classes as tenant data in a global manifest (`global_tenant_data`,
+TEN-6).
+
+Every tenant gets a copy of the example tenant `demo` (its Tenant, channel, catalog, groups, and the stand's
+commission, governance and schedules), made its own:
+
+- its catalog names its own machines: its first machine of a kind takes the place of `web1`, `db1` or `ctd1`
+  with every host entry, resource, selector and volume of it, an entry of a kind it has no machine of is left
+  out, and every further machine gets a host entry, and a web, db or ctd machine its log resource and services
+  under names prefixed with its id (`web2-logs` with the sources `web2-nginx-access`..., the service
+  `web2-nginx`), so the names stay unique in the tenant; the monitor plugin reads that catalog from
+  `<work>/catalogs/<tenant>.yaml`;
+- its people: the seed people of `demo` move to the home tenant under their own names, and every other tenant
+  gets copies named `<tenant>-<name>` with an id, a Telegram identity, direct and group chats of their own;
+- its Telegram channel against a fake Bot API of its own (the update ids of all of them come from one
+  sequence, so the idempotency key of a message is unique in the farm), its agent workers, the job worker of
+  `data-job`, a toolhost per machine, the monitoring adapter for its machines, and the oneshot queue
+  `<work>/queue/<tenant>`;
+- its switches: the profile's `manager` turns `farm_manager.enabled` on, and `evolution` gives the tenant what
+  `demo` has on the smoke farm (proposals to `group:deciders`, the safe scaffold evolution and the dispatcher
+  rule it tunes);
+- with more than one tenant, a tenant canary (`CANARY-NOT-A-SECRET-T-<tenant>-<code>`) in the header of its
+  first CTD profile, which no other tenant may show.
+
+Each replica of a role is a worker of its own, enrolled on its own and run under a context of its own, so one
+replica can be stopped alone (`evals.Bench.StopWorker`). The console command `status` lists the machines of each
+tenant and, per task type, how many workers took its attempts.
 
 ## What runs
 
@@ -117,26 +160,27 @@ Everything the bots' tools read or change lives under `<out>/run-<time>/world/`:
 
 | Path | What it is |
 |---|---|
-| `world.json` | the machines `web1`, `db1`, `ctd1`: disks (size, `free_space_ratio`, pipeline temporary bytes), services (`active`, `inactive`, `failed`, restarts, time of the last change), monitoring problems, metric series, faults in play |
+| `world.json` | the machines of the farm (on `smoke` `web1`, `db1`, `ctd1`), each with its tenant and kind: disks (size, `free_space_ratio`, pipeline temporary bytes), services (`active`, `inactive`, `failed`, restarts, time of the last change), monitoring problems, metric series, faults in play |
 | `world-events.jsonl` | every change of the world; `journalctl` of the stubs reads it |
-| `logs/web1/access.log`, `error.log`, `app-api.log`, `logs/db1/postgresql.log` | the logs the `logs` plugin reads; the first hours come from the eval generators, then the physics appends a line per step |
-| `checks/web1/checks.json` | the results of the HTTP checks, written as an external checker would |
-| `queue/demo/` | the oneshot run requests of the `pipeline` plugin; done ones move to `done/` |
+| `logs/<web>/access.log`, `error.log`, `app-api.log`, `logs/<db>/postgresql.log` | the logs the `logs` plugin reads; the first hours come from the eval generators, then the physics appends a line per step |
+| `checks/<web>/checks.json` | the results of the HTTP checks of a tenant's first web machine, written as an external checker would |
+| `queue/<tenant>/` | the oneshot run requests of the `pipeline` plugin; done ones move to `done/` |
 | `root/<host>/usr/bin/` | the stubs of `systemctl`, `df` and `journalctl` |
-| `data/ctd-<station>.csv`, `data/geo/` | CTD profiles of the five stations, and the descriptions of the raster `bathy-50m` and the layer `map-areas`; the plugin `data` reads a profile by its file name, but this core passes a task no attachments yet, so `data/describe` has no file to offer |
-| `batch/runs.json` | the pipeline runs of `ctd1`: `run-2026-08` done, `run-2026-09` failed at the QC of station `st-05` |
+| `data/<tenant>/ctd-<station>.csv`, `data/<tenant>/geo/` | CTD profiles of the five stations, and the descriptions of the raster `bathy-50m` and the layer `map-areas`; the plugin `data` reads a profile by its file name, but this core passes a task no attachments yet, so `data/describe` has no file to offer |
+| `batch/<tenant>/runs.json` | the pipeline runs of the tenant's ctd machine: `run-2026-08` done, `run-2026-09` failed at the QC of station `st-05` |
 
 `world.json` is changed only under a file lock (`world.lock`) and replaced by a rename, since the stubs run as
 other processes.
 
 Each step (`-step`, 5 seconds by default) the physics:
 
-- fills `db1:/data` while the fault `disk-filling` is in play;
+- fills the data volume of a db machine while the fault `disk-filling` is in play on it (the plain fault acts on
+  the home tenant's first db machine, `disk-filling:<host>` on that machine; `slow-site` likewise on a web machine);
 - samples the series the monitoring system serves (`vfs.fs.size[<mount>,pused|pfree]`, `system.cpu.load[all,avg1]`,
   `vm.memory.utilization`, the in and out traffic of `eth0`, `net.tcp.service[http]`) on every machine, so each
   closed field of `monitor/item_history` (`cpu_load`, `mem_used`, `disk_used`, `net_in`, `net_out`) has points;
-- opens and closes the problems of the catalog triggers: `4407` (`service_down`) while nginx on `web1` is not
-  active, `4401` (`disk_free`) below 15% free on `db1:/data` (it closes at 20%);
+- opens and closes the problems of the catalog triggers: `4407` (`service_down`) while nginx on a web machine is
+  not active, `4401` (`disk_free`) below 15% free on the data volume of a db machine (it closes at 20%);
 - appends the log lines of the moment: `502` with `connect() failed` while app-api is down, `504` with `upstream
   timed out` and `No space left on device` in app-api and PostgreSQL while the disk is full, slow requests of 2.5 to
   8.5 seconds while the fault `slow-site` is in play, and plain `200` lines once the world is healthy again;

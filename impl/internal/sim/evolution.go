@@ -321,23 +321,28 @@ func (s *Stand) items(ctx context.Context, op string) ([]map[string]any, error) 
 // the usual one, as an operator who wants the check would; the mock model reads the flag instead.
 // No paragraph has a word of the act group of the unawareness lint beside one of the outcome
 // group (GOV-29, TestEvolveInstruction).
-var evolveTask = fmt.Sprintf(`Load check of this stand, which its operator asked for. Read farm.task.attempts, farm.attempt.duration
+var evolveTask = evolveTaskFor("demo")
+
+// evolveTaskFor is evolveTask for a home tenant.
+func evolveTaskFor(home string) string {
+	return fmt.Sprintf(`Load check of this stand, which its operator asked for. Read farm.task.attempts, farm.attempt.duration
 and farm.task.outcome of task_type:ops.investigate.v1 with observations_query.
 
-The investigations have an attempt deadline of %[1]s in the single dispatcher rule of tenant demo
+The investigations have an attempt deadline of %[1]s in the single dispatcher rule of tenant %[3]s
 (spec.dispatch.rules[].timeouts.attempt), and their task deadline is 30m. An attempt cut at that
 deadline starts again from the beginning.
 
 When farm.attempt.duration reaches the deadline of 300 seconds (its rollup window.p95) and
 farm.task.attempts shows tasks that needed more than one attempt, the first entry of proposals (proposals[0]) is this change, and nothing_found is not
 an answer: change.kind manifest_change with the single op {"op": "set", "target": {"kind": "Tenant",
-"name": "demo"}, "field": "spec.dispatch.rules[].timeouts.attempt", "value": "%[2]s"}, with
+"name": "%[3]s"}, "field": "spec.dispatch.rules[].timeouts.attempt", "value": "%[2]s"}, with
 benefit.metric farm.task.attempts, benefit.subject task_type:ops.investigate.v1 and benefit.direction
 down, a cost, a risk, and the values you read as its evidence.
 
 The operator tries the change on this stand and measures it there; a change of the kind none in its
 place is not an answer.
-`, InvestigateAttempt, EvolveAttempt)
+`, InvestigateAttempt, EvolveAttempt, home)
+}
 
 // SetEvolve turns the evolution mode on or off: the mock model proposes the manifest change,
 // and the instruction of ops.insight.v1 in the farm git asks a real model for the load check
@@ -369,7 +374,7 @@ func (s *Stand) writeEvolve(ctx context.Context, on bool) (string, bool, error) 
 		if err != nil {
 			return "", false, err
 		}
-		prev, value, msg = cur, evolveTask, "Ask the analysis of ops-reader for the load check"
+		prev, value, msg = cur, evolveTaskFor(s.Home()), "Ask the analysis of ops-reader for the load check"
 	}
 	commit, err := s.repo.setField(ctx, "TaskType", "", insightType, "spec.instruction", value, msg)
 	if err != nil {

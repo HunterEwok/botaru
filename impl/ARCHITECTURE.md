@@ -493,7 +493,7 @@ The slot of an attempt is fixed at claim: an analysis of the role's own results 
 run on the role's `analysis` slot when it has one, the slot the apply lint prices their tree budget by (PRF-1), and their
 calls are held to the position's `analysis_max_rank` (GW-7), and they wait for the provider pair of that slot's
 profile. Any other task runs on the main slot (`base`, then `analysis`, then `seat`), whose pair is checked before a
-task is picked; a commission or manager seat task also runs on the main slot, the farm manager seat on the charter's `model_profile` when it names one (MGR-1).
+task is picked; the farm manager seat without a charter `model_profile` also runs on the main slot (MGR-1).
 
 ### Provider pairs
 

@@ -29,7 +29,7 @@ func incidentAndCommission(ctx context.Context, d *Director, sc string) error {
 
 	// 1. The incident.
 	if err := d.world("the pipeline temporary files fill db1:/data to 3% free (the director's fault)", func(w *World) {
-		w.Hosts["db1"].Disks["/data"].Fill(0.03)
+		w.Hosts[d.S.HomeHost(KindDB)].Disks["/data"].Fill(0.03)
 		w.Faults[FaultDiskFilling] = true
 	}); err != nil {
 		return err
@@ -41,8 +41,8 @@ func incidentAndCommission(ctx context.Context, d *Director, sc string) error {
 	d.check(sc, "problem_opened", true, "event %s of trigger %s", p.EventID, p.TriggerID)
 	var incident, class, istate string
 	err = d.S.waitFor(ctx, d.Timeout, func() (bool, error) {
-		e := db.QueryRow(ctx, `SELECT id, class, state FROM incidents WHERE tenant = 'demo' AND class = 'disk_full' AND since >= $1
-			ORDER BY since DESC LIMIT 1`, start).Scan(&incident, &class, &istate)
+		e := db.QueryRow(ctx, `SELECT id, class, state FROM incidents WHERE tenant = $2 AND class = 'disk_full' AND since >= $1
+			ORDER BY since DESC LIMIT 1`, start, d.S.Home()).Scan(&incident, &class, &istate)
 		return e == nil, nil
 	})
 	d.check(sc, "incident_opened", err == nil, "%s %s %s", incident, class, istate)
@@ -53,14 +53,14 @@ func incidentAndCommission(ctx context.Context, d *Director, sc string) error {
 	// never cancels it; the reason of a task that did not complete is printed.
 	var mstate, mreason, summary string
 	err = d.S.waitFor(ctx, d.Timeout, func() (bool, error) {
-		e := db.QueryRow(ctx, `SELECT state, coalesce(reason, ''), coalesce(result->>'summary', '') FROM tasks WHERE tenant = 'demo'
-			AND type = 'manager.incident.respond.v1' AND created_at >= $1 ORDER BY created_at LIMIT 1`, start).Scan(&mstate, &mreason, &summary)
+		e := db.QueryRow(ctx, `SELECT state, coalesce(reason, ''), coalesce(result->>'summary', '') FROM tasks WHERE tenant = $2
+			AND type = 'manager.incident.respond.v1' AND created_at >= $1 ORDER BY created_at LIMIT 1`, start, d.S.Home()).Scan(&mstate, &mreason, &summary)
 		return e == nil && (mstate == "completed" || mstate == "failed" || mstate == "canceled"), nil
 	})
 	d.check(sc, "manager_answered", err == nil && mstate == "completed", "farm manager task %s %s: %s", mstate, mreason, clip(summary, 200))
 	// The people clean up as the manager proposed; the alarm resolves and the incident with it.
 	if err := d.world("the operators clean up the pipeline temporary files on db1 (the manager's proposal)", func(w *World) {
-		disk := w.Hosts["db1"].Disks["/data"]
+		disk := w.Hosts[d.S.HomeHost(KindDB)].Disks["/data"]
 		disk.FreeRatio = min(0.99, disk.FreeRatio+float64(disk.TmpBytes)/float64(disk.SizeBytes))
 		disk.TmpBytes = 0
 		delete(w.Faults, FaultDiskFilling)
@@ -89,7 +89,7 @@ func incidentAndCommission(ctx context.Context, d *Director, sc string) error {
 	d.S.log.Addf(KindDirector, "the analysis schedule of ops-reader runs (every minute, at most twice a week)")
 	var prop, pstate string
 	err = d.S.waitFor(ctx, d.Timeout+time.Minute, func() (bool, error) {
-		e := db.QueryRow(ctx, `SELECT id, state FROM proposals WHERE tenant = 'demo' AND created_at >= $1 ORDER BY created_at LIMIT 1`, start).Scan(&prop, &pstate)
+		e := db.QueryRow(ctx, `SELECT id, state FROM proposals WHERE tenant = $2 AND created_at >= $1 ORDER BY created_at LIMIT 1`, start, d.S.Home()).Scan(&prop, &pstate)
 		return e == nil, nil
 	})
 	d.check(sc, "proposal_created", err == nil, "proposal %s %s", prop, pstate)
@@ -98,8 +98,8 @@ func incidentAndCommission(ctx context.Context, d *Director, sc string) error {
 	}
 	var reviews int
 	err = d.S.waitFor(ctx, d.Timeout, func() (bool, error) {
-		e := db.QueryRow(ctx, `SELECT count(*) FROM tasks WHERE tenant = 'demo' AND type LIKE 'review.%' AND state = 'completed'
-			AND idempotency_key LIKE 'system:review:' || $1 || ':%'`, prop).Scan(&reviews)
+		e := db.QueryRow(ctx, `SELECT count(*) FROM tasks WHERE tenant = $2 AND type LIKE 'review.%' AND state = 'completed'
+			AND idempotency_key LIKE 'system:review:' || $1 || ':%'`, prop, d.S.Home()).Scan(&reviews)
 		return e == nil && reviews >= 2, nil
 	})
 	d.check(sc, "commission_reviewed", err == nil, "%d lens reviews completed", reviews)
@@ -162,7 +162,7 @@ func (d *Director) settle(ctx context.Context, prop string) {
 // cites the farm's own series.
 func (d *Director) ensureInvestigation(ctx context.Context) error {
 	var investigations int
-	_ = d.S.Bench.Store().Pool.QueryRow(ctx, `SELECT count(*) FROM tasks WHERE tenant = 'demo' AND type = 'ops.investigate.v1' AND state = 'completed'`).Scan(&investigations)
+	_ = d.S.Bench.Store().Pool.QueryRow(ctx, `SELECT count(*) FROM tasks WHERE tenant = $1 AND type = 'ops.investigate.v1' AND state = 'completed'`, d.S.Home()).Scan(&investigations)
 	if investigations > 0 {
 		return nil
 	}
@@ -189,7 +189,8 @@ func labRequests(ctx context.Context, d *Director, sc string) error {
 			[]string{"geo/describe", "geo/describe_vector"}, regexp.MustCompile(`GTiff|GeoTIFF|EPSG:3857|\b4000\s*(x|×|by)\s*3000\b|312\.4|Float32|GeoJSON`)},
 		{"bob", "bob-dm", "/pipeline Why did the last CTD run fail?", "pipeline_explained", nil, regexp.MustCompile(`st-05`)},
 	} {
-		key, err := d.S.Say(ask.who, ask.chat, ask.text)
+		lab := d.S.LabTenant()
+		key, err := d.S.Say(d.S.PersonIn(lab, ask.who), d.S.PersonIn(lab, ask.chat), ask.text)
 		if err != nil {
 			return err
 		}
@@ -202,7 +203,7 @@ func labRequests(ctx context.Context, d *Director, sc string) error {
 		for _, tool := range ask.tools {
 			var done int
 			_ = d.S.Bench.Store().Pool.QueryRow(ctx, `SELECT count(*) FROM toolcalls t JOIN tasks k ON k.id = t.task
-				WHERE k.tenant = 'demo' AND k.idempotency_key = $1 AND t.tool = $2 AND t.state = 'done'`, key, tool).Scan(&done)
+				WHERE k.tenant = $3 AND k.idempotency_key = $1 AND t.tool = $2 AND t.state = 'done'`, key, tool, lab).Scan(&done)
 			if done == 0 {
 				missing = append(missing, tool)
 			}
@@ -213,7 +214,7 @@ func labRequests(ctx context.Context, d *Director, sc string) error {
 	}
 	var checks int
 	err := d.S.waitFor(ctx, d.Timeout+5*time.Minute, func() (bool, error) {
-		e := d.S.Bench.Store().Pool.QueryRow(ctx, `SELECT count(*) FROM tasks WHERE tenant = 'demo' AND type = 'check.http.v1' AND state = 'completed'`).Scan(&checks)
+		e := d.S.Bench.Store().Pool.QueryRow(ctx, `SELECT count(*) FROM tasks WHERE tenant = $1 AND type = 'check.http.v1' AND state = 'completed'`, d.S.Home()).Scan(&checks)
 		return e == nil && checks > 0, nil
 	})
 	d.check(sc, "job_checks_ran", err == nil, "%d site check runs of data-job completed", checks)
@@ -269,15 +270,15 @@ func scaffoldEvolution(ctx context.Context, d *Director, sc string) error {
 	var err error
 	for try := 0; ; try++ {
 		err = d.S.waitFor(ctx, 2*d.Timeout+time.Minute, func() (bool, error) {
-			if e := db.QueryRow(ctx, `SELECT id, state FROM proposals WHERE tenant = 'demo' AND kind = 'manifest_change' AND created_at >= $1
-				ORDER BY created_at LIMIT 1`, start).Scan(&prop, &pstate); e == nil {
+			if e := db.QueryRow(ctx, `SELECT id, state FROM proposals WHERE tenant = $2 AND kind = 'manifest_change' AND created_at >= $1
+				ORDER BY created_at LIMIT 1`, start, d.S.Home()).Scan(&prop, &pstate); e == nil {
 				return true, nil
 			}
 			var id, state string
 			var ended time.Time
 			var raw []byte
-			if e := db.QueryRow(ctx, `SELECT id, state, updated_at, result FROM tasks WHERE tenant = 'demo' AND type = $1
-				AND created_at >= $2 AND state IN ('completed', 'failed', 'canceled') ORDER BY created_at DESC LIMIT 1`, insightType, start).
+			if e := db.QueryRow(ctx, `SELECT id, state, updated_at, result FROM tasks WHERE tenant = $3 AND type = $1
+				AND created_at >= $2 AND state IN ('completed', 'failed', 'canceled') ORDER BY created_at DESC LIMIT 1`, insightType, start, d.S.Home()).
 				Scan(&id, &state, &ended, &raw); e != nil || seen[id] || time.Since(ended) < 3*time.Second {
 				return false, nil
 			}
@@ -289,7 +290,7 @@ func scaffoldEvolution(ctx context.Context, d *Director, sc string) error {
 		if !errors.Is(err, errEnded) || try == 1 {
 			break
 		}
-		rows, qerr := db.Query(ctx, `SELECT id FROM proposals WHERE tenant = 'demo' AND role = 'ops-reader' AND state = ANY($1)`, openStates)
+		rows, qerr := db.Query(ctx, `SELECT id FROM proposals WHERE tenant = $2 AND role = 'ops-reader' AND state = ANY($1)`, openStates, d.S.Home())
 		if qerr != nil {
 			return qerr
 		}
@@ -330,7 +331,7 @@ func scaffoldEvolution(ctx context.Context, d *Director, sc string) error {
 	}
 	v := variant()
 	d.check(sc, "proposal_manifest_created", v != nil && v["trial_outcome"] == "pending" && v["target_kind"] == "Tenant" &&
-		v["target_name"] == "demo" && v["diversity_signature"] == evolveSignature,
+		v["target_name"] == d.S.Home() && v["diversity_signature"] == evolveSignature,
 		"proposal %s %s, variant %v of %v:%v, signature %v, outcome %v", prop, pstate, v["variant_id"], v["target_kind"], v["target_name"],
 		v["diversity_signature"], v["trial_outcome"])
 
@@ -340,8 +341,8 @@ func scaffoldEvolution(ctx context.Context, d *Director, sc string) error {
 		return e == nil && pstate != "screened" && pstate != "in_review", nil
 	})
 	var reviews int
-	_ = db.QueryRow(ctx, `SELECT count(*) FROM tasks WHERE tenant = 'demo' AND type LIKE 'review.%' AND state = 'completed'
-		AND idempotency_key LIKE 'system:review:' || $1 || ':%'`, prop).Scan(&reviews)
+	_ = db.QueryRow(ctx, `SELECT count(*) FROM tasks WHERE tenant = $2 AND type LIKE 'review.%' AND state = 'completed'
+		AND idempotency_key LIKE 'system:review:' || $1 || ':%'`, prop, d.S.Home()).Scan(&reviews)
 	d.check(sc, "commission_recommended", err == nil && pstate == "recommended" && reviews >= 2, "proposal %s after %d lens reviews", pstate, reviews)
 	if pstate != "recommended" {
 		return nil
@@ -398,7 +399,7 @@ func scaffoldEvolution(ctx context.Context, d *Director, sc string) error {
 		return e == nil && pstate != "realizing", nil
 	})
 	var attempt string
-	_ = db.QueryRow(ctx, `SELECT coalesce(doc->'spec'->'dispatch'->'rules'->0->'timeouts'->>'attempt', '') FROM manifests WHERE kind = 'Tenant' AND tenant = 'demo' AND name = 'demo'`).Scan(&attempt)
+	_ = db.QueryRow(ctx, `SELECT coalesce(doc->'spec'->'dispatch'->'rules'->0->'timeouts'->>'attempt', '') FROM manifests WHERE kind = 'Tenant' AND tenant = $1 AND name = $1`, d.S.Home()).Scan(&attempt)
 	card := slices.ContainsFunc(d.S.Cards(), func(c Card) bool { return c.Subject == prop && c.Pressed != "" })
 	msg, _ := d.S.repo.git(ctx, "log", "-1", "--format=%B", commit)
 	trailer := strings.Contains(msg, "Botaru-Proposal: "+prop)
@@ -428,7 +429,7 @@ func scaffoldEvolution(ctx context.Context, d *Director, sc string) error {
 	var rule map[string]any
 	rules, _ := d.S.ReviewRules(ctx)
 	for _, r := range rules {
-		if r["role"] == "ops-reader" && r["target_kind"] == "Tenant" && r["target_name"] == "demo" && r["signature"] == evolveSignature {
+		if r["role"] == "ops-reader" && r["target_kind"] == "Tenant" && r["target_name"] == d.S.Home() && r["signature"] == evolveSignature {
 			rule = r
 		}
 	}
@@ -440,8 +441,8 @@ func scaffoldEvolution(ctx context.Context, d *Director, sc string) error {
 			return fmt.Errorf("starting the analysis schedule: %w", err)
 		}
 		_ = d.S.waitFor(ctx, d.Timeout+time.Minute, func() (bool, error) {
-			e := db.QueryRow(ctx, `SELECT count(*) FROM events WHERE tenant = 'demo' AND type = 'proposal.rejected.v1'
-				AND data->>'reason' = 'review_rule' AND time >= $1`, mark).Scan(&refused)
+			e := db.QueryRow(ctx, `SELECT count(*) FROM events WHERE tenant = $2 AND type = 'proposal.rejected.v1'
+				AND data->>'reason' = 'review_rule' AND time >= $1`, mark, d.S.Home()).Scan(&refused)
 			return e == nil && refused > 0, nil
 		})
 		if err := d.S.SetInsights(ctx, false); err != nil {
@@ -449,7 +450,7 @@ func scaffoldEvolution(ctx context.Context, d *Director, sc string) error {
 		}
 	}
 	var again int
-	_ = db.QueryRow(ctx, `SELECT count(*) FROM proposals WHERE tenant = 'demo' AND kind = 'manifest_change' AND created_at >= $1`, mark).Scan(&again)
+	_ = db.QueryRow(ctx, `SELECT count(*) FROM proposals WHERE tenant = $2 AND kind = 'manifest_change' AND created_at >= $1`, mark, d.S.Home()).Scan(&again)
 	d.check(sc, "reverted_and_rule_recorded", err == nil && pstate == "reverted" && herr == nil && back == before && v != nil &&
 		v["trial_outcome"] == "reverted" && rule != nil && refused > 0 && again == 0,
 		"commit %s with Botaru-Revert, proposal %s; Tenant demo hash %s back to %s; variant outcome %v; review rule %v %v; resubmissions refused with rejected(review_rule): %d, new proposals %d",
@@ -460,7 +461,7 @@ func scaffoldEvolution(ctx context.Context, d *Director, sc string) error {
 // tenantHash is the JCS hash of the applied Tenant manifest of demo.
 func tenantHash(ctx context.Context, d *Director) (string, error) {
 	var doc map[string]any
-	if err := d.S.Bench.Store().Pool.QueryRow(ctx, `SELECT doc FROM manifests WHERE kind = 'Tenant' AND tenant = 'demo' AND name = 'demo'`).Scan(&doc); err != nil {
+	if err := d.S.Bench.Store().Pool.QueryRow(ctx, `SELECT doc FROM manifests WHERE kind = 'Tenant' AND tenant = $1 AND name = $1`, d.S.Home()).Scan(&doc); err != nil {
 		return "", err
 	}
 	return jcs.Hash(doc)

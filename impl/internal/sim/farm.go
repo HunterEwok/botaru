@@ -47,13 +47,12 @@ func farmSeed(sd *evals.Seed) {
 }
 
 // farmManifests adds the commission, the farm manager seat, the incident classes and the
-// schedules to the bench set. The incident classes open and resolve at once rather than after
-// minutes, so a scenario sees the whole incident; insights says whether the analysis schedule
-// runs (it is paused until a scenario needs it, since every run of it costs model calls).
-// The tenant demo learns from its scaffold archive and shows a manifest change only after a
-// passed merge gate (D-120: insights.evolution, insights.gate) and has one dispatcher rule for
-// the investigations, and ops-reader may analyse more
+// schedules to the bench set, in tenant demo, the template of every tenant of the farm. The
+// incident classes open and resolve at once rather than after minutes, so a scenario sees the
+// whole incident; insights says whether the analysis schedule runs (it is paused until a
+// scenario needs it, since every run of it costs model calls). ops-reader may analyse more
 // often than the weekly limit of its example, since a run of the stand plays weeks in minutes.
+// The switches of each tenant come with its copy (tenantSwitches).
 func farmManifests(ms, farm []map[string]any, insights bool) []map[string]any {
 	ms = append(ms, farm...)
 	for _, m := range ms {
@@ -62,28 +61,6 @@ func farmManifests(ms, farm []map[string]any, insights bool) []map[string]any {
 				in["max_runs"] = map[string]any{"per": "week", "count": 50}
 				in["max_per_week"] = 10
 			}
-		}
-		if m["kind"] == "Tenant" && mapOf(m["metadata"])["name"] == "demo" {
-			sp := mapOf(m["spec"])
-			sp["farm_manager"] = map[string]any{"enabled": true}
-			ins := mapOf(sp["insights"])
-			if ins == nil {
-				ins = map[string]any{}
-				sp["insights"] = ins
-			}
-			ins["present_to"] = "group:deciders"
-			ins["digest"] = map[string]any{"schedule": "* * * * *", "max_items": 5}
-			ins["evolution"] = map[string]any{"enabled": true}
-			ins["gate"] = map[string]any{"required": true}
-			// The single dispatcher rule the scaffold evolution tunes: the attempt deadline of the
-			// investigations, as in their type (PRP-12).
-			disp := mapOf(sp["dispatch"])
-			if disp == nil {
-				disp = map[string]any{}
-				sp["dispatch"] = disp
-			}
-			disp["rules"] = []any{map[string]any{"match": map[string]any{"type": "ops.investigate.v1"},
-				"timeouts": map[string]any{"attempt": InvestigateAttempt}}}
 		}
 	}
 	group := func(name string, caps ...any) map[string]any {

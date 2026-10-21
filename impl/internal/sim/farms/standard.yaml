@@ -1,0 +1,40 @@
+# The farm of the cloud load test: four tenants on sixteen machines (the load test brief,
+# section "The farm of the test"). The first tenant is the home of the scenarios. replicas
+# gives the workers of each bot role in the tenant; a role left out runs no worker there.
+# The tenants are named <name>-dept: a tenant named ops is refused by the apply lint, which
+# reads the field name responses.ops of the incident classes as tenant data in a global
+# manifest (global_tenant_data, TEN-6).
+name: standard
+tenants:
+  - name: ops-dept
+    hosts:
+      - {id: web1, kind: web}
+      - {id: web2, kind: web}
+      - {id: web3, kind: web}
+      - {id: web4, kind: web}
+      - {id: db1, kind: db}
+      - {id: db2, kind: db}
+      - {id: ctd1, kind: ctd}
+      - {id: mon1, kind: mon}
+    manager: true
+    evolution: true
+    replicas: {hello: 1, ops-reader: 6, reporter: 1, reviewer-a: 1, reviewer-b: 1, farm-manager: 1, farm-manager-reader: 1, data-job: 1}
+  - name: lab-dept
+    hosts:
+      - {id: db3, kind: db}
+      - {id: ctd2, kind: ctd}
+      - {id: ctd3, kind: ctd}
+      - {id: geo1, kind: geo}
+    manager: true
+    replicas: {hello: 1, ops-reader: 1, data-reader: 2, geo-reader: 1, pipeline-reader: 2, reporter: 1, reviewer-a: 1, reviewer-b: 1,
+      farm-manager: 1, farm-manager-reader: 1, data-job: 1}
+  - name: small-dept
+    hosts:
+      - {id: web5, kind: web}
+      - {id: db4, kind: db}
+    replicas: {hello: 1, ops-reader: 2, reviewer-a: 1, reviewer-b: 1, data-job: 1}
+  - name: other-dept
+    hosts:
+      - {id: web6, kind: web}
+      - {id: db5, kind: db}
+    replicas: {hello: 1, ops-reader: 2, data-reader: 1, reviewer-a: 1, reviewer-b: 1, data-job: 1}

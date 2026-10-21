@@ -20,7 +20,7 @@ import (
 	"time"
 )
 
-// World is the state of the virtual machines of tenant demo, kept in <work>/world.json.
+// World is the state of the virtual machines of the farm, kept in <work>/world.json.
 type World struct {
 	// Hosts are the machines by catalog id.
 	Hosts map[string]*Host `json:"hosts"`
@@ -28,18 +28,25 @@ type World struct {
 	Problems []*Problem `json:"problems"`
 	// Series are the metric samples by "<host>|<item key>", oldest first, at most maxSamples.
 	Series map[string][]Sample `json:"series"`
-	// Faults are the faults in play by name (the scenario faults of the director).
+	// Faults are the faults in play by name, or by name:host for one machine (the scenario
+	// faults of the director).
 	Faults map[string]bool `json:"faults"`
+	// Home is the tenant of the scenarios.
+	Home string `json:"home"`
 	// NextEvent numbers the monitoring events.
 	NextEvent int64 `json:"next_event"`
 	// events are the world events of one update, written to world-events.jsonl.
 	events []Event
 }
 
-// Host is one virtual machine.
+// Host is one virtual machine of one tenant.
 type Host struct {
-	// Node is its name in the monitoring system.
+	// Tenant is the tenant the machine belongs to, Kind its kind (web, db, ctd, mon, geo).
+	Tenant string `json:"tenant"`
+	Kind   string `json:"kind"`
+	// Node is its name in the monitoring system and ZabbixID its host id there.
 	Node     string              `json:"node"`
+	ZabbixID string              `json:"zabbix_id"`
 	Disks    map[string]*Disk    `json:"disks"`
 	Services map[string]*Service `json:"services"`
 }
@@ -103,7 +110,7 @@ type Event struct {
 // maxSamples bounds a series: 2880 steps (4 hours at the default step of 5 seconds).
 const maxSamples = 2880
 
-// Units of the demo machines.
+// Units of the machines.
 const (
 	UnitNginx    = "nginx.service"
 	UnitAppAPI   = "app-api.service"
@@ -111,23 +118,97 @@ const (
 	UnitCTDQC    = "ctd-qc-runner-demo.service"
 )
 
-// NewWorld is the healthy world of tenant demo: web1 with nginx and app-api, db1 with
-// postgresql and the data volume of the pipeline, ctd1 with the CTD quality control runner.
+// UnitCTDQCOf is the unit of the CTD quality control runner of a tenant.
+func UnitCTDQCOf(tenant string) string { return "ctd-qc-runner-" + tenant + ".service" }
+
+// NewWorld is the healthy world of the smoke farm: tenant demo with web1, db1 and ctd1.
 func NewWorld(now time.Time) *World {
-	svc := func(unit string) *Service { return &Service{Unit: unit, State: "active", Changed: now} }
-	return &World{
-		Hosts: map[string]*Host{
-			"web1": {Node: "web1.example.org", Disks: map[string]*Disk{"/": {SizeBytes: 40e9, FreeRatio: 0.82}},
-				Services: map[string]*Service{UnitNginx: svc(UnitNginx), UnitAppAPI: svc(UnitAppAPI)}},
-			"db1": {Node: "db1.example.org", Disks: map[string]*Disk{"/": {SizeBytes: 40e9, FreeRatio: 0.71}, "/data": {SizeBytes: 2e12, FreeRatio: 0.82, TmpBytes: 30e9}},
-				Services: map[string]*Service{UnitPostgres: svc(UnitPostgres)}},
-			"ctd1": {Node: "ctd1.example.org", Disks: map[string]*Disk{"/": {SizeBytes: 40e9, FreeRatio: 0.64}, "/data": {SizeBytes: 4e12, FreeRatio: 0.55}},
-				Services: map[string]*Service{UnitCTDQC: svc(UnitCTDQC)}},
-		},
-		Series:    map[string][]Sample{},
-		Faults:    map[string]bool{},
-		NextEvent: 70001,
+	f, err := LoadFarm("smoke")
+	if err != nil {
+		panic(err)
 	}
+	return NewFarmWorld(f, now)
+}
+
+// NewFarmWorld is the healthy world of a farm: a web machine runs nginx and app-api, a db
+// machine postgresql and holds the data volume of the pipeline, a ctd machine runs the CTD
+// quality control runner of its tenant, and mon and geo machines have a root disk alone. The
+// monitoring host ids follow the order of the profile from 10501.
+func NewFarmWorld(f *Farm, now time.Time) *World {
+	svc := func(unit string) *Service { return &Service{Unit: unit, State: "active", Changed: now} }
+	w := &World{Hosts: map[string]*Host{}, Series: map[string][]Sample{}, Faults: map[string]bool{}, Home: f.Home().Name, NextEvent: 70001}
+	n := 0
+	for _, t := range f.Tenants {
+		for _, fh := range t.Hosts {
+			h := &Host{Tenant: t.Name, Kind: fh.Kind, Node: fh.ID + ".example.org", ZabbixID: fmt.Sprint(10501 + n), Services: map[string]*Service{}}
+			n++
+			switch fh.Kind {
+			case KindWeb:
+				h.Disks = map[string]*Disk{"/": {SizeBytes: 40e9, FreeRatio: 0.82}}
+				h.Services[UnitNginx], h.Services[UnitAppAPI] = svc(UnitNginx), svc(UnitAppAPI)
+			case KindDB:
+				h.Disks = map[string]*Disk{"/": {SizeBytes: 40e9, FreeRatio: 0.71}, "/data": {SizeBytes: 2e12, FreeRatio: 0.82, TmpBytes: 30e9}}
+				h.Services[UnitPostgres] = svc(UnitPostgres)
+			case KindCTD:
+				h.Disks = map[string]*Disk{"/": {SizeBytes: 40e9, FreeRatio: 0.64}, "/data": {SizeBytes: 4e12, FreeRatio: 0.55}}
+				u := UnitCTDQCOf(t.Name)
+				h.Services[u] = svc(u)
+			default:
+				h.Disks = map[string]*Disk{"/": {SizeBytes: 40e9, FreeRatio: 0.77}}
+			}
+			w.Hosts[fh.ID] = h
+		}
+	}
+	return w
+}
+
+// First is a tenant's first machine of a kind in profile order, "" when it has none. The order
+// is that of the monitoring host ids.
+func (w *World) First(tenant, kind string) string {
+	best, bestID := "", 0
+	for id, h := range w.Hosts {
+		if h.Tenant != tenant || h.Kind != kind {
+			continue
+		}
+		var n int
+		fmt.Sscan(h.ZabbixID, &n)
+		if best == "" || n < bestID {
+			best, bestID = id, n
+		}
+	}
+	return best
+}
+
+// TenantNames are the tenants of the machines in name order.
+func (w *World) TenantNames() []string {
+	var out []string
+	for _, h := range w.Hosts {
+		if !slices.Contains(out, h.Tenant) {
+			out = append(out, h.Tenant)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
+// HostOfID is the machine of a monitoring host id, "" when none.
+func (w *World) HostOfID(id string) string {
+	for h, x := range w.Hosts {
+		if x.ZabbixID == id {
+			return h
+		}
+	}
+	return ""
+}
+
+// Fault says whether a fault is in play on a machine: name:host names the machine, and the
+// plain name, as the scenarios set it, stands for the home tenant's first machine of the kind.
+func (w *World) Fault(name, host string) bool {
+	if w.Faults[name+":"+host] {
+		return true
+	}
+	h := w.Hosts[host]
+	return w.Faults[name] && h != nil && h.Tenant == w.Home && w.First(w.Home, h.Kind) == host
 }
 
 // Note records a world event of this update.

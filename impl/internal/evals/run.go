@@ -591,10 +591,11 @@ func (b *Bench) play(ctx context.Context, from, chat, text string, timeout time.
 	if err != nil {
 		return "", "", err
 	}
-	id := b.bot.message(uid, cid, ch.Kind == "direct", text)
+	bot := b.botOf(p.Tenant)
+	id := bot.message(uid, cid, ch.Kind == "direct", text)
 	key = "system:activity:" + benchChannel + ":" + strconv.FormatInt(int64(id), 10)
 	deadline := time.Now().Add(timeout)
-	for !b.bot.taken(id) {
+	for !bot.taken(id) {
 		if time.Now().After(deadline) {
 			return key, "", fmt.Errorf("the channel did not take the message within %v", timeout)
 		}
@@ -611,7 +612,7 @@ func (b *Bench) play(ctx context.Context, from, chat, text string, timeout time.
 		if err := b.checkCap(ctx); err != nil {
 			return key, "", err
 		}
-		busy, err := b.pending(ctx, since)
+		busy, err := b.pending(ctx, since, p.Tenant)
 		if err != nil {
 			return key, "", err
 		}
@@ -624,7 +625,7 @@ func (b *Bench) play(ctx context.Context, from, chat, text string, timeout time.
 			return key, "", err
 		}
 	}
-	err = b.st.Pool.QueryRow(ctx, `SELECT coalesce(max(id), '') FROM tasks WHERE tenant = 'demo' AND idempotency_key = $1`, key).Scan(&task)
+	err = b.st.Pool.QueryRow(ctx, `SELECT coalesce(max(id), '') FROM tasks WHERE tenant = $2 AND idempotency_key = $1`, key, p.Tenant).Scan(&task)
 	return key, task, err
 }
 

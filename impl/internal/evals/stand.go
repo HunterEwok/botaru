@@ -5,6 +5,8 @@ package evals
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 	"strconv"
 	"time"
 
@@ -28,7 +30,8 @@ func (b *Bench) Seed() *Seed { return b.seed }
 // P1 is the address of the P1 listener.
 func (b *Bench) P1() string { return b.p1 }
 
-// Enroll enrolls a worker of tenant demo through P2 and returns its P1 token.
+// Enroll enrolls a worker through P2, of the tenant the request names (the home tenant without
+// one), and returns its P1 token.
 func (b *Bench) Enroll(ctx context.Context, req map[string]any) (string, error) {
 	return b.enroll(ctx, req)
 }
@@ -46,49 +49,91 @@ func (b *Bench) SpendTotal(ctx context.Context) (int64, error) { return b.spendT
 // the model again; the holds stay until the bench closes.
 func (b *Bench) StopSpend(ctx context.Context) error { return b.stopSpend(ctx) }
 
-// Pending says whether a task of tenant demo created since then is not terminal or a delivery is
+// Pending says whether a task of a tenant created since then is not terminal or a delivery is
 // not done.
-func (b *Bench) Pending(ctx context.Context, since time.Time) (bool, error) {
-	return b.pending(ctx, since)
+func (b *Bench) Pending(ctx context.Context, since time.Time, tenant string) (bool, error) {
+	return b.pending(ctx, since, tenant)
+}
+
+// Tenants are the names of the bench tenants, the home first.
+func (b *Bench) Tenants() []string { return b.tenantNames() }
+
+// Home is the home tenant of the bench: the tenant of the eval cases and of the operator that
+// applies the set.
+func (b *Bench) Home() string { return b.home() }
+
+// GoNamed runs a further worker under a name until StopWorker stops it or the bench closes; a
+// name the bench already runs is refused.
+func (b *Bench) GoNamed(name string, w func(context.Context) error) error {
+	b.workersMu.Lock()
+	_, dup := b.workers[name]
+	b.workersMu.Unlock()
+	if dup {
+		return fmt.Errorf("worker %s runs already", name)
+	}
+	b.start(b.runCtx, name, w)
+	return nil
+}
+
+// Workers are the names of the workers the bench started (<tenant>/<role>/<n> for an agent,
+// <tenant>/telegram for a channel, <tenant>/toolhost/<host>/<n> for a toolhost), in name order.
+func (b *Bench) Workers() []string {
+	b.workersMu.Lock()
+	defer b.workersMu.Unlock()
+	return slices.Sorted(maps.Keys(b.workers))
+}
+
+// StopWorker stops one worker by name, as a crash would: its lease is left to expire. It says
+// whether the bench knew the name.
+func (b *Bench) StopWorker(name string) bool {
+	b.workersMu.Lock()
+	cancel, ok := b.workers[name]
+	delete(b.workers, name)
+	b.workersMu.Unlock()
+	if ok {
+		cancel()
+	}
+	return ok
 }
 
 // StoreNow is the store clock.
 func (b *Bench) StoreNow(ctx context.Context) (time.Time, error) { return b.storeNow(ctx) }
 
-// identity gives the Telegram user id of a seed person and the id and kind of a seed chat.
-func (b *Bench) identity(from, chat string) (uid, cid int64, direct bool, err error) {
+// identity gives the Telegram user id of a seed person, the id and kind of a seed chat and the
+// fake Bot API of the person's tenant.
+func (b *Bench) identity(from, chat string) (uid, cid int64, direct bool, bot *fakeBotAPI, err error) {
 	p := b.seed.Person(from)
 	ch := b.seed.Chat(chat)
 	if p == nil || ch == nil {
-		return 0, 0, false, fmt.Errorf("no seed person %s or chat %s", from, chat)
+		return 0, 0, false, nil, fmt.Errorf("no seed person %s or chat %s", from, chat)
 	}
 	if uid, err = strconv.ParseInt(telegramUserID(p.Identity), 10, 64); err != nil {
-		return 0, 0, false, fmt.Errorf("person %s has no telegram identity", from)
+		return 0, 0, false, nil, fmt.Errorf("person %s has no telegram identity", from)
 	}
 	if cid, err = strconv.ParseInt(ch.ExternalID, 10, 64); err != nil {
-		return 0, 0, false, err
+		return 0, 0, false, nil, err
 	}
-	return uid, cid, ch.Kind == "direct", nil
+	return uid, cid, ch.Kind == "direct", b.botOf(p.Tenant), nil
 }
 
 // Say queues a message of a seed person in a seed chat through the fake Bot API and returns the
 // core's idempotency key of the activity; it does not wait for the work it makes.
 func (b *Bench) Say(from, chat, text string) (string, error) {
-	uid, cid, direct, err := b.identity(from, chat)
+	uid, cid, direct, bot, err := b.identity(from, chat)
 	if err != nil {
 		return "", err
 	}
-	id := b.bot.message(uid, cid, direct, text)
+	id := bot.message(uid, cid, direct, text)
 	return "system:activity:" + benchChannel + ":" + strconv.FormatInt(int64(id), 10), nil
 }
 
 // Press queues a press of a seed person on an inline button of a bot message in a seed chat.
 func (b *Bench) Press(from, chat string, messageID int64, data string) error {
-	uid, cid, direct, err := b.identity(from, chat)
+	uid, cid, direct, bot, err := b.identity(from, chat)
 	if err != nil {
 		return err
 	}
-	b.bot.press(uid, cid, messageID, direct, data)
+	bot.press(uid, cid, messageID, direct, data)
 	return nil
 }
 

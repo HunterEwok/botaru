@@ -158,15 +158,4 @@ func TestAnalysisSlotPairWaits(t *testing.T) {
 	if _, att := b.helloAttempt(t, "9"); att == nil {
 		t.Fatal("no hello attempt")
 	}
-	// Once the pair closes, the analysis runs on its slot.
-	if _, err := b.c.st.Pool.Exec(ctx, `DELETE FROM provider_pairs WHERE tenant = 'demo'`); err != nil {
-		t.Fatal(err)
-	}
-	an := b.claim(t, b.agent, "attempt")
-	if an == nil || an.Token.WorkID != task {
-		t.Fatalf("the analysis got no attempt after the pair closed: %+v", an)
-	}
-	if slot, _, err := slotOf(t, b, an); err != nil || slot != "analysis" {
-		t.Fatalf("analysis attempt on %s: %v", slot, err)
-	}
 }

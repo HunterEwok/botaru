@@ -20,12 +20,15 @@ import (
 // Monitor is the monitoring system of the world: a Zabbix 7.0 JSON-RPC API over world.json. It
 // serves the monitor plugin (problems, items, history, maintenance) and the adapter
 // botaru-zabbix (event.get, history.push of the alarm export and the audit head, the account
-// check, the scripts of web1 and their runs, the acknowledgements), and sends the problem
-// webhook to the adapter when the physics opens or closes a problem.
+// check, the scripts of each tenant's first web machine and their runs, the acknowledgements),
+// and sends the problem webhook to the adapter of the machine's tenant when the physics opens or
+// closes a problem.
 type Monitor struct {
 	Work string
-	// Hook is the address of the adapter's webhook and HookToken its token; empty: no webhook.
-	Hook, HookToken string
+	// Hooks are the addresses of the adapters' webhooks by tenant and HookToken their token; a
+	// tenant without one gets no webhook.
+	Hooks     map[string]string
+	HookToken string
 	// OnPush sees each history.push item; OnScript each script run, OnAck each note.
 	OnPush   func(key, value string)
 	OnScript func(host, scriptid, input string)
@@ -34,20 +37,22 @@ type Monitor struct {
 	mu sync.Mutex
 }
 
-// Zabbix ids of the world: the hosts and the items of their series.
-var hostIDs = map[string]string{"web1": "10501", "db1": "10502", "ctd1": "10503"}
-
-// The scripts of web1 the catalog allows (examples/tenants/demo/catalog.yaml).
+// The scripts of a tenant's first web machine the catalog allows (examples/tenants/demo/catalog.yaml).
 const (
 	scriptAppRestart = "17"
 	scriptCacheClear = "21"
 )
 
-func hostOfID(id string) string {
-	for h, i := range hostIDs {
-		if i == id {
-			return h
-		}
+// scriptHost says whether a machine has the monitoring scripts: a tenant's first web machine.
+func scriptHost(w *World, host string) bool {
+	h := w.Hosts[host]
+	return h != nil && h.Kind == KindWeb && w.First(h.Tenant, KindWeb) == host
+}
+
+// zid is the monitoring host id of a machine.
+func zid(w *World, host string) string {
+	if h := w.Hosts[host]; h != nil {
+		return h.ZabbixID
 	}
 	return ""
 }
@@ -138,26 +143,6 @@ func (m *Monitor) call(method string, raw json.RawMessage) (any, error) {
 			data = append(data, map[string]any{"itemid": "1"})
 		}
 		return map[string]any{"response": "success", "data": data}, nil
-	case "script.getscriptsbyhosts":
-		var hosts []struct {
-			HostID string `json:"hostid"`
-		}
-		if json.Unmarshal(raw, &hosts) != nil || len(hosts) == 0 {
-			return nil, fmt.Errorf("an array of hosts is expected")
-		}
-		out := map[string]any{}
-		for _, h := range hosts {
-			if hostOfID(h.HostID) == "web1" {
-				out[h.HostID] = []any{
-					map[string]any{"scriptid": scriptAppRestart, "name": "Restart app-api", "scope": "2", "manualinput": "0"},
-					map[string]any{"scriptid": scriptCacheClear, "name": "Clear the nginx cache", "scope": "2", "manualinput": "1",
-						"manualinput_validator_type": "1", "manualinput_validator": "all,static"},
-				}
-			} else {
-				out[h.HostID] = []any{}
-			}
-		}
-		return out, nil
 	case "event.acknowledge":
 		ids := strList(p["eventids"])
 		msg, _ := p["message"].(string)
@@ -173,6 +158,26 @@ func (m *Monitor) call(method string, raw json.RawMessage) (any, error) {
 		return nil, err
 	}
 	switch method {
+	case "script.getscriptsbyhosts":
+		var hosts []struct {
+			HostID string `json:"hostid"`
+		}
+		if json.Unmarshal(raw, &hosts) != nil || len(hosts) == 0 {
+			return nil, fmt.Errorf("an array of hosts is expected")
+		}
+		out := map[string]any{}
+		for _, h := range hosts {
+			if scriptHost(w, w.HostOfID(h.HostID)) {
+				out[h.HostID] = []any{
+					map[string]any{"scriptid": scriptAppRestart, "name": "Restart app-api", "scope": "2", "manualinput": "0"},
+					map[string]any{"scriptid": scriptCacheClear, "name": "Clear the nginx cache", "scope": "2", "manualinput": "1",
+						"manualinput_validator_type": "1", "manualinput_validator": "all,static"},
+				}
+			} else {
+				out[h.HostID] = []any{}
+			}
+		}
+		return out, nil
 	case "host.get":
 		return hostGet(w, p), nil
 	case "event.get":
@@ -194,7 +199,7 @@ func (m *Monitor) call(method string, raw json.RawMessage) (any, error) {
 		out := []any{}
 		for i := len(w.Problems) - 1; i >= 0; i-- {
 			pr := w.Problems[i]
-			if len(hosts) > 0 && !slices.Contains(hosts, hostIDs[pr.Host]) || pr.Clock < from {
+			if len(hosts) > 0 && !slices.Contains(hosts, zid(w, pr.Host)) || pr.Clock < from {
 				continue
 			}
 			e := eventOf(w, pr)
@@ -210,10 +215,10 @@ func (m *Monitor) call(method string, raw json.RawMessage) (any, error) {
 		out := []any{}
 		for _, k := range slices.Sorted(maps.Keys(ids)) {
 			host, key, _ := strings.Cut(k, "|")
-			if len(hosts) > 0 && !slices.Contains(hosts, hostIDs[host]) || len(keys) > 0 && !slices.Contains(keys, key) {
+			if len(hosts) > 0 && !slices.Contains(hosts, zid(w, host)) || len(keys) > 0 && !slices.Contains(keys, key) {
 				continue
 			}
-			out = append(out, map[string]any{"itemid": ids[k], "hostid": hostIDs[host], "key_": key, "value_type": "0"})
+			out = append(out, map[string]any{"itemid": ids[k], "hostid": zid(w, host), "key_": key, "value_type": "0"})
 		}
 		return out, nil
 	case "history.get", "trend.get":
@@ -244,10 +249,10 @@ func (m *Monitor) call(method string, raw json.RawMessage) (any, error) {
 		}
 		return out, nil
 	case "script.execute":
-		host := hostOfID(fmt.Sprint(p["hostid"]))
+		host := w.HostOfID(fmt.Sprint(p["hostid"]))
 		id := fmt.Sprint(p["scriptid"])
 		input, _ := p["manualinput"].(string)
-		if host != "web1" || id != scriptAppRestart && id != scriptCacheClear {
+		if !scriptHost(w, host) || id != scriptAppRestart && id != scriptCacheClear {
 			return nil, fmt.Errorf("no such script on the host")
 		}
 		if m.OnScript != nil {
@@ -256,17 +261,17 @@ func (m *Monitor) call(method string, raw json.RawMessage) (any, error) {
 		value := "nginx cache cleared"
 		if id == scriptAppRestart {
 			err = Update(m.Work, func(w *World) error {
-				s := w.Service("web1", UnitAppAPI)
+				s := w.Service(host, UnitAppAPI)
 				s.Restarts++
 				before := s.State
 				s.State, s.Changed = "active", time.Now().UTC()
-				w.Note("service", "web1", "monitoring script %s restarted %s: %s -> active (restarts %d)", id, UnitAppAPI, before, s.Restarts)
+				w.Note("service", host, "monitoring script %s restarted %s: %s -> active (restarts %d)", id, UnitAppAPI, before, s.Restarts)
 				return nil
 			})
 			value = "app-api restarted"
 		} else {
 			err = Update(m.Work, func(w *World) error {
-				w.Note("service", "web1", "monitoring script %s cleared the nginx cache (%s)", id, input)
+				w.Note("service", host, "monitoring script %s cleared the nginx cache (%s)", id, input)
 				return nil
 			})
 		}
@@ -286,10 +291,10 @@ func hostGet(w *World, p map[string]any) []any {
 	out := []any{}
 	for _, h := range w.HostNames() {
 		node := w.Hosts[h].Node
-		if len(names) > 0 && !slices.Contains(names, node) || len(ids) > 0 && !slices.Contains(ids, hostIDs[h]) {
+		if len(names) > 0 && !slices.Contains(names, node) || len(ids) > 0 && !slices.Contains(ids, zid(w, h)) {
 			continue
 		}
-		out = append(out, map[string]any{"hostid": hostIDs[h], "host": node, "maintenance_status": "0", "maintenance_from": "0", "maintenanceid": "0"})
+		out = append(out, map[string]any{"hostid": zid(w, h), "host": node, "maintenance_status": "0", "maintenance_from": "0", "maintenanceid": "0"})
 	}
 	return out
 }
@@ -301,7 +306,7 @@ func eventOf(w *World, p *Problem) map[string]any {
 		r = "9" + p.EventID
 	}
 	return map[string]any{"eventid": p.EventID, "objectid": p.TriggerID, "severity": strconv.Itoa(p.Severity), "clock": strconv.FormatInt(p.Clock, 10),
-		"r_eventid": r, "hosts": []any{map[string]any{"host": w.Hosts[p.Host].Node, "hostid": hostIDs[p.Host]}}}
+		"r_eventid": r, "hosts": []any{map[string]any{"host": w.Hosts[p.Host].Node, "hostid": zid(w, p.Host)}}}
 }
 
 // hourly averages a series per hour between from and till.
@@ -322,11 +327,14 @@ func hourly(s []Sample, from, till int64) []Sample {
 	return out
 }
 
-// Notify sends the problem webhook of a change to the adapter, as the Zabbix media type does.
+// Notify sends the problem webhook of a change to the adapter of the machine's tenant, as the
+// Zabbix media type does.
 func (m *Monitor) Notify(ctx context.Context, w *World, c Change) error {
-	if m.Hook == "" {
+	h := w.Hosts[c.Problem.Host]
+	if h == nil || m.Hooks[h.Tenant] == "" {
 		return nil
 	}
+	hook := m.Hooks[h.Tenant]
 	value := "0"
 	if c.Opened {
 		value = "1"
@@ -335,7 +343,7 @@ func (m *Monitor) Notify(ctx context.Context, w *World, c Change) error {
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, m.Hook, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, hook, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}

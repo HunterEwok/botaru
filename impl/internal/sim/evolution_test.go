@@ -22,7 +22,7 @@ import (
 func TestStandSuite(t *testing.T) {
 	ctx := context.Background()
 	work := t.TempDir()
-	r, err := initRepo(work)
+	r, err := initRepo(work, "demo")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,13 +78,13 @@ func TestInsightAnswerEvolve(t *testing.T) {
 	var out struct {
 		Proposals []map[string]any `json:"proposals"`
 	}
-	if err := json.Unmarshal([]byte(insightAnswer(seen, false)), &out); err != nil || len(out.Proposals) != 1 {
+	if err := json.Unmarshal([]byte(insightAnswer(seen, "")), &out); err != nil || len(out.Proposals) != 1 {
 		t.Fatalf("plain answer: %v %v", out, err)
 	}
 	if k := mapOf(out.Proposals[0]["change"])["kind"]; k != "none" {
 		t.Errorf("plain change kind %v", k)
 	}
-	if err := json.Unmarshal([]byte(insightAnswer(seen, true)), &out); err != nil || len(out.Proposals) != 1 {
+	if err := json.Unmarshal([]byte(insightAnswer(seen, "demo")), &out); err != nil || len(out.Proposals) != 1 {
 		t.Fatalf("evolve answer: %v %v", out, err)
 	}
 	p := out.Proposals[0]
@@ -127,7 +127,7 @@ func TestEvolveInstruction(t *testing.T) {
 	if bad, _ := core.UnawareText(sp, evolveTask+"\nPropose to shorten the queue."); !bad {
 		t.Error("the lint passes a paragraph with a word of each group")
 	}
-	r, err := initRepo(t.TempDir())
+	r, err := initRepo(t.TempDir(), "demo")
 	if err != nil {
 		t.Fatal(err)
 	}

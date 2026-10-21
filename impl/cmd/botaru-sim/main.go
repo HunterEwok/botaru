@@ -105,11 +105,11 @@ func priceOf(model string) ([2]float64, bool) {
 }
 
 type options struct {
-	root, dsn, out, scenario, approve, model, keyFile, providerURL string
-	mock, real, interactive, keepDB, verbose, showVersion          bool
-	maxEUR, priceIn, priceOut                                      float64
-	duration, faultEvery, step, timeout                            time.Duration
-	seed                                                           int64
+	root, dsn, out, scenario, approve, model, keyFile, providerURL, farm string
+	mock, real, interactive, keepDB, verbose, showVersion                bool
+	maxEUR, priceIn, priceOut                                            float64
+	duration, faultEvery, step, timeout                                  time.Duration
+	seed                                                                 int64
 }
 
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
@@ -119,6 +119,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	fs.StringVar(&o.root, "root", "", "the skeleton root (default: found from the working directory)")
 	fs.StringVar(&o.dsn, "dsn", firstEnv("BOTARU_SIM_DSN", "BOTARU_EVAL_DSN"), "a PostgreSQL server; the run creates a fresh database on it and drops it afterwards ($BOTARU_SIM_DSN)")
 	fs.StringVar(&o.out, "out", "./sim-out", "the output directory; each run writes a folder run-<time> in it with the world, sim-events.jsonl and results.json")
+	fs.StringVar(&o.farm, "farm", "smoke", "the farm profile: "+strings.Join(sim.FarmNames(), ", ")+"; smoke is the tenant demo of the scenarios, standard the four tenants of the cloud load test")
 	fs.StringVar(&o.scenario, "scenario", "", "scenarios to run, comma separated, or all ("+strings.Join(scenarioNames(), ", ")+")")
 	fs.StringVar(&o.approve, "auto-approve", "safe", "the policy of the virtual approvers for approval cards: none, safe, all or random")
 	fs.BoolVar(&o.mock, "mock", false, "answer with the built-in mock model (the default)")
@@ -253,6 +254,10 @@ func runWith(o options, stdin io.Reader, stdout, stderr io.Writer) (int, error) 
 	if err != nil {
 		return 2, err
 	}
+	farm, err := sim.LoadFarm(o.farm)
+	if err != nil {
+		return 2, err
+	}
 	var key string
 	if o.real {
 		if key, err = providerKey(o.keyFile); err != nil {
@@ -308,13 +313,18 @@ func runWith(o options, stdin io.Reader, stdout, stderr io.Writer) (int, error) 
 	}
 	log.Addf(sim.KindDirector, "botaru-sim %s: %s, money fuse %s EUR, auto-approve %s, world in %s", version.Version, mode, sim.EUR(capMicros), o.approve, work)
 	s, err := sim.Start(ctx, sim.Config{Root: root, DSN: dsn, Work: work, Exe: exe, Real: o.real, Key: key, BaseURL: o.providerURL,
-		Model: single, RankModels: ranks, Prices: models, MaxMicros: capMicros, Seed: o.seed, Step: o.step, Log: log,
+		Model: single, RankModels: ranks, Prices: models, MaxMicros: capMicros, Seed: o.seed, Step: o.step, Log: log, Farm: farm,
 		Logger: slog.New(slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: level}))})
 	if err != nil {
 		return 1, err
 	}
 	defer s.Close()
-	log.Addf(sim.KindDirector, "the stand is up: core, telegram channel, ops-reader bot, toolhosts of web1, db1 and ctd1, monitoring adapter")
+	hosts := 0
+	for _, t := range farm.Tenants {
+		hosts += len(t.Hosts)
+	}
+	log.Addf(sim.KindDirector, "the stand is up (farm %s): core; per tenant a telegram channel, the bots, the toolhosts of its machines and a monitoring adapter; %d tenants (%s), %d machines, %d workers of the bench",
+		farm.Name, len(farm.Tenants), strings.Join(farm.TenantNames(), ", "), hosts, len(s.Bench.Workers()))
 	d := &sim.Director{S: s, Approve: o.approve, Timeout: o.timeout, Seed: o.seed}
 	dctx, dcancel := context.WithCancel(ctx)
 	defer dcancel()
@@ -385,15 +395,16 @@ var faults = []struct {
 	name string
 	who  string
 	ask  string
-	do   func(w *sim.World)
+	// do breaks the home tenant's first web or db machine.
+	do func(w *sim.World, web, db string)
 }{
-	{"nginx-down", "bob", "/logs The site does not open, is it down?", func(w *sim.World) {
-		s := w.Service("web1", sim.UnitNginx)
+	{"nginx-down", "bob", "/logs The site does not open, is it down?", func(w *sim.World, web, _ string) {
+		s := w.Service(web, sim.UnitNginx)
 		s.State, s.Changed = "failed", time.Now().UTC()
 	}},
-	{"slow-site", "alice", "/logs Why is the site so slow right now?", func(w *sim.World) { w.Faults[sim.FaultSlowSite] = true }},
-	{"disk-filling", "bob", "/logs The disk on db1 is filling up, can you free some space?", func(w *sim.World) {
-		d := w.Hosts["db1"].Disks["/data"]
+	{"slow-site", "alice", "/logs Why is the site so slow right now?", func(w *sim.World, _, _ string) { w.Faults[sim.FaultSlowSite] = true }},
+	{"disk-filling", "bob", "/logs The disk on db1 is filling up, can you free some space?", func(w *sim.World, _, db string) {
+		d := w.Hosts[db].Disks["/data"]
 		d.Fill(0.10)
 		w.Faults[sim.FaultDiskFilling] = true
 	}},
@@ -445,7 +456,8 @@ func continuous(ctx context.Context, d *sim.Director, o options, stdin io.Reader
 			i := r.IntN(len(faults) + len(labAsks))
 			if i >= len(faults) {
 				a := labAsks[i-len(faults)]
-				_, _ = d.S.Say(a.who, a.who+"-dm", a.ask)
+				lab := d.S.LabTenant()
+				_, _ = d.S.Say(d.S.PersonIn(lab, a.who), d.S.PersonIn(lab, a.who+"-dm"), a.ask)
 				continue
 			}
 			f := faults[i]
@@ -473,7 +485,7 @@ func breakWorld(ctx context.Context, d *sim.Director, name string) error {
 	for _, f := range faults {
 		if f.name == name {
 			return sim.Update(d.S.Work(), func(w *sim.World) error {
-				f.do(w)
+				f.do(w, d.S.HomeHost(sim.KindWeb), d.S.HomeHost(sim.KindDB))
 				w.Note("director", "", "fault %s", name)
 				return nil
 			})
@@ -598,12 +610,25 @@ func command(ctx context.Context, d *sim.Director, line string, out io.Writer) b
 			err = werr
 			break
 		}
-		for _, h := range w.HostNames() {
-			for u, s := range w.Hosts[h].Services {
-				fmt.Fprintf(out, "%s %s %s (restarts %d)\n", h, u, s.State, s.Restarts)
+		taken, terr := d.S.TakenBy(ctx)
+		if terr != nil {
+			err = terr
+			break
+		}
+		for _, t := range d.S.Farm().Tenants {
+			fmt.Fprintf(out, "tenant %s: %d machines\n", t.Name, len(t.Hosts))
+			for _, typ := range slices.Sorted(maps.Keys(taken[t.Name])) {
+				fmt.Fprintf(out, "  %s taken by %d workers\n", typ, taken[t.Name][typ])
 			}
-			for m, dk := range w.Hosts[h].Disks {
-				fmt.Fprintf(out, "%s %s free %.1f%%\n", h, m, 100*dk.FreeRatio)
+			for _, fh := range t.Hosts {
+				h := fh.ID
+				for _, u := range slices.Sorted(maps.Keys(w.Hosts[h].Services)) {
+					s := w.Hosts[h].Services[u]
+					fmt.Fprintf(out, "  %s %s %s (restarts %d)\n", h, u, s.State, s.Restarts)
+				}
+				for _, m := range slices.Sorted(maps.Keys(w.Hosts[h].Disks)) {
+					fmt.Fprintf(out, "  %s %s free %.1f%%\n", h, m, 100*w.Hosts[h].Disks[m].FreeRatio)
+				}
 			}
 		}
 		fmt.Fprintf(out, "spend %s EUR\n", sim.EUR(d.S.Spent()))

@@ -53,7 +53,9 @@ type Config struct {
 	// Seed makes the generated logs repeatable.
 	Seed int64
 	// Step is the period of the world physics, 5 seconds by default.
-	Step   time.Duration
+	Step time.Duration
+	// Farm is the farm profile: its tenants, machines and bot workers; nil: smoke.
+	Farm   *Farm
 	Log    *Log
 	Logger *slog.Logger
 }
@@ -63,6 +65,7 @@ type Config struct {
 // the watchers that print what happens.
 type Stand struct {
 	cfg   Config
+	farm  *Farm
 	Bench *evals.Bench
 	Mon   *Monitor
 	Brain *Brain
@@ -80,8 +83,8 @@ type Stand struct {
 	chats map[string]string
 	// tripped is set when the fuse held the tenants.
 	tripped bool
-	// watched is the number of done oneshot runs the last pipeline watch saw.
-	watched int
+	// watched is the number of done oneshot runs the last pipeline watch of each tenant saw.
+	watched map[string]int
 	// insights says whether the analysis schedule of ops-reader runs.
 	insights bool
 	// insightInstruction is the instruction of ops.insight.v1 before the evolution mode
@@ -131,30 +134,39 @@ func Start(ctx context.Context, cfg Config) (_ *Stand, err error) {
 	if cfg.Logger == nil {
 		cfg.Logger = slog.New(slog.DiscardHandler)
 	}
-	s := &Stand{cfg: cfg, log: cfg.Log, Brain: &Brain{}, cardByID: map[string]*Card{}, chats: map[string]string{}, stopped: make(chan struct{})}
+	if cfg.Farm == nil {
+		if cfg.Farm, err = LoadFarm("smoke"); err != nil {
+			return nil, err
+		}
+	}
+	f := cfg.Farm
+	s := &Stand{cfg: cfg, farm: f, log: cfg.Log, Brain: &Brain{Home: f.Home().Name}, cardByID: map[string]*Card{}, chats: map[string]string{}, watched: map[string]int{},
+		stopped: make(chan struct{})}
 	if s.log == nil {
 		if s.log, err = NewLog(nil, ""); err != nil {
 			return nil, err
 		}
 	}
 	now := time.Now().UTC()
-	if err := InitFiles(cfg.Work, cfg.Seed, now); err != nil {
+	if err := InitFarmFiles(cfg.Work, f, cfg.Seed, now); err != nil {
 		return nil, fmt.Errorf("world: %w", err)
 	}
-	if s.repo, err = initRepo(cfg.Work); err != nil {
+	if s.repo, err = initRepo(cfg.Work, f.Home().Name); err != nil {
 		return nil, fmt.Errorf("the farm git: %w", err)
 	}
 	s.holdout = filepath.Join(cfg.Work, "holdout")
-	if err := writeCases(s.holdout, hiddenCases); err != nil {
+	if err := writeCases(s.holdout, casesFor(hiddenCases, f.Home().Name)); err != nil {
 		return nil, err
 	}
 	roots := map[string]string{}
-	for _, h := range []string{"web1", "db1", "ctd1"} {
-		if roots[h], err = WriteStubs(cfg.Work, h, cfg.Exe, nil); err != nil {
-			return nil, err
+	for _, t := range f.Tenants {
+		for _, h := range t.Hosts {
+			if roots[h.ID], err = WriteStubs(cfg.Work, h.ID, cfg.Exe, nil); err != nil {
+				return nil, err
+			}
 		}
 	}
-	s.Mon = &Monitor{Work: cfg.Work, HookToken: "sim-hook-" + ids.Secret(16)}
+	s.Mon = &Monitor{Work: cfg.Work, HookToken: "sim-hook-" + ids.Secret(16), Hooks: map[string]string{}}
 	s.Mon.OnPush = func(key, value string) {
 		if strings.HasPrefix(key, "botaru.alarm[") {
 			s.log.Add(KindMonitor, "alarm exported: "+value, map[string]any{"key": key})
@@ -187,9 +199,21 @@ func Start(ctx context.Context, cfg Config) (_ *Stand, err error) {
 	if err != nil {
 		return nil, err
 	}
-	m := func(p string) string { return filepath.Join(cfg.Root, "examples/tools", p, "tool.yaml") }
-	catalog := filepath.Join(cfg.Root, "examples/tenants/demo/catalog.yaml")
-	logs := func(h, f string) string { return logPath(cfg.Work, h, f) }
+	var tenants []evals.BenchTenant
+	for _, t := range f.Tenants {
+		bt := evals.BenchTenant{Name: t.Name}
+		if t.Replicas != nil {
+			bt.Agents = map[string]int{}
+			for r, n := range t.Replicas {
+				if r != "data-job" {
+					bt.Agents[r] = n
+				}
+			}
+		}
+		tenants = append(tenants, bt)
+	}
+	editSeed := func(sd *evals.Seed) { editSeed(sd); farmSeed(sd); farmSeedTenants(sd, f) }
+	var editErr error
 	bcfg := evals.BenchConfig{
 		Root: cfg.Root, DSN: cfg.DSN, WorkDir: filepath.Join(cfg.Work, "bench"), Model: model, Logger: cfg.Logger,
 		Plugin: func(kind string, args []string) ([]string, []string) {
@@ -202,48 +226,34 @@ func Start(ctx context.Context, cfg Config) (_ *Stand, err error) {
 			return append([]string{cfg.Exe, "plugin", kind}, args...), nil
 		},
 		Roles:    farmRoles,
-		EditSeed: func(sd *evals.Seed) { editSeed(sd); farmSeed(sd) },
+		Tenants:  tenants,
+		EditSeed: editSeed,
 		Skills:   skills,
 		Edit: func(ms []map[string]any) []map[string]any {
 			return editManifests(farmManifests(ms, farm, s.Insights()), cfg)
+		},
+		EditTenants: func(ms []map[string]any) []map[string]any {
+			out, err := tenantManifests(ms, f, cfg.Work)
+			if err != nil {
+				editErr = err
+				return ms
+			}
+			return out
 		},
 		Monitor: s.Mon,
 		CoreConfig: func(c *core.Config) {
 			c.Monitor = core.MonitorConfig{Enabled: true}
 		},
-		Hosts: func(e evals.HostEnv) []evals.HostPlugins {
-			return []evals.HostPlugins{
-				{Host: "web1", Plugins: map[string][]string{
-					"logs": {"-manifest", m("logs"), "-source", "nginx-access=" + logs("web1", "access.log"),
-						"-source", "nginx-error=" + logs("web1", "error.log"), "-source", "app-api=" + logs("web1", "app-api.log")},
-					"checks":  {"-manifest", m("checks"), "-results", checksPath(cfg.Work)},
-					"cmd":     {"-manifest", m("cmd"), "-host", "web1", "-spec-root", cfg.Root, "-program-root", roots["web1"]},
-					"service": {"-manifest", m("service"), "-systemctl", filepath.Join(roots["web1"], "usr/bin/systemctl")},
-				}},
-				{Host: "web1", Plugins: map[string][]string{
-					"monitor": {"-manifest", m("monitor"), "-api", e.MonitorAPI, "-api-token-file", e.MonitorTokenFile, "-catalog", catalog, "-tenant", "demo"},
-				}},
-				{Host: "db1", Plugins: map[string][]string{
-					"logs":     {"-manifest", m("logs"), "-source", "postgresql=" + logs("db1", "postgresql.log")},
-					"cmd":      {"-manifest", m("cmd"), "-host", "db1", "-spec-root", cfg.Root, "-program-root", roots["db1"]},
-					"pipeline": {"-manifest", m("pipeline"), "-queue", filepath.Join(cfg.Work, "queue", "demo")},
-					"geo":      {"-manifest", m("geo"), "-world", cfg.Work},
-					"storage":  {"-manifest", m("storage"), "-world", cfg.Work},
-					"data":     {"-manifest", m("data"), "-world", cfg.Work},
-				}},
-				{Host: "ctd1", Plugins: map[string][]string{
-					"cmd":     {"-manifest", m("cmd"), "-host", "ctd1", "-spec-root", cfg.Root, "-program-root", roots["ctd1"]},
-					"service": {"-manifest", m("service"), "-systemctl", filepath.Join(roots["ctd1"], "usr/bin/systemctl")},
-					"batch":   {"-manifest", m("batch"), "-world", cfg.Work},
-				}},
-			}
-		},
+		Hosts:       func(e evals.HostEnv) []evals.HostPlugins { return hostPlugins(cfg, f, roots, e) },
 		OnBotAPI:    s.onBotAPI,
 		OnModelCall: s.onModelCall,
 		ModelGate:   s.gate,
 		// The first apply commits the stand set to the farm git; later changes are commits of
 		// their own (SetInsights, Realize, RevertProposal).
 		Commit: func(ms []map[string]any) (string, string, []map[string]any, error) {
+			if editErr != nil {
+				return "", "", nil, editErr
+			}
 			return s.repo.writeSet(ctx, ms, "The stand set of botaru-sim")
 		},
 		PersonOperators: []string{Decider},
@@ -256,22 +266,36 @@ func Start(ctx context.Context, cfg Config) (_ *Stand, err error) {
 	if err != nil {
 		return nil, err
 	}
+	editSeed(sd)
 	for _, c := range sd.Chats {
 		s.chats[c.ExternalID] = c.Name
+	}
+	for t, c := range sd.TenantCanaries {
+		if f.Tenant(t) != nil {
+			if err := plantCanary(cfg.Work, t, c); err != nil {
+				return nil, err
+			}
+		}
 	}
 	if s.Bench, err = evals.StartBench(ctx, bcfg); err != nil {
 		s.Close()
 		return nil, fmt.Errorf("bench: %w", err)
 	}
-	if err := s.startAdapter(ctx); err != nil {
-		s.Close()
-		return nil, err
+	for _, t := range f.Tenants {
+		if err := s.startAdapter(ctx, t.Name); err != nil {
+			s.Close()
+			return nil, err
+		}
 	}
 	runCtx, cancel := context.WithCancel(context.Background())
 	s.cancel = cancel
-	if err := s.startJob(ctx, runCtx); err != nil {
-		s.Close()
-		return nil, fmt.Errorf("the data-job worker: %w", err)
+	for _, t := range f.Tenants {
+		for range t.Workers("data-job") {
+			if err := s.startJob(ctx, runCtx, t.Name); err != nil {
+				s.Close()
+				return nil, fmt.Errorf("the data-job worker of %s: %w", t.Name, err)
+			}
+		}
 	}
 	// The farm operator gives the farm manager seat to its bot (MGR-1).
 	var seat map[string]any
@@ -280,11 +304,34 @@ func Start(ctx context.Context, cfg Config) (_ *Stand, err error) {
 		return nil, fmt.Errorf("the farm manager seat: %w", err)
 	}
 	s.log.Addf(KindDirector, "the farm manager seat is %v", seat["state"])
-	for _, f := range []func(context.Context){s.physics, s.queueWorker, s.tailWorld, s.watchStore, s.fuse} {
+	for _, fn := range []func(context.Context){s.physics, s.tailWorld, s.watchStore, s.fuse} {
 		s.done.Add(1)
-		go func() { defer s.done.Done(); f(runCtx) }()
+		go func() { defer s.done.Done(); fn(runCtx) }()
+	}
+	for _, t := range f.Tenants {
+		s.done.Add(1)
+		go func() { defer s.done.Done(); s.queueWorker(runCtx, t.Name) }()
 	}
 	return s, nil
+}
+
+// Farm is the farm profile of the stand.
+func (s *Stand) Farm() *Farm { return s.farm }
+
+// Home is the home tenant: the tenant of the scenarios; demo on a stand built without a farm.
+func (s *Stand) Home() string {
+	if s.farm == nil {
+		return templateTenant
+	}
+	return s.farm.Home().Name
+}
+
+// HomeHost is the home tenant's first machine of a kind: web1, db1 and ctd1 of the scenarios.
+func (s *Stand) HomeHost(kind string) string {
+	if s.farm == nil {
+		return templateHosts[kind]
+	}
+	return s.farm.Home().First(kind)
 }
 
 // closeLater adds a closer of the stand's own listeners.
@@ -474,21 +521,26 @@ func rankModel(ranks map[int]string, rank int) string {
 	return ranks[best]
 }
 
-// startAdapter enrolls and starts the monitoring adapter botaru-zabbix with its webhook.
-func (s *Stand) startAdapter(ctx context.Context) error {
-	tok, err := s.Bench.Enroll(ctx, map[string]any{"tenant": "demo", "role": "zabbix", "kind": "monitor", "target": "zabbix"})
+// startAdapter enrolls and starts the monitoring adapter botaru-zabbix of a tenant with its
+// webhook, for the tenant's machines.
+func (s *Stand) startAdapter(ctx context.Context, tenant string) error {
+	tok, err := s.Bench.Enroll(ctx, map[string]any{"tenant": tenant, "role": "zabbix", "kind": "monitor", "target": "zabbix"})
 	if err != nil {
-		return fmt.Errorf("monitoring adapter: %w", err)
+		return fmt.Errorf("monitoring adapter of %s: %w", tenant, err)
 	}
 	api, stop, err := serve(s.Mon)
 	if err != nil {
 		return err
 	}
 	s.closeLater(stop)
+	hosts := map[string]string{}
+	for _, h := range s.farm.Tenant(tenant).Hosts {
+		hosts[h.ID+".example.org"] = h.ID
+	}
 	a := zabbix.New(zabbix.Config{
 		Core:   &p1client.Client{BaseURL: s.Bench.P1(), Token: tok, HTTP: &http.Client{Timeout: 2 * time.Minute}},
-		Tenant: "demo", Target: "zabbix", API: api + "/api_jsonrpc.php", APIToken: "sim-monitor-" + ids.Secret(8),
-		Hosts:        map[string]string{"web1.example.org": "web1", "db1.example.org": "db1", "ctd1.example.org": "ctd1"},
+		Tenant: tenant, Target: "zabbix", API: api + "/api_jsonrpc.php", APIToken: "sim-monitor-" + ids.Secret(8),
+		Hosts:        hosts,
 		WebhookToken: s.Mon.HookToken, Logger: s.cfg.Logger, MaintenanceEvery: 60 * time.Second,
 	})
 	hook, stop, err := serve(a.Webhook())
@@ -496,7 +548,7 @@ func (s *Stand) startAdapter(ctx context.Context) error {
 		return err
 	}
 	s.closeLater(stop)
-	s.Mon.Hook = hook
+	s.Mon.Hooks[tenant] = hook
 	if err := a.Hello(ctx); err != nil {
 		return fmt.Errorf("monitoring adapter hello: %w", err)
 	}
@@ -586,9 +638,9 @@ type queued struct {
 	Args map[string]any `json:"args"`
 }
 
-// queueWorker runs the requests the pipeline plugin queued and moves each to done/.
-func (s *Stand) queueWorker(ctx context.Context) {
-	dir := filepath.Join(s.cfg.Work, "queue", "demo")
+// queueWorker runs the requests the pipeline plugin of a tenant queued and moves each to done/.
+func (s *Stand) queueWorker(ctx context.Context, tenant string) {
+	dir := queueDir(s.cfg.Work, tenant)
 	doneDir := filepath.Join(dir, "done")
 	_ = os.MkdirAll(doneDir, 0o755)
 	t := time.NewTicker(time.Second)
@@ -615,15 +667,17 @@ func (s *Stand) queueWorker(ctx context.Context) {
 				_ = os.Remove(f)
 				continue
 			}
-			s.runQueued(q)
+			s.runQueued(tenant, q)
 			_ = os.Rename(f, filepath.Join(doneDir, filepath.Base(f)))
 		}
 	}
 }
 
-// runQueued plays one oneshot run in the world: cleanup_tmp frees the pipeline temporary files
-// on db1:/data older than the given days (the older the bound, the less is freed).
-func (s *Stand) runQueued(q queued) {
+// runQueued plays one oneshot run of a tenant in the world: cleanup_tmp frees the pipeline
+// temporary files on the data volume of the tenant's first db machine older than the given days
+// (the older the bound, the less is freed).
+func (s *Stand) runQueued(tenant string, q queued) {
+	db := s.farm.Tenant(tenant).First(KindDB)
 	switch q.Tool {
 	case "cleanup_tmp":
 		days := 7
@@ -632,18 +686,21 @@ func (s *Stand) runQueued(q queued) {
 		}
 		share := 1 - float64(days-3)/40 // 3 days: all, 30 days: about a third
 		_ = Update(s.cfg.Work, func(w *World) error {
-			d := w.Hosts["db1"].Disks["/data"]
+			d := w.Hosts[db].Disks["/data"]
 			freed := int64(float64(d.TmpBytes) * share)
 			d.TmpBytes -= freed
 			d.FreeRatio = min(0.99, d.FreeRatio+float64(freed)/float64(d.SizeBytes))
-			delete(w.Faults, FaultDiskFilling)
-			w.Note("queue", "db1", "oneshot pipeline-tmp-clean-demo.service (run %s): freed %.1f GB of pipeline temporary files older than %d days; /data free %.1f%%",
-				q.ID, float64(freed)/1e9, days, 100*d.FreeRatio)
+			delete(w.Faults, FaultDiskFilling+":"+db)
+			if tenant == w.Home {
+				delete(w.Faults, FaultDiskFilling)
+			}
+			w.Note("queue", db, "oneshot pipeline-tmp-clean-%s.service (run %s): freed %.1f GB of pipeline temporary files older than %d days; /data free %.1f%%",
+				tenant, q.ID, float64(freed)/1e9, days, 100*d.FreeRatio)
 			return nil
 		})
 	default:
 		_ = Update(s.cfg.Work, func(w *World) error {
-			w.Note("queue", "", "oneshot run %s of %s: accepted, nothing to change in the world", q.ID, q.Tool)
+			w.Note("queue", "", "oneshot run %s of %s in %s: accepted, nothing to change in the world", q.ID, q.Tool, tenant)
 			return nil
 		})
 	}
@@ -750,12 +807,12 @@ func (s *Stand) watchStore(ctx context.Context) {
 			}
 			rows.Close()
 		}
-		rows, err = pool.Query(ctx, `SELECT id, type, state, coalesce(reason, ''), coalesce(result->>'answer', '') FROM tasks
-			WHERE tenant = 'demo' AND updated_at > now() - interval '1 hour' ORDER BY created_at`)
+		rows, err = pool.Query(ctx, `SELECT id, tenant, type, state, coalesce(reason, ''), coalesce(result->>'answer', '') FROM tasks
+			WHERE tenant = ANY($1) AND updated_at > now() - interval '1 hour' ORDER BY created_at`, s.TenantNames())
 		if err == nil {
 			for rows.Next() {
-				var id, typ, state, reason, answer string
-				if rows.Scan(&id, &typ, &state, &reason, &answer) != nil {
+				var id, tenant, typ, state, reason, answer string
+				if rows.Scan(&id, &tenant, &typ, &state, &reason, &answer) != nil {
 					continue
 				}
 				if seen["t:"+id] == state {
@@ -763,6 +820,9 @@ func (s *Stand) watchStore(ctx context.Context) {
 				}
 				seen["t:"+id] = state
 				msg := fmt.Sprintf("task %s %s: %s", id, typ, state)
+				if tenant != s.Home() {
+					msg = tenant + ": " + msg
+				}
 				if reason != "" {
 					msg += " (" + reason + ")"
 				}
@@ -770,7 +830,7 @@ func (s *Stand) watchStore(ctx context.Context) {
 				if answer != "" {
 					msg += "\nresult: " + clip(answer, 600)
 				}
-				s.log.Add(KindDirector, msg, map[string]any{"task": id, "type": typ, "state": state, "reason": reason})
+				s.log.Add(KindDirector, msg, map[string]any{"task": id, "tenant": tenant, "type": typ, "state": state, "reason": reason})
 			}
 			rows.Close()
 		}
@@ -896,15 +956,16 @@ func (s *Stand) Insights() bool {
 	return s.insights
 }
 
-// SetInsights starts or pauses the analysis schedule of ops-reader: the change of its paused
-// field is a commit of the farm git, applied. A schedule already in that state is left alone.
+// SetInsights starts or pauses the analysis schedule of ops-reader in the home tenant: the change
+// of its paused field is a commit of the farm git, applied; the schedules of the other tenants
+// stay as the first apply set them. A schedule already in that state is left alone.
 // On start the stand plays the merge window of the analyses forward (INS-4: no scheduled
 // analysis within an hour of the last one), since a run of the stand plays weeks in minutes:
 // the analyses of the last hour are dated back by that hour.
 func (s *Stand) SetInsights(ctx context.Context, on bool) error {
 	if on {
 		if _, err := s.Bench.Store().Pool.Exec(ctx, `UPDATE tasks SET created_at = created_at - interval '61 minutes'
-			WHERE tenant = 'demo' AND type = 'ops.insight.v1' AND created_at > now() - interval '61 minutes'`); err != nil {
+			WHERE tenant = $1 AND type = 'ops.insight.v1' AND created_at > now() - interval '61 minutes'`, s.Home()); err != nil {
 			return err
 		}
 	}
@@ -912,7 +973,7 @@ func (s *Stand) SetInsights(ctx context.Context, on bool) error {
 	if on {
 		msg = "Resume the analysis schedule of ops-reader"
 	}
-	commit, err := s.repo.setField(ctx, "Schedule", "demo", "ops-insight", "spec.paused", !on, msg)
+	commit, err := s.repo.setField(ctx, "Schedule", s.Home(), "ops-insight", "spec.paused", !on, msg)
 	if err != nil {
 		return err
 	}

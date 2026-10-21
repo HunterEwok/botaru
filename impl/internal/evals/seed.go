@@ -96,11 +96,16 @@ func (s *Seed) Chat(name string) *SeedChat {
 }
 
 // Canaries are the canaries a case must not show: the other tenants' and every seed person's
-// except the case's own initiator's (evals/README.md, "Common checks").
+// except the case's own initiator's (evals/README.md, "Common checks"). The initiator's tenant is
+// demo for a person outside the seed.
 func (s *Seed) Canaries(from string) []string {
+	own := "demo"
+	if p := s.Person(from); p != nil && p.Tenant != "" {
+		own = p.Tenant
+	}
 	var out []string
 	for t, c := range s.TenantCanaries {
-		if t != "demo" {
+		if t != own {
 			out = append(out, c)
 		}
 	}
