@@ -308,7 +308,11 @@ func TestQueue(t *testing.T) {
 	// A campaign item's number is the campaign's id and the item (APR-7).
 	cdir := t.TempDir()
 	cq := &Queue{Dir: cdir}
-	r, err := cq.Call(context.Background(), "clean_tmp", nil, &mcp.Meta{WorkID: "cmp_01JB0000000000000000000000:2"})
+	var r *mcp.CallResult
+	var err error
+	for range 2 {
+		r, err = cq.Call(context.Background(), "clean_tmp", nil, &mcp.Meta{WorkID: "cmp_01JB0000000000000000000000:2"})
+	}
 	ents, _ = os.ReadDir(cdir)
 	if err != nil || r.StructuredContent["run"] != "cmp_01JB0000000000000000000000:2" || len(ents) != 1 || ents[0].Name() != "cmp_01JB0000000000000000000000-2.json" {
 		t.Fatalf("campaign item: %+v %v %v", r, err, ents)
