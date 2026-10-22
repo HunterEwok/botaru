@@ -554,7 +554,8 @@ func playFarmFaults(ctx context.Context, d *Director, sc string, part faultPart)
 		if err != nil {
 			return err
 		}
-		state, reason, _, err = d.taskEnd(ctx, key)
+		// The task may retry through the whole fault, so the wait spans it too.
+		state, reason, _, err = d.taskEndWithin(ctx, key, providerFaultFor+d.Timeout)
 		if err != nil {
 			return err
 		}
