@@ -238,8 +238,9 @@ func (s *Stand) takeSample(ctx context.Context, prev cpuTimes) (procSample, cpuT
 	sm := procSample{At: now.at, RSSMB: rssMB(), HeapMB: float64(ms.HeapAlloc) / (1 << 20), Goroutines: runtime.NumGoroutine()}
 	sm.ProcCPU, sm.HostCPU = load(prev, now)
 	pool := s.Bench.Store().Pool
-	st := pool.Stat()
-	sm.PoolConns, sm.PoolMax = st.TotalConns(), st.MaxConns()
+	// The core's pools: the main one and Reads, the catalog check's own.
+	st, rd := pool.Stat(), s.Bench.Store().Reads.Stat()
+	sm.PoolConns, sm.PoolMax = st.TotalConns()+rd.TotalConns(), st.MaxConns()+rd.MaxConns()
 	_ = pool.QueryRow(ctx, `SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND backend_type = 'client backend'`).Scan(&sm.DBConns)
 	return sm, now
 }

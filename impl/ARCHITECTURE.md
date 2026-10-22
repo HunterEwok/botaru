@@ -32,6 +32,11 @@ The C1 store is PostgreSQL 16 or later through pgx. The store clock is `botaru_n
 bench offset), so every deadline is counted by one clock (TIM-1). All core state is in the store per transaction, so a
 core copy holds nothing that a restart would lose.
 
+The core opens two pools on the store: the main one (pgx's default size, max(4, NumCPU)) and `Reads`, two connections
+for the catalog check. Most callers of `Catalog` hold a transaction of the main pool; were the check read from it, a
+burst of such callers would hold every main connection and wait for one more until their requests time out. Code that
+holds a `Reads` connection never waits on the main pool, so the two cannot wait on each other.
+
 ### The skeleton at run time
 
 The skeleton is read at run time from a checkout (`spec_root`, or the folder the program runs in), not copied into the
