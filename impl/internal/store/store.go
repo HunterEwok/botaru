@@ -28,6 +28,11 @@ var migrations embed.FS
 // Store is the open farm store.
 type Store struct {
 	Pool *pgxpool.Pool
+	// Reads is a small pool of its own for the short plain (non-locking) SELECTs the core makes
+	// while a transaction of Pool may be open, such as the catalog check: taken from Pool, such
+	// a read waits for a free connection that the waiting transactions hold, and the core
+	// stalls until their requests time out. Code holding a Reads connection never waits on Pool.
+	Reads *pgxpool.Pool
 	// faults are the store faults a test bench injects (fault.go).
 	faults faults
 }
@@ -43,11 +48,24 @@ func Open(ctx context.Context, dsn string) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("store: %w", err)
 	}
-	return &Store{Pool: pool}, nil
+	rcfg := cfg.Copy()
+	rcfg.MaxConns, rcfg.MinConns = readConns, 0
+	reads, err := pgxpool.NewWithConfig(ctx, rcfg)
+	if err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("store: %w", err)
+	}
+	return &Store{Pool: pool, Reads: reads}, nil
 }
 
-// Close closes the pool.
-func (s *Store) Close() { s.Pool.Close() }
+// readConns is the size of the Reads pool.
+const readConns = 2
+
+// Close closes the pools.
+func (s *Store) Close() {
+	s.Pool.Close()
+	s.Reads.Close()
+}
 
 // Ping reports whether the store answers.
 func (s *Store) Ping(ctx context.Context) error {

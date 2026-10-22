@@ -229,16 +229,18 @@ func loadManifests(ctx context.Context, q store.Querier) ([]manifest.Doc, string
 }
 
 // Catalog returns the current catalog, reloading it if another core copy applied a new set.
+// It reads through the Reads pool: most callers hold a transaction of the main pool, and once
+// they hold all of its connections, a read from it here would wait until their requests time out.
 func (c *Core) Catalog(ctx context.Context) (*Catalog, error) {
 	var setHash string
-	err := c.st.Pool.QueryRow(ctx, `SELECT coalesce((SELECT set_hash FROM apply_status WHERE id = 1), '')`).Scan(&setHash)
+	err := c.st.Reads.QueryRow(ctx, `SELECT coalesce((SELECT set_hash FROM apply_status WHERE id = 1), '')`).Scan(&setHash)
 	if err != nil {
 		return nil, err
 	}
 	if cur := c.cat.get(); cur != nil && cur.SetHash == setHash {
 		return cur, nil
 	}
-	docs, h, err := loadManifests(ctx, c.st.Pool)
+	docs, h, err := loadManifests(ctx, c.st.Reads)
 	if err != nil {
 		return nil, err
 	}
