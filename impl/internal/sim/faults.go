@@ -506,6 +506,21 @@ func (s *Stand) HealFarm() {
 // farmFaults plays the farm faults one after another in the home tenant on a person's question
 // that reads logs (a plugin tool) and asks the model, and checks each one's expected outcome.
 func farmFaults(ctx context.Context, d *Director, sc string) error {
+	return playFarmFaults(ctx, d, sc, faultsCalls|faultsCore)
+}
+
+// faultPart is a part of the farm faults: the tests play the parts beside each other on stands
+// of their own.
+type faultPart int
+
+const (
+	// faultsCalls are the faults of a call: F-3, F-4 and F-2.
+	faultsCalls faultPart = 1 << iota
+	// faultsCore are the faults of the core and its services: F-1 with F-5, F-6, F-7 and F-8.
+	faultsCore
+)
+
+func playFarmFaults(ctx context.Context, d *Director, sc string, part faultPart) error {
 	s := d.S
 	home := s.Home()
 	defer s.HealFarm()
@@ -527,79 +542,88 @@ func farmFaults(ctx context.Context, d *Director, sc string) error {
 		return
 	}
 
-	// F-3: errors of the provider on the next model calls and a share of the others.
-	errs0, delayed0 := s.front.counts()
-	if _, err := s.InjectFault(ctx, "F-3", home); err != nil {
-		return err
-	}
-	key, err := ask()
-	if err != nil {
-		return err
-	}
-	state, reason, _, err := d.taskEnd(ctx, key)
-	if err != nil {
-		return err
-	}
-	errs, _ := s.front.counts()
-	for c := range errs {
-		errs[c] -= errs0[c]
-	}
-	var provReason string
-	_ = s.Bench.Store().Pool.QueryRow(ctx, `SELECT coalesce(record->>'provider_reason', '') FROM tasks WHERE tenant = $1 AND idempotency_key = $2`, home, key).Scan(&provReason)
-	// The task itself met the fault (its last provider reason is kept); the run cap may end a
-	// task of several calls while the fault lasts (expected), and a provider failure never ends
-	// it any other way.
-	d.check(sc, "provider_errors_survived", errs[500]+errs[529]+errs[429] > 0 && provReason != "" &&
-		(state == "completed" || state == "failed" && reason == "runs_exhausted"),
-		"state %s %s (last provider reason %q); answered by the front: 500 %d, 529 %d, 429 %d; attempts %d", state, reason, provReason, errs[500], errs[529], errs[429], attempts(key))
-	s.HealFarm()
-	if key, err = ask(); err != nil {
-		return err
-	}
-	state, reason, _, err = d.taskEnd(ctx, key)
-	if err != nil {
-		return err
-	}
-	d.check(sc, "provider_errors_recovered", state == "completed", "after the fault: state %s %s", state, reason)
+	var key, state, reason string
+	var err error
+	if part&faultsCalls != 0 {
+		// F-3: errors of the provider on the next model calls and a share of the others.
+		errs0, delayed0 := s.front.counts()
+		if _, err := s.InjectFault(ctx, "F-3", home); err != nil {
+			return err
+		}
+		key, err = ask()
+		if err != nil {
+			return err
+		}
+		// The task may retry through the whole fault, so the wait spans it too.
+		state, reason, _, err = d.taskEndWithin(ctx, key, providerFaultFor+d.Timeout)
+		if err != nil {
+			return err
+		}
+		errs, _ := s.front.counts()
+		for c := range errs {
+			errs[c] -= errs0[c]
+		}
+		var provReason string
+		_ = s.Bench.Store().Pool.QueryRow(ctx, `SELECT coalesce(record->>'provider_reason', '') FROM tasks WHERE tenant = $1 AND idempotency_key = $2`, home, key).Scan(&provReason)
+		// The task itself met the fault (its last provider reason is kept); the run cap may end a
+		// task of several calls while the fault lasts (expected), and a provider failure never ends
+		// it any other way.
+		d.check(sc, "provider_errors_survived", errs[500]+errs[529]+errs[429] > 0 && provReason != "" &&
+			(state == "completed" || state == "failed" && reason == "runs_exhausted"),
+			"state %s %s (last provider reason %q); answered by the front: 500 %d, 529 %d, 429 %d; attempts %d", state, reason, provReason, errs[500], errs[529], errs[429], attempts(key))
+		s.HealFarm()
+		if key, err = ask(); err != nil {
+			return err
+		}
+		state, reason, _, err = d.taskEnd(ctx, key)
+		if err != nil {
+			return err
+		}
+		d.check(sc, "provider_errors_recovered", state == "completed", "after the fault: state %s %s", state, reason)
 
-	// F-4: a slow provider.
-	if _, err := s.InjectFault(ctx, "F-4", home); err != nil {
-		return err
-	}
-	start := time.Now()
-	if key, err = ask(); err != nil {
-		return err
-	}
-	// Each model call of the task waits providerDelay, so the task takes minutes.
-	state, reason, _, err = d.taskEndWithin(ctx, key, max(d.Timeout, 4*time.Minute))
-	if err != nil {
-		return err
-	}
-	_, delayed := s.front.counts()
-	delayed -= delayed0
-	took := time.Since(start)
-	d.check(sc, "provider_slow_survived", state == "completed" && delayed > 0 && took >= providerDelay,
-		"state %s %s; %d calls delayed; the task took %s", state, reason, delayed, took.Round(time.Second))
-	s.HealFarm()
+		// F-4: a slow provider.
+		if _, err := s.InjectFault(ctx, "F-4", home); err != nil {
+			return err
+		}
+		start := time.Now()
+		if key, err = ask(); err != nil {
+			return err
+		}
+		// Each model call of the task waits providerDelay, so the task takes minutes.
+		state, reason, _, err = d.taskEndWithin(ctx, key, max(d.Timeout, 4*time.Minute))
+		if err != nil {
+			return err
+		}
+		_, delayed := s.front.counts()
+		delayed -= delayed0
+		took := time.Since(start)
+		d.check(sc, "provider_slow_survived", state == "completed" && delayed > 0 && took >= providerDelay,
+			"state %s %s; %d calls delayed; the task took %s", state, reason, delayed, took.Round(time.Second))
+		s.HealFarm()
 
-	// F-2: the plugin process dies in its call.
-	if _, err := s.InjectFault(ctx, "F-2", home); err != nil {
-		return err
-	}
-	if key, err = ask(); err != nil {
-		return err
-	}
-	state, reason, _, err = d.taskEnd(ctx, key)
-	if err != nil {
-		return err
-	}
-	_, markErr := os.Stat(crashFile(s.cfg.Work))
-	var failed int
-	_ = s.Bench.Store().Pool.QueryRow(ctx, `SELECT count(*) FROM toolcalls c JOIN tasks t ON t.id = c.task
+		// F-2: the plugin process dies in its call.
+		if _, err := s.InjectFault(ctx, "F-2", home); err != nil {
+			return err
+		}
+		if key, err = ask(); err != nil {
+			return err
+		}
+		state, reason, _, err = d.taskEnd(ctx, key)
+		if err != nil {
+			return err
+		}
+		_, markErr := os.Stat(crashFile(s.cfg.Work))
+		var failed int
+		_ = s.Bench.Store().Pool.QueryRow(ctx, `SELECT count(*) FROM toolcalls c JOIN tasks t ON t.id = c.task
 		WHERE t.tenant = $1 AND t.idempotency_key = $2 AND c.state IN ('error', 'exec_unknown', 'abandoned')`, home, key).Scan(&failed)
-	d.check(sc, "plugin_killed_survived", state == "completed" && os.IsNotExist(markErr) && failed > 0,
-		"state %s %s; the mark taken %v; tool calls failed %d", state, reason, os.IsNotExist(markErr), failed)
-	s.HealFarm()
+		d.check(sc, "plugin_killed_survived", state == "completed" && os.IsNotExist(markErr) && failed > 0,
+			"state %s %s; the mark taken %v; tool calls failed %d", state, reason, os.IsNotExist(markErr), failed)
+		s.HealFarm()
+
+	}
+	if part&faultsCore == 0 {
+		return nil
+	}
 
 	// F-1, with F-5 on meanwhile: a replica goes silent holding the lease of a slow call, and
 	// the monitoring API is away for two minutes.
