@@ -24,12 +24,20 @@ spec:
           stats:
             type: object
             additionalProperties: false
-            required: [records, depth_max_m, flagged_records]
+            # Every number data.describe.v1 asks the model to copy; missing_pct is the share of
+            # records with an empty value, apart from the flagged records.
+            required: [records, depth_min_m, depth_max_m, flagged_records, missing_pct]
             x-botaru-read-by: code
             properties:
               records: {type: integer, minimum: 0, maximum: 10000000}
+              depth_min_m: {type: number, minimum: 0, maximum: 12000}
               depth_max_m: {type: number, minimum: 0, maximum: 12000}
+              temp_min_c: {type: number, minimum: -3, maximum: 45}
+              temp_max_c: {type: number, minimum: -3, maximum: 45}
+              salinity_min: {type: number, minimum: 0, maximum: 45}
+              salinity_max: {type: number, minimum: 0, maximum: 45}
               flagged_records: {type: integer, minimum: 0, maximum: 10000000}
+              missing_pct: {type: number, minimum: 0, maximum: 100}
           header: {type: string, maxLength: 4000}
       output_limit_kb: 16
       timeout_s: 60

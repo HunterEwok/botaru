@@ -205,7 +205,7 @@ Everything the bots' tools read or change lives under `<out>/run-<time>/world/`:
 | `checks/<web>/checks.json` | the results of the HTTP checks of a tenant's first web machine, written as an external checker would |
 | `queue/<tenant>/` | the oneshot run requests of the `pipeline` plugin; done ones move to `done/` |
 | `root/<host>/usr/bin/` | the stubs of `systemctl`, `df` and `journalctl` |
-| `data/<tenant>/ctd-<station>.csv`, `data/<tenant>/geo/` | CTD profiles of the five stations, and the descriptions of the raster `bathy-50m` and the layer `map-areas`; the plugin `data` reads a profile by its file name, but this core passes a task no attachments yet, so `data/describe` has no file to offer |
+| `data/<tenant>/ctd-<station>.csv`, `data/<tenant>/geo/` | CTD profiles of the five stations, and the descriptions of the raster `bathy-50m` and the layer `map-areas`; the plugin `data` reads a profile by its file name and gives every number `data.describe.v1` asks for (the records, the ranges of depth, temperature and salinity, the flagged records and the share of records with a gap), but this core passes a task no attachments yet, so `data/describe` has no file to offer |
 | `batch/<tenant>/runs.json` | the pipeline runs of the tenant's ctd machine: `run-2026-08` done, `run-2026-09` failed at the QC of station `st-05` |
 
 `world.json` is changed only under a file lock (`world.lock`) and replaced by a rename, since the stubs run as

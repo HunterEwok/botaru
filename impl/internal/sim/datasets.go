@@ -229,7 +229,8 @@ func (d *dataPlugin) describeFile(file string) (*mcp.CallResult, error) {
 	return describePath(filepath.Join(dataDir(d.work, d.tenant), file))
 }
 
-// describePath counts the records of the CTD file at path.
+// describePath counts the records of the CTD file at path and the ranges of its depth,
+// temperature and salinity.
 func describePath(path string) (*mcp.CallResult, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -248,21 +249,48 @@ func describePath(path string) (*mcp.CallResult, error) {
 	if err != nil || len(recs) == 0 {
 		return nil, errors.New("not a CTD file")
 	}
-	n, flagged, maxDepth := 0, 0, 0.0
+	// The columns are time, depth_m, temperature_c, salinity_psu and flag; a record with an
+	// empty value counts as missing, a flag other than 0 as flagged.
+	n, flagged, missing := 0, 0, 0
+	bounds := [][2]float64{{0, 12000}, {-3, 45}, {0, 45}}
+	lo := []float64{math.Inf(1), math.Inf(1), math.Inf(1)}
+	hi := []float64{math.Inf(-1), math.Inf(-1), math.Inf(-1)}
 	for _, r := range recs[1:] {
 		if len(r) < 5 {
 			continue
 		}
 		n++
-		if v, err := strconv.ParseFloat(r[1], 64); err == nil {
-			maxDepth = math.Max(maxDepth, v)
+		gap := false
+		for c := range 3 {
+			// A value outside the bounds of the tool's output schema is a gap too, such as a
+			// placeholder like -99.
+			v, err := strconv.ParseFloat(strings.TrimSpace(r[1+c]), 64)
+			if err != nil || v < bounds[c][0] || v > bounds[c][1] {
+				gap = true
+				continue
+			}
+			lo[c], hi[c] = math.Min(lo[c], v), math.Max(hi[c], v)
+		}
+		if gap {
+			missing++
 		}
 		if r[4] != "0" {
 			flagged++
 		}
 	}
-	out := map[string]any{"stats": map[string]any{"records": n, "depth_max_m": math.Round(maxDepth*100) / 100, "flagged_records": flagged},
-		"header": strings.Join(header, "\n")}
+	round := func(v float64) float64 { return math.Round(v*100) / 100 }
+	stats := map[string]any{"records": n, "flagged_records": flagged, "missing_pct": 0.0}
+	if n > 0 {
+		stats["missing_pct"] = math.Round(float64(missing)/float64(n)*1000) / 10
+	}
+	// The depth range is required: a file without a depth reads 0 to 0.
+	stats["depth_min_m"], stats["depth_max_m"] = 0.0, 0.0
+	for c, names := range [][2]string{{"depth_min_m", "depth_max_m"}, {"temp_min_c", "temp_max_c"}, {"salinity_min", "salinity_max"}} {
+		if lo[c] <= hi[c] {
+			stats[names[0]], stats[names[1]] = round(lo[c]), round(hi[c])
+		}
+	}
+	out := map[string]any{"stats": stats, "header": strings.Join(header, "\n")}
 	text, _ := json.Marshal(out)
 	return &mcp.CallResult{Content: []mcp.Content{{Type: "text", Text: string(text)}}, StructuredContent: out}, nil
 }
