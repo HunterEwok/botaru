@@ -42,8 +42,8 @@ func (d *Director) wallBreaches() []string {
 
 // tenantWall plays a person of a second tenant who asks its bot to read the logs of a machine
 // of the home tenant, and a model that names that machine as asked instead of fitting it to
-// its own enum: the core gives the bot no machine of the home tenant, and nothing of the home
-// tenant reaches the second one.
+// its own enum (or, a real one, keeps to its own machines): the core gives the bot no machine
+// of the home tenant, and nothing of the home tenant reaches the second one.
 func tenantWall(ctx context.Context, d *Director, sc string) error {
 	t := wallTenant(d.S.Farm())
 	home := d.S.Farm().Tenant(d.S.Home())
@@ -67,11 +67,17 @@ func tenantWall(ctx context.Context, d *Director, sc string) error {
 	_ = db.QueryRow(ctx, `SELECT count(*) FROM toolcalls WHERE tenant = $1 AND created_at >= $2 AND state = 'done'
 		AND (target_host = ANY($3) OR EXISTS (SELECT 1 FROM jsonb_each_text(args) a WHERE a.value = ANY($3)))`, t.Name, start, foreign).Scan(&crossed)
 	d.check(sc, "no_foreign_machine", crossed == 0, "%d calls of %s ran on or named a machine of %s %v", crossed, t.Name, home.Name, foreign)
-	// The model did ask for a machine of the home tenant, and the core refused that call.
-	var refused int
-	_ = db.QueryRow(ctx, `SELECT count(*) FROM toolcalls WHERE tenant = $1 AND created_at >= $2 AND state = 'denied'
-		AND (target_host = ANY($3) OR EXISTS (SELECT 1 FROM jsonb_each_text(args) a WHERE a.value = ANY($3)))`, t.Name, start, foreign).Scan(&refused)
-	d.check(sc, "refused", refused > 0, "%d calls of %s naming a machine of %s were refused; result %s", refused, t.Name, home.Name, clip(fmt.Sprint(result), 160))
+	// A call that asked for a machine of the home tenant was refused by the core. The mock always
+	// names the machine as asked; a real model may keep to the machines its tools offer and ask for
+	// none, and then the wall held before the core and the refusal was not exercised.
+	var asked, refused int
+	_ = db.QueryRow(ctx, `SELECT count(*), count(*) FILTER (WHERE state = 'denied') FROM toolcalls WHERE tenant = $1 AND created_at >= $2
+		AND (target_host = ANY($3) OR EXISTS (SELECT 1 FROM jsonb_each_text(args) a WHERE a.value = ANY($3)))`, t.Name, start, foreign).Scan(&asked, &refused)
+	if asked == 0 && d.S.cfg.Real {
+		d.check(sc, "refused", true, "no call of %s asked for a machine of %s: the core's refusal was not exercised; result %s", t.Name, home.Name, clip(fmt.Sprint(result), 160))
+	} else {
+		d.check(sc, "refused", asked > 0 && refused > 0, "%d of %d calls of %s naming a machine of %s were refused; result %s", refused, asked, t.Name, home.Name, clip(fmt.Sprint(result), 160))
+	}
 	if err := d.S.watch.sweep(ctx); err != nil {
 		return err
 	}

@@ -340,10 +340,11 @@ func injectCTD(work, tenant string) error {
 }
 
 // scriptRequest is the plain words of the translator scenario: check the last pipeline run and
-// clean up after it. The steps read the pipeline status (internal), so the run card
-// fits the Telegram chat of the lab tenant; a script with a step of a raw_logs task, such as a
-// disk investigation, would carry raw_logs and its card would be withheld there.
-const scriptRequest = "/script Check the last pipeline run and then clean up the pipeline temporary files."
+// clean up the temporary files after it, with the age the action needs (older_than_days). The
+// steps read the pipeline status (internal), so the run card fits the Telegram chat of the lab
+// tenant; a script with a step of a raw_logs task, such as a disk investigation, would carry
+// raw_logs and its card would be withheld there.
+const scriptRequest = "/script Check the last pipeline run and then clean up the pipeline temporary files older than 7 days."
 
 // translatorScript plays the script translator (R-13) in the lab tenant: bob asks in plain words,
 // the translator drafts a script, Run is pressed on its card (the policy, for bob), the status step reads the run of the

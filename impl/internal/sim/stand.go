@@ -518,7 +518,7 @@ func widenBudgets(ms []map[string]any) {
 	var seat map[string]any
 	reviews := 1.0 // how much the tree budgets of the review types rose
 	rise := 1.0    // how much the tree budgets of any type rose
-	manage := 0.0  // the largest tree budget of the manager's types
+	manage := 0.0  // the largest tree budget of the manager's types and its readings
 	for _, m := range ms {
 		switch m["kind"] {
 		case "TaskType":
@@ -533,7 +533,7 @@ func widenBudgets(ms []map[string]any) {
 					reviews = max(reviews, w/cur)
 				}
 			}
-			if purpose[name] == "manage" {
+			if purpose[name] == "manage" || purpose[name] == "inspect" {
 				manage = max(manage, num(sp["tree_budget_eur"]))
 			}
 		case "Governance":

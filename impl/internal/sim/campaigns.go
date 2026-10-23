@@ -128,7 +128,7 @@ func campaignActionCanary(ctx context.Context, d *Director, sc string) error {
 	t := campaignTenant(d.S.Farm())
 	bob, dm := d.S.PersonIn(t.Name, "bob"), d.S.PersonIn(t.Name, "bob-dm")
 	dbs := hostsOf(t, KindDB)
-	key, err := d.S.Say(bob, dm, "/rollout Clean up the pipeline temporary files on the database machines.")
+	key, err := d.S.Say(bob, dm, "/rollout Clean up the pipeline temporary files older than 7 days on the database machines.")
 	if err != nil {
 		return err
 	}
