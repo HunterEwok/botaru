@@ -11,9 +11,10 @@ import (
 
 // coreResultSchema is the result schema of a task type that declares none because the core
 // checks the result against its own: the analysis envelope insight-result (INS-1), the
-// review-result of a lens review or the necessity output (COM-13, COM-15). It goes into the
-// claim payload like a declared result_schema, so that the runtime can ask the model for a
-// matching answer; nil for any other type.
+// review-result of a lens review or the necessity output (COM-13, COM-15), the findings of a
+// reading for the farm manager (MGR-25). It goes into the claim payload like a declared
+// result_schema, so that the runtime can ask the model for a matching answer; nil for any other
+// type.
 func (c *Core) coreResultSchema(tt manifest.TaskType, record map[string]any) map[string]any {
 	switch tt.Purpose {
 	case "insight", "aggregate":
@@ -28,8 +29,34 @@ func (c *Core) coreResultSchema(tt manifest.TaskType, record map[string]any) map
 			return nil
 		}
 		return c.inlineSchema(reviewResultSchema(record))
+	case "inspect":
+		return c.findingsSchema()
 	}
 	return nil
+}
+
+// findingsSchema is the result a reading hands in, as takeFindings checks it: {findings: [...]}
+// with at most 10 findings manager-finding/v1, whose numbers are named from the closed list.
+func (c *Core) findingsSchema() map[string]any {
+	f := c.inlineSchema("urn:botaru:schema:manager-finding:1")
+	if f == nil {
+		return nil
+	}
+	if v, ok := f["properties"].(map[string]any)["values"].(map[string]any); ok {
+		names := make([]any, len(findingValueNames))
+		for i, n := range findingValueNames {
+			names[i] = n
+		}
+		v["propertyNames"] = map[string]any{"enum": names}
+	}
+	return map[string]any{
+		"type":                 "object",
+		"additionalProperties": false,
+		"required":             []any{"findings"},
+		"properties": map[string]any{
+			"findings": map[string]any{"type": "array", "maxItems": maxFindings, "items": f},
+		},
+	}
 }
 
 // fullResultSchema is the full result schema of a claim payload for the runtime: the payload's

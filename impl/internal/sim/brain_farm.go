@@ -220,10 +220,8 @@ var reInspectTask = regexp.MustCompile(`(?i)hand in findings`)
 
 // inspectAnswer hands in one finding manager-finding/v1 on the subject of the incident in the
 // input block, the type of what it saw, without evidence ids, since the mock reads nothing
-// (MGR-25). The subject of a disk incident is a machine (resource db1), which the core does not
-// take as an object of the tenant, and its volume (db1:/data) does not fit the id pattern, so
-// a resource subject, like a kind a finding cannot name, becomes the task type of
-// investigations.
+// (MGR-25). The subject of a disk incident is a machine of the catalog (resource db1); a kind a
+// finding cannot name becomes the task type of investigations.
 func inspectAnswer(goal string) string {
 	subject := map[string]any{"kind": "tasktype", "id": "ops.investigate.v1"}
 	kind := "none"
@@ -232,7 +230,7 @@ func inspectAnswer(goal string) string {
 		if in == nil {
 			continue
 		}
-		if s := mapOf(in["subject"]); s != nil && slices.Contains([]string{"worker", "task", "role", "tasktype", "schedule"}, fmt.Sprint(s["kind"])) {
+		if s := mapOf(in["subject"]); s != nil && slices.Contains([]string{"worker", "task", "resource", "role", "tasktype", "schedule"}, fmt.Sprint(s["kind"])) {
 			subject = map[string]any{"kind": s["kind"], "id": s["id"]}
 		}
 		if strings.Contains(fmt.Sprint(in["class"]), "disk") {

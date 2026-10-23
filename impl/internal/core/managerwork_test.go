@@ -264,7 +264,8 @@ func TestManagerDaily(t *testing.T) {
 func TestManagerReading(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	b := newManagerWorkBench(t)
+	// With the catalog of demo, whose machine db1 is the subject of the disk incident.
+	b := newManagerBenchWith(t, append(slices.Clone(managerWorkFiles), "examples/tenants/demo/catalog.yaml"), []map[string]any{directors}, workEdit)
 	bob := b.withApprovers(t)
 	w := b.enroll(t, EnrollRequest{Tenant: "demo", Kind: "agent", Role: "farm-manager"})
 	reader := b.enroll(t, EnrollRequest{Tenant: "demo", Kind: "agent", Role: "farm-manager-reader"})
@@ -321,12 +322,25 @@ func TestManagerReading(t *testing.T) {
 		t.Fatalf("a second reading %v", out)
 	}
 	ritem = read()
-	if _, err := b.c.Complete(ctx, reader, header(t, ritem), CompleteRequest{Result: map[string]any{"findings": []any{finding("db1")}}}); err != nil {
+	// The reading is told the form of its findings, as the core checks them.
+	if rs := asMap(ritem.Payload["result_schema"]); !slices.Equal(mstrs(rs, "required"), []string{"findings"}) || ritem.Payload["full_result_schema"] == nil {
+		t.Fatalf("the reading's result schema %v", ritem.Payload["result_schema"])
+	}
+	// A machine of the catalog, the subject of the disk incident, is a resource of the tenant.
+	disk := map[string]any{"kind": "disk_growth", "subject": map[string]any{"kind": "resource", "id": "db1"},
+		"evidence": []any{"db1"}, "values": map[string]any{"free_pct": 3}, "confidence": "medium"}
+	if _, err := b.c.Complete(ctx, reader, header(t, ritem), CompleteRequest{Result: map[string]any{"findings": []any{finding("db1"), disk}}}); err != nil {
 		t.Fatal(err)
 	}
 	out = seatCall(t, b, handle, inspectToolName, map[string]any{"op": "findings", "inspect": inspect})
-	list, _ := out["findings"].([]any)
-	if out["code"] != "ok" || len(list) != 1 {
+	all, _ := out["findings"].([]any)
+	var list []any
+	for _, v := range all {
+		if asMap(v)["kind"] == "worker_misbehaving" {
+			list = append(list, v)
+		}
+	}
+	if out["code"] != "ok" || len(all) != 2 || len(list) != 1 {
 		t.Fatalf("findings %v", out)
 	}
 	_, _, drec, _ := taskRecord(t, b, item.Payload["task"].(map[string]any)["id"].(string))
