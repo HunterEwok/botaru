@@ -184,7 +184,8 @@ func TestEditManifests(t *testing.T) {
 
 // TestWidenBudgets: a real model's call fits the budgets after the edit: the tree budget of a
 // claimed type holds two reserves of the role's profile, the review line rises with the review
-// types, the manager line holds the seat's worst day; nothing is lowered.
+// types, the tenant windows with the most risen type, the manager line holds the seat's worst
+// day and three of its trees; nothing is lowered.
 func TestWidenBudgets(t *testing.T) {
 	md := func(n string) map[string]any { return map[string]any{"name": n} }
 	ms := []map[string]any{
@@ -194,8 +195,10 @@ func TestWidenBudgets(t *testing.T) {
 		{"kind": "TaskType", "metadata": md("review.x"), "spec": map[string]any{"purpose": "review", "tree_budget_eur": 0.08}},
 		{"kind": "TaskType", "metadata": md("big"), "spec": map[string]any{"purpose": "work", "tree_budget_eur": 5.0}},
 		{"kind": "Governance", "metadata": md("farm"), "spec": map[string]any{"farm_manager": map[string]any{"model_profile": "mgr"}}},
-		{"kind": "Tenant", "metadata": md("demo"), "spec": map[string]any{"budgets": map[string]any{"lines": map[string]any{
-			"review": map[string]any{"month_eur": 50.0}, "manager": map[string]any{"day_eur": 2.0, "month_eur": 30.0}}}}},
+		{"kind": "Tenant", "metadata": md("demo"), "spec": map[string]any{"budgets": map[string]any{"hour_eur": 3.0, "day_eur": 15.0, "month_eur": 300.0,
+			"lines": map[string]any{"review": map[string]any{"month_eur": 50.0}, "manager": map[string]any{"day_eur": 2.0, "month_eur": 30.0}}}}},
+		{"kind": "Role", "metadata": md("seat"), "spec": map[string]any{"claims": []any{"manager.x"}, "models": map[string]any{"base": "mgr"}}},
+		{"kind": "TaskType", "metadata": md("manager.x"), "spec": map[string]any{"purpose": "manage", "tree_budget_eur": 0.4}},
 	}
 	editManifests(ms, Config{Real: true, RankModels: map[int]string{3: "opus", 4: "fable"},
 		Prices: map[string][2]float64{"opus": {4, 20}, "fable": {10, 50}}})
@@ -210,8 +213,14 @@ func TestWidenBudgets(t *testing.T) {
 	if got := mapOf(lines["review"])["month_eur"]; got != 350.0 {
 		t.Errorf("review line %v, want 350", got)
 	}
-	// The worst day 1.5 * (0.6 + 1.2 + 0.8) = 3.90 is below four reserves of mgr (4 * 1.0).
-	if m := mapOf(lines["manager"]); m["day_eur"] != 4.0 || m["month_eur"] != 60.0 {
+	// The windows rise as much as the review type, the most risen: 0.56 / 0.08 = 7.
+	if b := mapOf(ms[6]["spec"])["budgets"].(map[string]any); b["hour_eur"] != 21.0 || b["day_eur"] != 105.0 || b["month_eur"] != 2100.0 {
+		t.Errorf("tenant windows %v", b)
+	}
+	// One reserve of mgr: 8000 * 50 + 60000 * 10 = 1.0 EUR, so the seat's tree holds 2.0. The worst
+	// day 1.5 * (0.6 + 1.2 + 0.8) = 3.90 and four reserves (4.0) are below three trees at 70%
+	// (3 * 2.0 / 0.7 = 8.58).
+	if m := mapOf(lines["manager"]); m["day_eur"] != 8.58 || m["month_eur"] != 128.7 {
 		t.Errorf("manager line %v", m)
 	}
 }

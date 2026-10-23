@@ -477,8 +477,9 @@ func editManifests(ms []map[string]any, cfg Config) []map[string]any {
 // widenBudgets raises the budgets of the examples that the reserve of a real model's call would
 // not fit: the tree budget of a task type below twice the reserve of one call of the profiles of
 // the roles that claim it (the apply lint wants one call's output, tree_budget_below_call; the
-// gateway reserves the input as well before each call), and a manager line below the seat's
-// worst day (manager_line_too_small, MGR-20) or four reserves of the seat. The examples are priced for
+// gateway reserves the input as well before each call), the tenant windows by as much as the
+// tree budgets rose, and a manager line below the seat's worst day (manager_line_too_small,
+// MGR-20), four reserves of the seat or three of its trees. The examples are priced for
 // their own illustrative models; the money fuse of the run still caps the spend. Nothing is
 // lowered.
 func widenBudgets(ms []map[string]any) {
@@ -516,6 +517,8 @@ func widenBudgets(ms []map[string]any) {
 	}
 	var seat map[string]any
 	reviews := 1.0 // how much the tree budgets of the review types rose
+	rise := 1.0    // how much the tree budgets of any type rose
+	manage := 0.0  // the largest tree budget of the manager's types
 	for _, m := range ms {
 		switch m["kind"] {
 		case "TaskType":
@@ -523,9 +526,15 @@ func widenBudgets(ms []map[string]any) {
 			sp := mapOf(m["spec"])
 			if w, cur := cents(2*need[name]), num(sp["tree_budget_eur"]); w > cur {
 				sp["tree_budget_eur"] = w
+				if cur > 0 {
+					rise = max(rise, w/cur)
+				}
 				if purpose[name] == "review" && cur > 0 {
 					reviews = max(reviews, w/cur)
 				}
+			}
+			if purpose[name] == "manage" {
+				manage = max(manage, num(sp["tree_budget_eur"]))
 			}
 		case "Governance":
 			if p, _ := mapOf(mapOf(m["spec"])["farm_manager"])["model_profile"].(string); p != "" {
@@ -544,13 +553,28 @@ func widenBudgets(ms []map[string]any) {
 			line["month_eur"] = cents(reviews * num(line["month_eur"]))
 		}
 	}
+	// The tenant windows count the reserves of open trees (BUD-1) and the hour's spend stops the
+	// agent roles (HLD-7): they rise with the tree budgets, so they hold as many trees as before.
+	for _, m := range ms {
+		if m["kind"] != "Tenant" || rise == 1 {
+			continue
+		}
+		b := mapOf(mapOf(m["spec"])["budgets"])
+		for _, k := range []string{"hour_eur", "day_eur", "month_eur"} {
+			if b != nil && num(b[k]) > 0 {
+				b[k] = cents(rise * num(b[k]))
+			}
+		}
+	}
 	if seat == nil {
 		return
 	}
 	// Three readings of one worst-case incident, 60000 tokens in, three answers at the
 	// profile's max_output_tokens, with the default daily review and post-mortem ceilings.
+	// Work outside sev1 stops at 70% of the day with the open reserves (MGR-20): the day holds
+	// three of the manager's trees at once, an incident answer, its reading and an analysis.
 	day := cents(max(1.5*((60000*num(mapOf(seat["price"])["input"])+3*num(seat["max_output_tokens"])*num(mapOf(seat["price"])["output"]))/1e6+0.8),
-		4*callReserve(seat)))
+		4*callReserve(seat), 3*manage/0.7))
 	for _, m := range ms {
 		if m["kind"] != "Tenant" {
 			continue
