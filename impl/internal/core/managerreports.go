@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"regexp"
 	"slices"
 	"strconv"
@@ -367,14 +368,15 @@ func (c *Core) enqueuePostmortem(ctx context.Context, tx pgx.Tx, now time.Time, 
 	input := map[string]any{"view": "postmortem/v1", "table": table, "paragraph": paragraph}
 	body := map[string]any{"type": postmortemType, "goal": "Analyse the resolved incident from the table.", "params": map[string]any{"input": input}}
 	// The enqueue runs in a savepoint: a refusal means no analysis and never fails the move to
-	// resolved.
+	// resolved. Money does not refuse it: the claim holds it until the day has some (MGR-53).
 	sp, err := tx.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = sp.Rollback(ctx) }()
 	res, err := c.enqueue(ctx, sp, now, cat, enqueueInput{Tenant: r.Tenant, Type: postmortemType, Body: body,
-		IdempotencyKey: key, Initiator: "system", EnqueuedBy: "system:postmortem", Source: seatSource, SourceID: r.ID, Priority: 5})
+		IdempotencyKey: key, Initiator: "system", EnqueuedBy: "system:postmortem", Source: seatSource, SourceID: r.ID, Priority: 5,
+		ClaimGated: true})
 	if p, ok := AsProblem(err); ok {
 		c.log.Warn("no analysis of a resolved incident: the enqueue was refused", "tenant", r.Tenant, "incident", r.ID, "reason", p.Reason)
 		return nil
@@ -425,6 +427,21 @@ func postmortemClaimBudget(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 		return 0, false, nil
 	}
 	return own + left, true, nil
+}
+
+// postmortemFirstCall is the least reserve of the first call of an analysis on a profile: the
+// gateway's worst case of a request with no body, 1024 tokens in and the output limit out
+// (GW-2); 0 for an unknown profile.
+func postmortemFirstCall(cat *Catalog, tenant, profile string) int64 {
+	p, ok := cat.Profile(tenant, profile)
+	if !ok {
+		return 0
+	}
+	in := p.Price.Input
+	if p.Price.CacheWrite != nil && *p.Price.CacheWrite > in {
+		in = *p.Price.CacheWrite
+	}
+	return int64(math.Ceil(1024*in + float64(p.MaxOutputTokens)*p.Price.Output))
 }
 
 // linkCandidates are the link candidates code found for an incident under every rule: a change
