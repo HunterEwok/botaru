@@ -480,7 +480,7 @@ func (c *Core) takeFindings(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 }
 
 // tenantObject says whether a finding's subject is an object of the tenant: a worker or a task
-// of the tenant, a resource of its catalog, a role with a worker in it, a type a group of the
+// of the tenant, a resource, machine or volume of its catalog, a role with a worker in it, a type a group of the
 // tenant grants, or one of its schedules. Another tenant's object is the same as none.
 func (c *Core) tenantObject(ctx context.Context, tx pgx.Tx, cat *Catalog, tenant string, t ControlTarget) (bool, error) {
 	tv := cat.Tenants[tenant]
@@ -496,7 +496,9 @@ func (c *Core) tenantObject(ctx context.Context, tx pgx.Tx, cat *Catalog, tenant
 	case "role":
 		return ok, tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM workers WHERE tenant = $1 AND role = $2 AND state <> 'revoked')`, tenant, t.ID).Scan(&ok)
 	case "resource":
-		return slices.Contains(catalogResources(cat, tenant), t.ID) || volumeOf(cat, tenant, t.ID) != nil, nil
+		// A machine of the catalog is a resource too, as an incident's subject or a worker's host.
+		return slices.Contains(catalogResources(cat, tenant), t.ID) || slices.Contains(catalogHosts(cat, tenant), t.ID) ||
+			volumeOf(cat, tenant, t.ID) != nil, nil
 	case "tasktype":
 		for _, g := range tv.Groups {
 			if slices.ContainsFunc(g.Caps, func(cp string) bool { return capCovers(cp, "task:"+t.ID) }) {
