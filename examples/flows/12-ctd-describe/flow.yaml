@@ -20,7 +20,7 @@ steps:
      expect: {task: {type: data.describe.v1, record: {initiator: bob, max_tier: 1, data_mark: internal, untrusted_seen: true}}}}
   - {port: P1, op: claim, by: role:data-reader, request: {kinds: [attempt]}}
   - {port: P3, op: tools/call, tool: data/describe, args: {file: st-05.cnv},
-     expect: {target: {machine: ctd1}, untrusted_source: data/describe, stats: {records: 412, depth_max_m: 86.5, flagged_records: 3}}}
+     expect: {target: {machine: ctd1}, untrusted_source: data/describe, stats: {records: 412, depth_min_m: 0.5, depth_max_m: 86.5, flagged_records: 3, missing_pct: 0}}}
   - {port: P1, op: complete, by: role:data-reader,
      result: {report: "Three flagged records near the bottom; the rest of the profile is smooth.", verdict: ok, rows: 412, depth_min_m: 0.5, depth_max_m: 86.5, missing_pct: 0},
      expect: {deliveries: [{kind: task_result, to: origin, dataorigin: model}]}}

@@ -560,21 +560,10 @@ type found struct {
 }
 
 // number is the value of a result field of a CTD file description from the plugin's numbers:
-// the rows are its records, a profile starts at the surface, and the flagged records are the
-// missing share.
+// the rows are its records, the other fields its numbers of the same name.
 func (f found) number(name string) (float64, bool) {
-	switch name {
-	case "rows":
-		v, ok := f.nums["records"]
-		return v, ok
-	case "depth_min_m":
-		_, ok := f.nums["depth_max_m"]
-		return 0, ok
-	case "missing_pct":
-		if n := f.nums["records"]; n > 0 {
-			return math.Round(f.nums["flagged_records"]/n*1000) / 10, true
-		}
-		return 0, false
+	if name == "rows" {
+		name = "records"
 	}
 	v, ok := f.nums[name]
 	return v, ok

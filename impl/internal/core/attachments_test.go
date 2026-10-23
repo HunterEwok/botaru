@@ -96,7 +96,7 @@ func TestAttachmentReachesTool(t *testing.T) {
 	if _, err := b.c.FileGet(ctx, th, lh, FileGetRequest{FileRef: other.FileRef}); reasonOf(err) != "not_found" {
 		t.Fatalf("file.get of a file the call does not name: %v", err)
 	}
-	out := map[string]any{"structuredContent": map[string]any{"stats": map[string]any{"records": 1, "depth_max_m": 1, "flagged_records": 0}, "header": ""}}
+	out := map[string]any{"structuredContent": map[string]any{"stats": map[string]any{"records": 1, "depth_min_m": 0, "depth_max_m": 1, "flagged_records": 0, "missing_pct": 0}, "header": ""}}
 	if _, err := b.c.Complete(ctx, th, lh, CompleteRequest{Output: out}); err != nil {
 		t.Fatal(err)
 	}
