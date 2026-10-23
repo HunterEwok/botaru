@@ -199,7 +199,7 @@ Everything the bots' tools read or change lives under `<out>/run-<time>/world/`:
 
 | Path | What it is |
 |---|---|
-| `world.json` | the machines of the farm (on `smoke` `web1`, `db1`, `ctd1`), each with its tenant and kind: disks (size, `free_space_ratio`, pipeline temporary bytes), services (`active`, `inactive`, `failed`, restarts, time of the last change), monitoring problems, metric series, faults in play |
+| `world.json` | the machines of the farm (on `smoke` `web1`, `db1`, `ctd1`), each with its tenant and kind: disks (size, `free_space_ratio`, pipeline temporary bytes), services (`active`, `inactive`, `failed`, restarts, time of the last change), monitoring problems, faults in play. The metric series stay in the memory of the stand's process, which samples them and serves them to the monitoring API; the stubs never need them |
 | `world-events.jsonl` | every change of the world; `journalctl` of the stubs reads it |
 | `logs/<web>/access.log`, `error.log`, `app-api.log`, `logs/<db>/postgresql.log` | the logs the `logs` plugin reads; the first hours come from the eval generators, then the physics appends a line per step |
 | `checks/<web>/checks.json` | the results of the HTTP checks of a tenant's first web machine, written as an external checker would |
@@ -240,7 +240,7 @@ No tool call reaches the machine the simulator runs on:
 
 ## The monitoring system
 
-The fake Zabbix 7.0 JSON-RPC API (`internal/sim/monitor.go`) answers from `world.json`: `host.get`, `problem.get`,
+The fake Zabbix 7.0 JSON-RPC API (`internal/sim/monitor.go`) answers from `world.json` and the metric series: `host.get`, `problem.get`,
 `event.get`, `item.get`, `history.get`, `trend.get` for the plugin and the adapter; `history.push` (the alarm
 export and the audit head, printed as `[MONITOR]`), `user.checkAuthentication`, `user.get` and `role.get` (a User
 role without the forbidden actions) for the account check; `script.getscriptsbyhosts` with the catalog scripts 17

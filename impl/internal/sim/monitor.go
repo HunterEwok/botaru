@@ -17,12 +17,12 @@ import (
 	"time"
 )
 
-// Monitor is the monitoring system of the world: a Zabbix 7.0 JSON-RPC API over world.json. It
-// serves the monitor plugin (problems, items, history, maintenance) and the adapter
-// botaru-zabbix (event.get, history.push of the alarm export and the audit head, the account
-// check, the scripts of each tenant's first web machine and their runs, the acknowledgements),
-// and sends the problem webhook to the adapter of the machine's tenant when the physics opens or
-// closes a problem.
+// Monitor is the monitoring system of the world: a Zabbix 7.0 JSON-RPC API over world.json and
+// the metric series. It serves the monitor plugin (problems, items, history, maintenance) and
+// the adapter botaru-zabbix (event.get, history.push of the alarm export and the audit head, the
+// account check, the scripts of each tenant's first web machine and their runs, the
+// acknowledgements), and sends the problem webhook to the adapter of the machine's tenant when
+// the physics opens or closes a problem.
 type Monitor struct {
 	Work string
 	// Hooks are the addresses of the adapters' webhooks by tenant and HookToken their token; a

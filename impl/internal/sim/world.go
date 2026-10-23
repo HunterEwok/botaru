@@ -2,8 +2,8 @@
 
 // Package sim is the farm simulator of impl/SIM.md: a stand with the real core and workers whose
 // tools work on a virtual world kept on disk under the work directory. The world holds the
-// demo machines with their disks and services, the monitoring problems and the metric series;
-// the logs, the check results and the queue live beside it. The stubs of the operating system
+// demo machines with their disks and services and the monitoring problems (the metric series
+// stay in the stand's memory); the logs, the check results and the queue live beside it. The stubs of the operating system
 // programs (systemctl, df, journalctl) read and change the world, so no tool call of a bot
 // reaches the machine the simulator runs on.
 package sim
@@ -16,18 +16,21 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sync"
 	"syscall"
 	"time"
 )
 
-// World is the state of the virtual machines of the farm, kept in <work>/world.json.
+// World is the state of the virtual machines of the farm, kept in <work>/world.json but for
+// the metric series (series below).
 type World struct {
 	// Hosts are the machines by catalog id.
 	Hosts map[string]*Host `json:"hosts"`
 	// Problems are the problems of the monitoring system, newest last.
 	Problems []*Problem `json:"problems"`
 	// Series are the metric samples by "<host>|<item key>", oldest first, at most maxSamples.
-	Series map[string][]Sample `json:"series"`
+	// They stay in the memory of the process that samples them (series), not in world.json.
+	Series map[string][]Sample `json:"-"`
 	// Faults are the faults in play by name, or by name:host for one machine (the scenario
 	// faults of the director).
 	Faults map[string]bool `json:"faults"`
@@ -301,9 +304,7 @@ func LoadWorld(dir string) (*World, error) {
 	if err := json.Unmarshal(raw, &w); err != nil {
 		return nil, fmt.Errorf("%s: %w", worldFile, err)
 	}
-	if w.Series == nil {
-		w.Series = map[string][]Sample{}
-	}
+	w.Series = loadSeries(dir)
 	if w.Faults == nil {
 		w.Faults = map[string]bool{}
 	}
@@ -351,6 +352,7 @@ func Update(dir string, fn func(*World) error) error {
 	if err := writeAtomic(filepath.Join(dir, worldFile), raw); err != nil {
 		return err
 	}
+	storeSeries(dir, w.Series)
 	if len(w.events) == 0 {
 		return nil
 	}
@@ -384,4 +386,41 @@ func writeAtomic(path string, raw []byte) error {
 		return err
 	}
 	return os.Rename(name, path)
+}
+
+// series keeps the metric series of each work directory in the memory of the process: the
+// stand's physics samples them and its monitor reads them, both in the stand's process, while
+// the stubs, other processes, never need them. Kept in world.json, every step and every stub
+// call read and wrote the whole history, and a long run's memory grew with it.
+var series = struct {
+	mu sync.Mutex
+	by map[string]map[string][]Sample
+}{by: map[string]map[string][]Sample{}}
+
+// loadSeries returns a map of its own over the series of a work directory. The slices share
+// their arrays with the stored ones; the one writer, Sample inside Update (serialized by the
+// lock of the work directory, between goroutines too), only appends past every reader's end,
+// so no reader sees a value change.
+func loadSeries(dir string) map[string][]Sample {
+	series.mu.Lock()
+	defer series.mu.Unlock()
+	out := make(map[string][]Sample, len(series.by[dir]))
+	for k, s := range series.by[dir] {
+		out[k] = s
+	}
+	return out
+}
+
+// storeSeries keeps the series of a work directory after a change of the world.
+func storeSeries(dir string, s map[string][]Sample) {
+	series.mu.Lock()
+	defer series.mu.Unlock()
+	series.by[dir] = s
+}
+
+// dropSeries forgets the series of a work directory whose stand ends.
+func dropSeries(dir string) {
+	series.mu.Lock()
+	defer series.mu.Unlock()
+	delete(series.by, dir)
 }
