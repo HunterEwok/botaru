@@ -107,6 +107,10 @@ type BenchConfig struct {
 	// spend cap) without calling the provider: the simulator's money fuse stops the calls of the
 	// attempts that run on until their next heartbeat.
 	ModelGate func() bool
+	// ForgetModelCalls keeps no model request bodies for the run results: a long run that sees
+	// each call through OnModelCall sets it, or its memory grows with every call. Not for a bench
+	// a Runner checks cases on: their model request checks would see no request.
+	ForgetModelCalls bool
 	// WrapP4, when set, wraps P4's handler on the P1 listener: the simulator holds the agents'
 	// model calls to its limits there, before P4 reserves any money for them.
 	WrapP4 func(http.Handler) http.Handler
@@ -342,7 +346,7 @@ func StartBench(ctx context.Context, cfg BenchConfig) (_ *Bench, err error) {
 	// P4: the provider of the profiles, the mock or the real one, behind the recorder that
 	// keeps the model request bodies for the checks (docs/quality.md: in test bench mode P4
 	// writes the model request bodies into the run results).
-	b.rec = &recorder{next: http.DefaultTransport, observe: cfg.OnModelCall, gate: cfg.ModelGate}
+	b.rec = &recorder{next: http.DefaultTransport, observe: cfg.OnModelCall, gate: cfg.ModelGate, forget: cfg.ForgetModelCalls}
 	baseURL := cfg.Model.BaseURL
 	key := cfg.Model.Key
 	if !cfg.Model.Real {
@@ -1098,7 +1102,7 @@ func (b *Bench) p2call(ctx context.Context, token, op string, req, out any) erro
 }
 
 // recorder is the HTTP transport of P4 to the provider: it keeps every request body and the
-// model name of every answer.
+// model name of every answer, unless the bench forgets them.
 type recorder struct {
 	next  http.RoundTripper
 	mu    sync.Mutex
@@ -1107,6 +1111,9 @@ type recorder struct {
 	observe func(req, resp []byte, status int)
 	// gate, when set and false, refuses the call with 402 before the provider.
 	gate func() bool
+	// forget keeps no calls (BenchConfig.ForgetModelCalls); n counts every call.
+	forget bool
+	n      int
 }
 
 type modelCall struct {
@@ -1152,7 +1159,10 @@ func (r *recorder) RoundTrip(req *http.Request) (*http.Response, error) {
 		}
 	}
 	r.mu.Lock()
-	r.calls = append(r.calls, call)
+	r.n++
+	if !r.forget {
+		r.calls = append(r.calls, call)
+	}
 	r.mu.Unlock()
 	return resp, err
 }
@@ -1161,7 +1171,7 @@ func (r *recorder) RoundTrip(req *http.Request) (*http.Response, error) {
 func (r *recorder) since(n int) []modelCall {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if n > len(r.calls) {
+	if r.forget || n > len(r.calls) {
 		return nil
 	}
 	return append([]modelCall(nil), r.calls[n:]...)
@@ -1170,7 +1180,7 @@ func (r *recorder) since(n int) []modelCall {
 func (r *recorder) count() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return len(r.calls)
+	return r.n
 }
 
 // mockModel is the mock provider of a mock run: it plays the scenario a case's setup scripts

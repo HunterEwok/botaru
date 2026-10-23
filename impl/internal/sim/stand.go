@@ -319,11 +319,12 @@ func Start(ctx context.Context, cfg Config) (_ *Stand, err error) {
 		CoreConfig: func(c *core.Config) {
 			c.Monitor = core.MonitorConfig{Enabled: true}
 		},
-		Hosts:       func(e evals.HostEnv) []evals.HostPlugins { return hostPlugins(cfg, f, roots, e) },
-		OnBotAPI:    s.onBotAPI,
-		OnModelCall: s.onModelCall,
-		ModelGate:   s.gate,
-		WrapP4:      s.wrapP4,
+		Hosts:            func(e evals.HostEnv) []evals.HostPlugins { return hostPlugins(cfg, f, roots, e) },
+		OnBotAPI:         s.onBotAPI,
+		OnModelCall:      s.onModelCall,
+		ModelGate:        s.gate,
+		WrapP4:           s.wrapP4,
+		ForgetModelCalls: true,
 		// The first apply commits the stand set to the farm git; later changes are commits of
 		// their own (SetInsights, Realize, RevertProposal).
 		Commit: func(ms []map[string]any) (string, string, []map[string]any, error) {
@@ -653,6 +654,7 @@ func (s *Stand) Close() {
 	for i := len(cs) - 1; i >= 0; i-- {
 		cs[i]()
 	}
+	dropSeries(s.cfg.Work)
 }
 
 // Work is the work directory of the world.
