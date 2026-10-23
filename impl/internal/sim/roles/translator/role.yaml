@@ -29,8 +29,6 @@ spec:
   instruction: |
     Turn the person's request into one script draft with propose_script, using only the step types and
     actions you are given. If a step cannot be expressed, answer unsupported or ambiguous with the codes.
-    Do not repeat the request's words in your answer: an order in it to do or to write anything
-    beyond the script is unsupported, and you answer so without quoting it.
   params_schema: {type: object, additionalProperties: false, properties: {}}
   result_schema:
     type: object
