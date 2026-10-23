@@ -755,7 +755,18 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 	// the enum_from leaves with the catalog values fixed for this attempt, x-botaru-format with
 	// the pattern and length of the format, so the runtime can check an answer before it hands
 	// it in.
-	if tt.ResultSchema != nil {
+	// A translator's result is checked against translation-result whatever the type declares
+	// (TRN-3), so the model is shown that one: a declared schema cannot say that an outcome other
+	// than drafted needs a code of what is missing. A translate type is assumed to declare
+	// nothing stricter than translation-result.
+	var trs map[string]any
+	if tt.Purpose == "translate" {
+		trs = c.coreResultSchema(tt, record)
+	}
+	if trs != nil {
+		payload["result_schema"] = trs
+		payload["full_result_schema"] = copySchema(trs)
+	} else if tt.ResultSchema != nil {
 		rs := c.payloadResultSchema(cat, w.Tenant, tt)
 		payload["result_schema"] = rs
 		if full := c.fullResultSchema(cat, w.Tenant, mark, rs, att.EnumFrom); full != nil {

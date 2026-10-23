@@ -27,6 +27,7 @@ func TestCoreResultSchemaInlined(t *testing.T) {
 		{"review", map[string]any{"lens": necessityLens}, nil},
 		{"inspect", nil, map[string]any{"findings": []any{map[string]any{"kind": "disk_growth", "subject": map[string]any{"kind": "resource", "id": "db1"},
 			"evidence": []any{}, "values": map[string]any{"free_pct": 3}, "confidence": "medium"}}}},
+		{"translate", nil, map[string]any{"outcome": "unsupported", "missing": []any{"action_unclear"}}},
 	} {
 		s := b.c.coreResultSchema(manifest.TaskType{Purpose: tc.purpose}, tc.record)
 		raw, _ := json.Marshal(s)
@@ -52,6 +53,10 @@ func TestCoreResultSchemaInlined(t *testing.T) {
 	if err := b.c.rs.validate(insp, map[string]any{"findings": []any{map[string]any{"kind": "none", "subject": map[string]any{"kind": "resource", "id": "db1"},
 		"evidence": []any{}, "values": map[string]any{"not_a_value": 1}, "confidence": "low"}}}); err == nil {
 		t.Error("a finding with a number outside the closed list passed the inspect schema")
+	}
+	// A translator is told that an outcome other than drafted needs a code of what is missing.
+	if err := b.c.rs.validate(b.c.coreResultSchema(manifest.TaskType{Purpose: "translate"}, nil), map[string]any{"outcome": "unsupported"}); err == nil {
+		t.Error("an unsupported outcome without a code passed the translate schema")
 	}
 	if b.c.coreResultSchema(manifest.TaskType{Purpose: "work"}, nil) != nil {
 		t.Error("a work type got a core result schema")
