@@ -318,9 +318,10 @@ core series of `ops-reader`: 18 past investigations over the last day (`farm.tas
 `farm.attempt.duration` of `task_type:ops.investigate.v1`), two of three cut at the five-minute attempt deadline (half of those finished on the second
 attempt, half failed after the third), so the analysis has a load to read rather than the one investigation of a
 fresh stand. The keys are fixed, so a second seeding writes nothing. `accepted_and_realized` takes any attempt
-deadline above 5m, which the core lets rise up to two times. The instruction of `ops.insight.v1` names the service levels of these tasks (at most 20%
-failed, fewer than 2.0 attempts on average, attempts not regularly over 180 s) and asks for one proposal when one
-is broken; the evolution mode replaces it in the farm git with the load check, whose first proposal is the
+deadline above 5m, which the core lets rise up to two times. The instruction of `ops.insight.v1` names the service levels of these tasks over 7 days
+with the rollup of each (at least 80% done by `window.share`, so a canceled or deadline-cut task counts against it too;
+fewer than 2.0 attempts on average; attempts not regularly over 180 s by `window.p95`), asks to read each series once,
+and asks for one proposal when one is broken; the evolution mode replaces it in the farm git with the load check, whose first proposal is the
 manifest change, and restores it afterwards.
 
 The Telegram channel of the reference takes no files, so a message with a file goes in through a channel worker

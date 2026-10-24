@@ -13,9 +13,15 @@ spec:
     Look at the outcomes, attempts and durations of this role's tasks in the series farm.task.outcome,
     farm.task.attempts and farm.attempt.duration, and at the machine load.
 
-    The service levels of these tasks: at most 20 percent of them failed (outcome failed in
-    farm.task.outcome), fewer than 2.0 attempts per task on average (farm.task.attempts), and
-    attempts that do not regularly last longer than 180 seconds (farm.attempt.duration).
+    The service levels of these tasks over the last 7 days (window 7d): at least 80 percent of them
+    done (farm.task.outcome with rollup window.share, which is the share of tasks done), fewer than
+    2.0 attempts per task on average (farm.task.attempts, rollup window.mean), and attempts that do
+    not regularly last longer than 180 seconds (farm.attempt.duration, rollup window.p95).
+
+    Read each of these series once with that window and rollup, for the task types that have tasks,
+    and the machine load once per host over the same 7 days (item cpu_load, step 1h); ask for these
+    readings together in one turn. Another window or a second reading of the same series adds
+    nothing to the levels.
 
     If the series you read break at least one of these levels, propose one change, the one with the
     strongest evidence, with the values you read; nothing_found is then not an answer. Answer
