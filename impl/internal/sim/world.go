@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -259,6 +260,35 @@ func (w *World) Sample(key string, at time.Time, v float64) {
 		s = s[len(s)-maxSamples:]
 	}
 	w.Series[key] = s
+}
+
+// Ramp rewrites the history of a series since a moment as a straight line, one sample a
+// minute, from its value then to to at now, so the history shows a change that came over that
+// time, also where it holds no samples yet.
+func (w *World) Ramp(key string, since, now time.Time, to float64) {
+	span := now.Sub(since)
+	if span <= 0 {
+		return
+	}
+	// A new slice: readers share the stored one and rely on its samples never changing.
+	var s []Sample
+	from := math.NaN()
+	for _, x := range w.Series[key] {
+		if x.Clock < since.Unix() {
+			s = append(s, x)
+			from = x.Value
+		} else if math.IsNaN(from) {
+			from = x.Value
+		}
+	}
+	if math.IsNaN(from) {
+		from = to
+	}
+	for at := since; at.Before(now); at = at.Add(time.Minute) {
+		s = append(s, Sample{Clock: at.Unix(), Value: from + (to-from)*float64(at.Sub(since))/float64(span)})
+	}
+	w.Series[key] = s
+	w.Sample(key, now, to)
 }
 
 // OpenProblem opens a problem of a trigger on a host for a reason, once: an open problem of the

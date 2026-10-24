@@ -118,8 +118,8 @@ func campaignRead(ctx context.Context, d *Director, sc string) error {
 	return nil
 }
 
-// campaignActionCanary plays an action campaign (R-12): bob asks the operator to clean the
-// pipeline temporary files on the database machines; the campaign of cleanup_pipeline_tmp waits
+// campaignActionCanary plays an action campaign (R-12): the data volumes of the database
+// machines fill and bob asks the operator to clean the pipeline temporary files there; the campaign of cleanup_pipeline_tmp waits
 // for its card, the policy approves it for this scenario, the core runs the canary on the first
 // machine and waits at the manual gate, the policy presses Continue, and the item of a machine
 // without the pipeline plugin fails (DLV-16: no executor), which stops the campaign at its
@@ -128,7 +128,37 @@ func campaignActionCanary(ctx context.Context, d *Director, sc string) error {
 	t := campaignTenant(d.S.Farm())
 	bob, dm := d.S.PersonIn(t.Name, "bob"), d.S.PersonIn(t.Name, "bob-dm")
 	dbs := hostsOf(t, KindDB)
-	key, err := d.S.Say(bob, dm, "/rollout Clean up the pipeline temporary files on the database machines.")
+	// The action is proposed when the volume runs out of space and the code's numbers confirm
+	// it (its description): the data volumes have filled over the last six hours, still above the
+	// alarm, at a steady pace that runs them out within two hours, and come back after. The
+	// person writes once the monitor shows it.
+	if err := d.world("the pipeline temporary files have filled /data of the database machines to 18% free over the last six hours (the director's fault, above the alarm)", func(w *World) {
+		now := time.Now().UTC()
+		for _, db := range dbs {
+			if disk := w.Hosts[db].Disks["/data"]; disk != nil {
+				disk.Fill(0.18)
+				w.Ramp(seriesKey(db, diskItem("/data", "pused")), now.Add(-6*time.Hour), now, 100*(1-disk.FreeRatio))
+				w.Ramp(seriesKey(db, diskItem("/data", "pfree")), now.Add(-6*time.Hour), now, 100*disk.FreeRatio)
+			}
+		}
+	}); err != nil {
+		return err
+	}
+	defer func() {
+		_ = d.world("the operators clean up what is left on the database machines", func(w *World) {
+			for _, db := range dbs {
+				healDisk(w, db, "")
+			}
+		})
+	}()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-d.S.stopped:
+		return errStopped
+	case <-time.After(2 * d.S.cfg.Step):
+	}
+	key, err := d.S.Say(bob, dm, "/rollout The data volumes of the database machines are filling up: clean up the pipeline temporary files older than 7 days there.")
 	if err != nil {
 		return err
 	}

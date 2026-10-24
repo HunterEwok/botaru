@@ -81,7 +81,9 @@ func reports(ctx context.Context, d *Director, sc string) error {
 	d.check(sc, "summary_answered", state == "completed" && fmt.Sprint(result["answer"]) != "", "state %s %s: %s", state, reason, clip(fmt.Sprint(result["answer"]), 200))
 
 	start := time.Now().UTC()
-	month := start.AddDate(0, -1, 0).Format("2006-01")
+	// The month before start, from its first day: AddDate on the 31st can land in the same month.
+	prev := time.Date(start.Year(), start.Month()-1, 1, 0, 0, 0, 0, time.UTC)
+	month := prev.Format("2006-01")
 	if _, err := d.S.Say("alice", "alice-dm", "/run month-report "+month); err != nil {
 		return err
 	}
@@ -95,10 +97,12 @@ func reports(ctx context.Context, d *Director, sc string) error {
 		return err
 	}
 	text := fmt.Sprint(result["text"])
+	// The month as 2026-09 or as September 2026: the type asks for no form.
+	named := prev.Format("January 2006")
 	// The number of runs as a number of its own, not a digit of the month.
 	runs := fmt.Sprint(nums["ctd_qc_runs"])
-	hasRuns := regexp.MustCompile(`(^|[^\d.])` + regexp.QuoteMeta(runs) + `([^\d.]|$)`).MatchString(strings.ReplaceAll(text, month, ""))
-	d.check(sc, "month_report", state == "completed" && strings.Contains(text, month) && hasRuns,
+	hasRuns := regexp.MustCompile(`(^|[^\d.])` + regexp.QuoteMeta(runs) + `([^\d.]|$)`).MatchString(strings.NewReplacer(month, "", named, "").Replace(text))
+	d.check(sc, "month_report", state == "completed" && (strings.Contains(text, month) || strings.Contains(text, named)) && hasRuns,
 		"state %s %s, %s CTD QC runs: %s", state, reason, runs, clip(text, 200))
 
 	start = time.Now().UTC()
@@ -340,10 +344,11 @@ func injectCTD(work, tenant string) error {
 }
 
 // scriptRequest is the plain words of the translator scenario: check the last pipeline run and
-// clean up after it. The steps read the pipeline status (internal), so the run card
-// fits the Telegram chat of the lab tenant; a script with a step of a raw_logs task, such as a
-// disk investigation, would carry raw_logs and its card would be withheld there.
-const scriptRequest = "/script Check the last pipeline run and then clean up the pipeline temporary files."
+// clean up the temporary files after it, with the age the action needs (older_than_days). The
+// steps read the pipeline status (internal), so the run card fits the Telegram chat of the lab
+// tenant; a script with a step of a raw_logs task, such as a disk investigation, would carry
+// raw_logs and its card would be withheld there.
+const scriptRequest = "/script Check the last pipeline run and then clean up the pipeline temporary files older than 7 days."
 
 // translatorScript plays the script translator (R-13) in the lab tenant: bob asks in plain words,
 // the translator drafts a script, Run is pressed on its card (the policy, for bob), the status step reads the run of the
@@ -393,19 +398,28 @@ func translatorScript(ctx context.Context, d *Director, sc string) error {
 		e := d.S.Bench.Store().Pool.QueryRow(ctx, `SELECT state FROM script_runs WHERE id = $1`, run).Scan(&runState)
 		return e == nil && slices.Contains([]string{"completed", "failed", "canceled", "rejected"}, runState), nil
 	})
-	steps := map[string]string{}
-	rows, e := d.S.Bench.Store().Pool.Query(ctx, `SELECT id, state FROM script_steps WHERE run = $1`, run)
+	steps, kinds := map[string]string{}, map[string]int{}
+	rows, e := d.S.Bench.Store().Pool.Query(ctx, `SELECT id, kind, state FROM script_steps WHERE run = $1`, run)
 	if e == nil {
 		for rows.Next() {
-			var id, st string
-			if rows.Scan(&id, &st) == nil {
+			var id, kind, st string
+			if rows.Scan(&id, &kind, &st) == nil {
 				steps[id] = st
+				kinds[kind]++
 			}
 		}
 		rows.Close()
 	}
-	d.check(sc, "script_ran", err == nil && runState == "completed" && steps["check"] == "ok" && steps["clean"] == "ok",
-		"run %s %s, steps %v", run, runState, steps)
+	// Every step ok: a task step that reads and a cleanup step (an action, or a fanout of it).
+	// The mock names them check and clean; a real model names them itself.
+	allOK := kinds["task"] > 0 && kinds["action"]+kinds["fanout"] > 0
+	for _, st := range steps {
+		allOK = allOK && st == "ok"
+	}
+	if !d.S.cfg.Real {
+		allOK = allOK && steps["check"] == "ok" && steps["clean"] == "ok"
+	}
+	d.check(sc, "script_ran", err == nil && runState == "completed" && allOK, "run %s %s, steps %v", run, runState, steps)
 	return nil
 }
 
@@ -506,7 +520,7 @@ func followUpMemory(ctx context.Context, d *Director, sc string) error {
 			ORDER BY l.lease_no DESC LIMIT 1`, home, key).Scan(&id, &n)
 		return id, n
 	}
-	key, err := d.S.Say("alice", "alice-dm", "How are the sensors today?")
+	key, err := d.S.Say("alice", "alice-dm", "How is the sensor doing today?")
 	if err != nil {
 		return err
 	}

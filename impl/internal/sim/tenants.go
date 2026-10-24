@@ -281,6 +281,19 @@ func catalogFor(sp map[string]any, t *FarmTenant) (map[string]any, error) {
 	for kind, ids := range kinds {
 		sel[kind+"-hosts"] = map[string]any{"hosts": ids}
 	}
+	// pipeline-hosts names the machines that hold the pipeline's files: on the stand only the
+	// primary database machine carries the pipeline plugin.
+	var pipeline []any
+	for _, h := range t.Hosts {
+		if h.Kind == KindDB && t.Primary(h.ID) {
+			pipeline = append(pipeline, h.ID)
+		}
+	}
+	if pipeline != nil {
+		sel["pipeline-hosts"] = map[string]any{"hosts": pipeline}
+	} else {
+		delete(sel, "pipeline-hosts")
+	}
 	out["selectors"] = sel
 	return out, nil
 }
@@ -367,8 +380,11 @@ func hostPlugins(cfg Config, f *Farm, roots map[string]string, e evals.HostEnv) 
 		if mon == "" {
 			mon = t.First(KindDB)
 		}
+		// disk_used reads the data volume, where the pipeline writes and the disk alarms watch, as
+		// an installation sets it for its data machines; the root volume never changes here.
 		out = append(out, evals.HostPlugins{Host: mon, Tenant: t.Name, Plugins: map[string][]string{
-			"monitor": {"-manifest", m("monitor"), "-api", e.MonitorAPI, "-api-token-file", e.MonitorTokenFile, "-catalog", catalogFile(cfg.Work, t.Name), "-tenant", t.Name},
+			"monitor": {"-manifest", m("monitor"), "-api", e.MonitorAPI, "-api-token-file", e.MonitorTokenFile, "-catalog", catalogFile(cfg.Work, t.Name), "-tenant", t.Name,
+				"-item", "disk_used=" + diskItem("/data", "pused")},
 		}})
 	}
 	return out
