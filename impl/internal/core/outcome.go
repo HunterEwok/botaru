@@ -604,6 +604,9 @@ func (c *Core) rejectResult(ctx context.Context, tx pgx.Tx, now time.Time, w *Wo
 	if _, err := tx.Exec(ctx, `DELETE FROM handles WHERE work_id = $1 AND lease_no = $2`, l.WorkID, l.LeaseNo); err != nil {
 		return err
 	}
+	if err := grantEnded(ctx, tx, now, l.WorkID); err != nil {
+		return err
+	}
 	if err := c.settleMessages(ctx, tx, now, l.WorkID); err != nil {
 		return err
 	}

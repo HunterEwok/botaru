@@ -160,6 +160,12 @@ func (c *Core) reapWith(ctx context.Context, reason string, spends bool) error {
 			if _, err := tx.Exec(ctx, `DELETE FROM handles WHERE work_id = $1 AND lease_no = $2`, l.WorkID, l.LeaseNo); err != nil {
 				return err
 			}
+			// The grant of an ended attempt is released, as closeLease does (MGR-18).
+			if l.Kind == "attempt" {
+				if err := grantEnded(ctx, tx, now, l.WorkID); err != nil {
+					return err
+				}
+			}
 			switch l.Kind {
 			case "attempt":
 				_, err = c.endAttempt(ctx, tx, now, l.Tenant, &l, reason, spends, true, 0, "")
@@ -205,6 +211,9 @@ func (c *Core) deadlines(ctx context.Context) error {
 				}
 				if _, err := tx.Exec(ctx, `UPDATE leases SET state = 'revoked', reason = 'deadline_exceeded', closed_at = $2
 					WHERE work_id = $1 AND state = 'active'`, id, now); err != nil {
+					return err
+				}
+				if err := grantEnded(ctx, tx, now, id); err != nil {
 					return err
 				}
 			}

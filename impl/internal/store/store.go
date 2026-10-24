@@ -44,6 +44,12 @@ func Open(ctx context.Context, dsn string) (*Store, error) {
 		return nil, fmt.Errorf("store: %w", err)
 	}
 	cfg.ConnConfig.RuntimeParams["timezone"] = "UTC"
+	if !strings.Contains(dsn, "pool_max_conns") {
+		// pgx's default, max(4, NumCPU), is 4 on a Raspberry Pi: the per-second loops, the
+		// long-polling claims and the P2 calls then wait on each other. A DSN that names
+		// pool_max_conns keeps its own value.
+		cfg.MaxConns = mainConns
+	}
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("store: %w", err)
@@ -60,6 +66,9 @@ func Open(ctx context.Context, dsn string) (*Store, error) {
 
 // readConns is the size of the Reads pool.
 const readConns = 2
+
+// mainConns is the size of the main pool when the DSN does not set pool_max_conns.
+const mainConns = 16
 
 // Close closes the pools.
 func (s *Store) Close() {

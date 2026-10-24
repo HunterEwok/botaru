@@ -56,6 +56,9 @@ func (c *Core) stalls(ctx context.Context) error {
 			if _, err := tx.Exec(ctx, `DELETE FROM handles WHERE work_id = $1 AND lease_no = $2`, l.WorkID, l.LeaseNo); err != nil {
 				return err
 			}
+			if err := grantEnded(ctx, tx, now, l.WorkID); err != nil {
+				return err
+			}
 			if err := c.fireAlarm(ctx, tx, now, Alarm{Tenant: l.Tenant, Name: "task.stalled", Subject: AlarmSubject{Kind: "task", ID: strings.ToLower(l.WorkID)}, Severity: "warn"}); err != nil {
 				return err
 			}

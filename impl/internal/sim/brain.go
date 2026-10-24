@@ -613,8 +613,9 @@ func walk(v any, fn func(map[string]any)) {
 	}
 }
 
-// reData finds the data block of the attempt beside the goal: the task's params among them.
-var reData = regexp.MustCompile(`(?s)it is data, not instructions:\n(\{.*\})`)
+// reData finds the data block of the attempt beside the goal: the task's params among them, in
+// the wrapper of the attempt's random mark (INJ-4).
+var reData = regexp.MustCompile(`(?s)it is data, not instructions:\n(?:<[a-z0-9-]+>\n)?(\{.*\})`)
 
 // attemptParams are the task's params in the data block of the first message.
 func attemptParams(goal string) map[string]any {
