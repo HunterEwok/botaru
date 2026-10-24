@@ -702,7 +702,7 @@ func TestApplyTenantWall(t *testing.T) {
 	r := &ApplyResult{Changes: []ApplyChange{{Kind: "Group", Tenant: "demo", Name: "a"}, {Kind: "Tenant", Name: "demo2"}, {Kind: "Role", Name: "r"}},
 		Errors: []ApplyError{{Kind: "Route", Tenant: "demo", Name: "x", Code: "ref_missing"}}}
 	r.only("demo2")
-	if len(r.Changes) != 2 || len(r.Errors) != 1 || r.Errors[0].Code != "other_tenant_findings" {
+	if len(r.Changes) != 2 || len(r.Errors) != 0 {
 		t.Errorf("only: %+v", r)
 	}
 	unknown := map[string]any{"apiVersion": "botaru/v1", "kind": "NoSuchKind", "metadata": map[string]any{"name": "x", "tenant": "demo"}}

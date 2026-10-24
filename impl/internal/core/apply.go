@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"maps"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -98,18 +99,6 @@ func (c *Core) Apply(ctx context.Context, op Operator, req ApplyRequest) (*Apply
 	if err := c.mayApply(op, req); err != nil {
 		return nil, err
 	}
-	if req.DryRun && op.Tenant != "farm" {
-		// A tenant's plan takes its Tenant object as stored: the budgets and ceilings of a
-		// Tenant are checked against the sums of all tenants, and trying values of its own
-		// would tell those sums.
-		var ms []map[string]any
-		for _, m := range req.Manifests {
-			if m["kind"] != "Tenant" {
-				ms = append(ms, m)
-			}
-		}
-		req.Manifests = ms
-	}
 	// The lint reads the store before the transaction; an apply that lands in between makes
 	// this one start again, so that two applies never pass the lint on each other's old state.
 	for try := 0; ; try++ {
@@ -172,7 +161,11 @@ func (c *Core) mayApply(op Operator, req ApplyRequest) error {
 }
 
 // only keeps the changes and findings of tenant t and of every tenant, so that an operator of
-// one tenant does not learn the object names of another.
+// one tenant does not learn the object names of another. A finding on another tenant's object
+// is dropped without a trace, since even a sign of it, tried against changed global objects,
+// would tell that tenant's settings; the farm's apply still refuses such a set. For the same
+// reason a finding against the sum of all tenants (GW-9) is dropped, and a finding on an object
+// of every tenant loses its detail.
 func (r *ApplyResult) only(t string) {
 	mine := func(kind, tenant, name string) bool {
 		if kind == "Tenant" {
@@ -190,7 +183,7 @@ func (r *ApplyResult) only(t string) {
 	keep := func(es []ApplyError) []ApplyError {
 		out := es[:0]
 		for _, e := range es {
-			if mine(e.Kind, e.Tenant, e.Name) {
+			if mine(e.Kind, e.Tenant, e.Name) && !acrossTenants(e) {
 				if e.Tenant == "" && e.Kind != "Tenant" {
 					// The detail of a finding on an object of every tenant can name the tenant
 					// that found it, such as the tenant of a role without eval reports.
@@ -201,15 +194,16 @@ func (r *ApplyResult) only(t string) {
 		}
 		return out
 	}
-	n := len(r.Errors)
 	r.Errors = keep(r.Errors)
-	if len(r.Errors) < n {
-		// The set still fails: a plan never reads clean because its findings were not shown.
-		r.Errors = append(r.Errors, ApplyError{Code: "other_tenant_findings", Detail: "the set has findings outside this tenant"})
-	}
 	if r.Warnings != nil {
 		r.Warnings = keep(r.Warnings)
 	}
+}
+
+// acrossTenants says whether a finding compares a value with the sum of all tenants: the
+// organization ceilings of GW-9 (lintWorkspaceCeilings).
+func acrossTenants(e ApplyError) bool {
+	return e.Code == "workspace_ceiling_exceeded" && strings.Contains(e.Detail, "organization ceiling")
 }
 
 // errStoreChanged: another apply changed the store after this one read it for the lint.
