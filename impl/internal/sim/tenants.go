@@ -281,6 +281,19 @@ func catalogFor(sp map[string]any, t *FarmTenant) (map[string]any, error) {
 	for kind, ids := range kinds {
 		sel[kind+"-hosts"] = map[string]any{"hosts": ids}
 	}
+	// pipeline-hosts names the machines that hold the pipeline's files: on the stand only the
+	// primary database machine carries the pipeline plugin.
+	var pipeline []any
+	for _, h := range t.Hosts {
+		if h.Kind == KindDB && t.Primary(h.ID) {
+			pipeline = append(pipeline, h.ID)
+		}
+	}
+	if pipeline != nil {
+		sel["pipeline-hosts"] = map[string]any{"hosts": pipeline}
+	} else {
+		delete(sel, "pipeline-hosts")
+	}
 	out["selectors"] = sel
 	return out, nil
 }

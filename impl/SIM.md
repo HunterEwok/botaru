@@ -584,7 +584,7 @@ limits so that a run of minutes can do its work; the one that tightens a limit i
 | the incident classes lose `detect.for`, `resolve.for` and `detect.when`, and `disk_filling` is left out | the core has no re-check job of a monitoring problem (MON-5), so a class opens on the alarm alone, at once; with both disk classes every disk fault would open two incidents |
 | the group `ops-oncall` of every tenant holds `incident.manage` | no example group holds it, so the notice of an incident in a tenant without the farm manager would reach nobody (MGR-6, M-9) |
 | `farm_manager.enabled` per the profile's `manager`; with `evolution` the proposals go to `group:deciders`, the digest runs every minute, the evolution and its gate are on, and a dispatcher rule gives `ops.investigate.v1` an attempt deadline of 5 minutes for the evolution to tune | the farm profile ([Farm profiles](#farm-profiles--farm)) |
-| each tenant's catalog names its own machines, with the selectors `all-hosts` and `<kind>-hosts` | one example catalog for many tenants |
+| each tenant's catalog names its own machines, with the selectors `all-hosts`, `<kind>-hosts` and `pipeline-hosts` (the primary database machine, the only one with the pipeline plugin) | one example catalog for many tenants |
 
 **The people** (`farm.go`, `stand.go`, `tenants.go`): `alice` joins `staff`, `runners` and `lead`; `bob` joins the
 new groups `deciders` (`proposal.decide` and `proposal.gate` of `reliability`, `manager.direct`) and `runners`

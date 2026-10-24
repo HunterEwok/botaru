@@ -129,15 +129,16 @@ func campaignActionCanary(ctx context.Context, d *Director, sc string) error {
 	bob, dm := d.S.PersonIn(t.Name, "bob"), d.S.PersonIn(t.Name, "bob-dm")
 	dbs := hostsOf(t, KindDB)
 	// The action is proposed when the volume runs out of space and the code's numbers confirm
-	// it (its description): the data volumes have filled over the last hour, still above the
-	// alarm, and come back after. The person writes once the monitor shows it.
-	if err := d.world("the pipeline temporary files have filled /data of the database machines to 18% free over the last hour (the director's fault, above the alarm)", func(w *World) {
+	// it (its description): the data volumes have filled over the last six hours, still above the
+	// alarm, at a steady pace that runs them out within two hours, and come back after. The
+	// person writes once the monitor shows it.
+	if err := d.world("the pipeline temporary files have filled /data of the database machines to 18% free over the last six hours (the director's fault, above the alarm)", func(w *World) {
 		now := time.Now().UTC()
 		for _, db := range dbs {
 			if disk := w.Hosts[db].Disks["/data"]; disk != nil {
 				disk.Fill(0.18)
-				w.Ramp(seriesKey(db, diskItem("/data", "pused")), now.Add(-time.Hour), now, 100*(1-disk.FreeRatio))
-				w.Ramp(seriesKey(db, diskItem("/data", "pfree")), now.Add(-time.Hour), now, 100*disk.FreeRatio)
+				w.Ramp(seriesKey(db, diskItem("/data", "pused")), now.Add(-6*time.Hour), now, 100*(1-disk.FreeRatio))
+				w.Ramp(seriesKey(db, diskItem("/data", "pfree")), now.Add(-6*time.Hour), now, 100*disk.FreeRatio)
 			}
 		}
 	}); err != nil {

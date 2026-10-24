@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -261,21 +262,30 @@ func (w *World) Sample(key string, at time.Time, v float64) {
 	w.Series[key] = s
 }
 
-// Ramp moves the samples of a series since a moment in a straight line from their value to
-// to, the newest reaching it, so the history shows a change that came over that time.
+// Ramp rewrites the history of a series since a moment as a straight line, one sample a
+// minute, from its value then to to at now, so the history shows a change that came over that
+// time, also where it holds no samples yet.
 func (w *World) Ramp(key string, since, now time.Time, to float64) {
-	span := now.Sub(since).Seconds()
+	span := now.Sub(since)
 	if span <= 0 {
 		return
 	}
-	// A copy: readers share the stored slice and rely on its samples never changing.
-	s := slices.Clone(w.Series[key])
-	for i, x := range s {
+	// A new slice: readers share the stored one and rely on its samples never changing.
+	var s []Sample
+	from := math.NaN()
+	for _, x := range w.Series[key] {
 		if x.Clock < since.Unix() {
-			continue
+			s = append(s, x)
+			from = x.Value
+		} else if math.IsNaN(from) {
+			from = x.Value
 		}
-		f := min(1, float64(x.Clock-since.Unix())/span)
-		s[i].Value = x.Value + (to-x.Value)*f
+	}
+	if math.IsNaN(from) {
+		from = to
+	}
+	for at := since; at.Before(now); at = at.Add(time.Minute) {
+		s = append(s, Sample{Clock: at.Unix(), Value: from + (to-from)*float64(at.Sub(since))/float64(span)})
 	}
 	w.Series[key] = s
 	w.Sample(key, now, to)

@@ -11,7 +11,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -296,16 +295,30 @@ func TestBrain(t *testing.T) {
 
 func TestRamp(t *testing.T) {
 	w := &World{Series: map[string][]Sample{}}
-	now := time.Unix(10000, 0)
+	now := time.Unix(100000, 0)
 	for at := now.Add(-2 * time.Hour); at.Before(now); at = at.Add(30 * time.Minute) {
 		w.Sample("k", at, 20)
 	}
+	old := w.Series["k"]
 	w.Ramp("k", now.Add(-time.Hour), now, 80)
-	var got []float64
-	for _, s := range w.Series["k"] {
-		got = append(got, s.Value)
+	s := w.Series["k"]
+	// Two samples before the ramp, one a minute over the hour, and the newest at now.
+	if len(s) != 2+60+1 || s[1].Value != 20 || s[2].Value != 20 || s[2+30].Value != 50 || s[len(s)-1].Value != 80 || s[len(s)-1].Clock != now.Unix() {
+		t.Fatalf("ramp %v", s)
 	}
-	if want := []float64{20, 20, 20, 50, 80}; !slices.Equal(got, want) {
-		t.Fatalf("ramp %v, want %v", got, want)
+	for i := 1; i < len(s); i++ {
+		if s[i].Clock <= s[i-1].Clock {
+			t.Fatalf("out of order at %d: %v", i, s)
+		}
+	}
+	// The stored slice a reader holds keeps its values.
+	if old[3].Value != 20 {
+		t.Fatalf("old slice changed: %v", old)
+	}
+	// A series with no samples before the moment starts from its first value after it.
+	w.Series["n"] = []Sample{{Clock: now.Add(-10 * time.Minute).Unix(), Value: 40}}
+	w.Ramp("n", now.Add(-time.Hour), now, 90)
+	if n := w.Series["n"]; n[0].Value != 40 || n[len(n)-1].Value != 90 {
+		t.Fatalf("ramp without history %v", n)
 	}
 }
