@@ -1,0 +1,5 @@
+# The build context of impl/deploy/compose/Dockerfile: no secrets, git history or working material.
+**/secrets/
+.git
+_review/
+impl/sim-out/
