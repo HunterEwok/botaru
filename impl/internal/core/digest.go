@@ -185,7 +185,7 @@ func (c *Core) sendDigest(ctx context.Context, tx pgx.Tx, now time.Time, cat *Ca
 	}
 	var off []loopReason
 	if !urgent {
-		if off, err = loopOff(ctx, tx, cat, tv.Name); err != nil {
+		if off, err = c.loopOff(ctx, tx, cat, tv.Name); err != nil {
 			return err
 		}
 		off = off[:min(len(off), maxLoopOff)]
@@ -671,6 +671,10 @@ func (c *Core) proposalCardFields(cat *Catalog, p *proposalRow, kind string, rem
 		}
 		ctxt["trailer"] = "Botaru-Revert: " + p.ID + " harm_observed"
 		card["footer"] = map[string]any{"why_you": "the executor of the accepted proposal", "on_silence": "the change trial runs to the end"}
+		if reminder {
+			// The second card goes to the people who decide on the category (PRP-27).
+			card["footer"] = map[string]any{"why_you": "proposal.decide:" + b.Category, "on_silence": "the change stays in force, its fields stay locked"}
+		}
 	}
 	card["buttons"] = buttons
 	return card

@@ -1,5 +1,5 @@
 registry: reasons
-version: 12
+version: 13
 description: 'Closed registry of reasons: end of an attempt, refusals at enqueue and at a call, waiting, outcomes of calls,
   approvals and deliveries, and also codes of other parts of the farm. A worker in P1 `fail` passes only a code from here; there is no free
   reason text in the records. Record fields: `meaning` (what it means); `spends_attempt` (whether it spends an attempt: true,
@@ -1647,3 +1647,11 @@ entries:
   retry: null
   outcome: failed
   rules: [SEC-11]
+- id: insight_limit
+  since: v0.3
+  meaning: A route on an event did not start an analysis, since the slot is over the event run limit of its role or inside
+    its merge window; the model is not called. Also a value of a schedule skip `schedule.skipped(insight_limit)`.
+  spends_attempt: null
+  retry: none
+  outcome: rejected
+  rules: [INS-4]

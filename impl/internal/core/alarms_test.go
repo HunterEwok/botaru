@@ -68,8 +68,8 @@ func TestAlarmEpisode(t *testing.T) {
 	wantReason(t, err, "input_schema_invalid")
 }
 
-// A page alarm repeats its notice every 30 minutes while open: 70 minutes give two reminders
-// (MON-13). A hold does not withhold an alarm notice (HLD-3, MON-1).
+// A page alarm repeats its notice every 30 minutes while open: 70 minutes give two reminders,
+// and an incident.ack on the incident that adopted the episode stops them (MON-13). A hold does not withhold an alarm notice (HLD-3, MON-1).
 func TestAlarmPageRepeats(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -91,6 +91,21 @@ func TestAlarmPageRepeats(t *testing.T) {
 	}
 	if n := countNotices(t, b); n != 3 {
 		t.Fatalf("%d notices in 70 minutes, want the first and two reminders", n)
+	}
+	// A person took up the incident that adopted the episode: the reminders stop.
+	b.exec(t, `INSERT INTO incidents (id, tenant, class, subject_kind, alarmkey, episode, episodes, alarmkeys, state, record, since, implicated_at, opened_at, updated_at)
+		SELECT 'inc_page', tenant, 'loop_stuck', 'loop', alarmkey, id, ARRAY[id], ARRAY[alarmkey], 'open', '{"humans_took": true}', now(), now(), now(), now()
+		FROM alarm_episodes`)
+	for range 7 {
+		if _, err := b.c.TestClockAdvance(ctx, 600); err != nil {
+			t.Fatal(err)
+		}
+		if err := b.c.alarmLoop(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n := countNotices(t, b); n != 3 {
+		t.Fatalf("%d notices after the incident.ack, want no more reminders", n)
 	}
 	var sev string
 	b.c.st.Pool.QueryRow(ctx, `SELECT severity FROM alarm_episodes`).Scan(&sev)

@@ -2065,7 +2065,7 @@ On a successful `complete`, in the same transaction, each body is checked:
   only as `none`;
 - after untrusted text only `none` or a manifest change in the safe direction;
 - the change kind by the allowlist: an action of the role's vocabulary, a service or monitoring script call within the
-  role's lists, a `human_change` by `spec/model/change-paths.yaml`, a `script` draft (see Campaigns, Scripts &
+  role's lists, a `human_change` by `spec/model/change-paths.yaml` (then refused, PRP-28), a `script` draft (see Campaigns, Scripts &
   Translator), `set` on `Schedule.spec.cron` as a window shift without lowering the frequency more than twice, or at the
   same frequency for a backup schedule, on `Schedule.spec.timezone`, on tenant limits, campaign and script ceilings only
   downward, and on the guarded fields of a tenant's single dispatcher rule;
@@ -2081,7 +2081,8 @@ the role's `max_open_proposals` and `max_per_week` (3 each) and the tenant's `ma
   the attempt's mark and `untrusted_seen` with its source, and the share of the author's and the role's own points in
   the evidence series (`self_influence`).
 - `doctor` shows `insights.loop_disabled` with the reasons: `no_insight_role`, `insight_line_zero:<role>`,
-  `review_line_zero`, `no_present_to`, `no_decider`.
+  `veto_lens_no_executor:<role>`, `review_line_zero`, `no_present_to`, `no_decider`, and `insights.not_started` with
+  the roles whose analysis no active schedule and no route starts, which never runs though the cycle is on.
 - Not built: a route that starts analysis from `obs.*` and `alarm.*` events, `create_from_template` changes, catalog
   fields of the allowlist (no manifest path), the turn order of analysis tasks (INS-5 is deferred; they go by the
   ordinary dispatch order).

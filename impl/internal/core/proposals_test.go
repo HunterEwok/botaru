@@ -298,7 +298,7 @@ func TestAnalysisStart(t *testing.T) {
 			IdempotencyKey: "k1", Initiator: b.alice, Source: "interactive"}); err == nil {
 			t.Error("a person started an analysis")
 		}
-		over, err := insightOverLimit(ctx, tx, now, cat, "demo", "hello.insight.v1")
+		over, err := insightOverLimit(ctx, tx, now, cat, "demo", "hello.insight.v1", false)
 		if err != nil || over {
 			t.Errorf("the first analysis is over the limit: %v", err)
 		}
@@ -315,7 +315,7 @@ func TestAnalysisStart(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		over, err := insightOverLimit(ctx, tx, now, cat, "demo", "hello.insight.v1")
+		over, err := insightOverLimit(ctx, tx, now, cat, "demo", "hello.insight.v1", false)
 		if err != nil || !over {
 			t.Errorf("a second analysis inside the merge window: %v", err)
 		}
@@ -324,9 +324,33 @@ func TestAnalysisStart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Past the merge window, an analysis from an event keeps to max_event_runs, 1 per day by
+	// default: the earlier one, taken as from an event, uses the day's run.
+	b.exec(t, `UPDATE tasks SET created_at = created_at - interval '2 hours' WHERE type = 'hello.insight.v1'`)
+	err = b.c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+		cat, err := b.c.Catalog(ctx)
+		if err != nil {
+			return err
+		}
+		if over, err := insightOverLimit(ctx, tx, now, cat, "demo", "hello.insight.v1", true); err != nil || over {
+			t.Errorf("an event analysis past the window with no event run today: %v", err)
+		}
+		if _, err := tx.Exec(ctx, `UPDATE tasks SET idempotency_key = 'system:event:r:s:e1' WHERE type = 'hello.insight.v1'`); err != nil {
+			return err
+		}
+		if over, err := insightOverLimit(ctx, tx, now, cat, "demo", "hello.insight.v1", true); err != nil || !over {
+			t.Errorf("a second event analysis in a day: %v", err)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 }
 
-// Doctor names the reasons the improvement cycle is off; here no person may decide (INS-6).
+// Doctor names the reasons the improvement cycle is off; here the bench has no reviewer role for
+// the veto lenses and no person may decide (INS-6). It also names the role whose analysis
+// nothing starts.
 func TestLoopDisabled(t *testing.T) {
 	t.Parallel()
 	b := newInsightBench(t, nil)
@@ -334,15 +358,24 @@ func TestLoopDisabled(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	seen := 0
 	for _, ch := range doc.Checks {
-		if ch.ID == "insights.loop_disabled" && ch.Tenant == "demo" {
-			if ch.OK || ch.Value != "no_decider" {
+		switch {
+		case ch.ID == "insights.loop_disabled" && ch.Tenant == "demo":
+			if ch.OK || ch.Value != "veto_lens_no_executor:hello,no_decider" {
 				t.Fatalf("loop %+v", ch)
 			}
-			return
+			seen++
+		case ch.ID == "insights.not_started" && ch.Tenant == "demo":
+			if ch.OK || ch.Value != "hello" {
+				t.Fatalf("not started %+v", ch)
+			}
+			seen++
 		}
 	}
-	t.Fatal("no insights.loop_disabled check")
+	if seen != 2 {
+		t.Fatal("no insights.loop_disabled or insights.not_started check")
+	}
 }
 
 // Analysis calls only the tools its catalog offers, even when the role's main work holds more
@@ -548,5 +581,31 @@ func TestProposalOnePerBot(t *testing.T) {
 	}
 	if n := len(proposals(t, b)); n != 3 {
 		t.Fatalf("records %d, rejections %v", n, rejections(t, b))
+	}
+}
+
+// PRP-29: doctor shows the numbers of the six farm goals of each tenant, only as information.
+func TestDoctorGoals(t *testing.T) {
+	t.Parallel()
+	b := newInsightBench(t, nil)
+	doc, err := b.c.Doctor(context.Background(), b.op, TenantRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]bool{"goals.g1.done_share": false, "goals.g1.refused": false, "goals.g1.queue_wait_p95_s": false, "goals.g3.limit_stops": false,
+		"goals.g4.sev1_incidents": false, "goals.g4.preventable": false, "goals.g5.better": false, "goals.g5.worse": false,
+		"goals.g5.worse_in_force": false, "goals.g6.cards_max_per_person_day": false}
+	for _, ch := range doc.Checks {
+		if _, ok := want[ch.ID]; ok && ch.Tenant == "demo" {
+			if !ch.OK || ch.Severity != "info" {
+				t.Fatalf("PRP-29: %+v", ch)
+			}
+			want[ch.ID] = true
+		}
+	}
+	for id, seen := range want {
+		if !seen {
+			t.Errorf("PRP-29: no %s", id)
+		}
 	}
 }

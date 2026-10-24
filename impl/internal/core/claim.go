@@ -855,6 +855,13 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 			}
 			payload["evolution"] = evo
 		}
+		// Extension field answer_feedback (MAN-3): the useful share of the answers per task type,
+		// only for a tenant that asks people for it (INS-7).
+		if af, err := answerFeedbackInput(ctx, tx, now, cat.Tenants[w.Tenant]); err != nil {
+			return nil, err
+		} else if af != nil {
+			payload["answer_feedback"] = af
+		}
 	}
 	// The skills as references, and their files as the extension field skill_files, which a
 	// runtime of runtime.skills: runtime_files writes into its own skill directory (SKL-2, MAN-3).

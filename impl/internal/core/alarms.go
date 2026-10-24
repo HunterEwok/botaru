@@ -263,8 +263,8 @@ func (c *Core) noticeAlarm(ctx context.Context, tx pgx.Tx, now time.Time, ep *ep
 	return nil
 }
 
-// alarmLoop repeats the notice of an open page alarm every 30 minutes (MON-13). Without
-// incidents in this build there is no incident.ack, so a page alarm repeats until it resolves.
+// alarmLoop repeats the notice of an open page alarm every 30 minutes while no person took up an
+// incident that adopted its episode with incident.ack (MON-13).
 func (c *Core) alarmLoop(ctx context.Context) error {
 	for {
 		done := true
@@ -272,7 +272,10 @@ func (c *Core) alarmLoop(ctx context.Context) error {
 			ep := &episode{}
 			var subj []byte
 			err := tx.QueryRow(ctx, `SELECT id, tenant, alarmkey, alarm, severity, subject, opened_at FROM alarm_episodes
-				WHERE state = 'firing' AND severity = 'page' AND notified_at <= $1 ORDER BY notified_at, id LIMIT 1 FOR UPDATE SKIP LOCKED`,
+				WHERE state = 'firing' AND severity = 'page' AND notified_at <= $1
+				AND NOT EXISTS (SELECT 1 FROM incidents i WHERE i.tenant = alarm_episodes.tenant AND i.episodes @> ARRAY[alarm_episodes.id]
+					AND i.record->>'humans_took' = 'true')
+				ORDER BY notified_at, id LIMIT 1 FOR UPDATE SKIP LOCKED`,
 				now.Add(-pageRepeat)).Scan(&ep.ID, &ep.Tenant, &ep.Alarmkey, &ep.Alarm, &ep.Severity, &subj, &ep.At)
 			if errors.Is(err, pgx.ErrNoRows) {
 				return nil

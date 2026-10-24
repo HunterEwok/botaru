@@ -19,9 +19,10 @@ type loopReason struct {
 }
 
 // loopOff gives the reasons the improvement cycle of a tenant is disabled (INS-6): no role
-// with analysis, an insight line of 0 for a role, a review line of 0, no present_to address,
-// no active person with proposal.decide. The veto lens executors come with the commission.
-func loopOff(ctx context.Context, q pgx.Tx, cat *Catalog, tenant string) ([]loopReason, error) {
+// with analysis, an insight line of 0 for a role, a veto lens with no executor for the
+// proposals of a role (COM-7, COM-8), a review line of 0, no present_to address, no active
+// person with proposal.decide.
+func (c *Core) loopOff(ctx context.Context, q pgx.Tx, cat *Catalog, tenant string) ([]loopReason, error) {
 	tv := cat.Tenants[tenant]
 	if tv == nil {
 		return nil, nil
@@ -47,6 +48,9 @@ func loopOff(ctx context.Context, q pgx.Tx, cat *Catalog, tenant string) ([]loop
 		roles++
 		if zero("insight", true) {
 			out = append(out, loopReason{Role: name, Reason: "insight_line_zero"})
+		}
+		if !c.vetoExecuted(cat, tenant, name) {
+			out = append(out, loopReason{Role: name, Reason: "veto_lens_no_executor"})
 		}
 	}
 	if roles == 0 {
@@ -91,7 +95,7 @@ func (c *Core) doctorInsights(ctx context.Context, tx pgx.Tx, _ time.Time, cat *
 		if tenant != "farm" && t != tenant {
 			continue
 		}
-		reasons, err := loopOff(ctx, tx, cat, t)
+		reasons, err := c.loopOff(ctx, tx, cat, t)
 		if err != nil {
 			return err
 		}
@@ -105,6 +109,66 @@ func (c *Core) doctorInsights(ctx context.Context, tx pgx.Tx, _ time.Time, cat *
 			}
 		}
 		add(DoctorCheck{ID: "insights.loop_disabled", Tenant: t, OK: len(reasons) == 0, Severity: sevOf(len(reasons) == 0, "warn"), Value: strings.Join(codes, ",")})
+		// An analysis that no schedule or route starts never runs, though the cycle is on.
+		idle := notStarted(cat, t)
+		add(DoctorCheck{ID: "insights.not_started", Tenant: t, OK: len(idle) == 0, Severity: sevOf(len(idle) == 0, "warn"), Value: strings.Join(idle, ",")})
+		// A change that came out worse and is still in force (PRP-27).
+		worse, err := worseInForce(ctx, tx, t)
+		if err != nil {
+			return err
+		}
+		add(DoctorCheck{ID: "insights.worse_in_force", Tenant: t, OK: len(worse) == 0, Severity: sevOf(len(worse) == 0, "warn"), Value: strings.Join(worse, ",")})
 	}
 	return nil
+}
+
+// vetoExecuted says whether every veto lens of the commission has an executor for a proposal of
+// the role: a fallback role or a reviewer role, or the seat role of the charter when it may review
+// the lens (COM-7, COM-8, COM-2).
+func (c *Core) vetoExecuted(cat *Catalog, tenant, role string) bool {
+	lenses, exec := c.commissionLenses(cat, tenant, false, role)
+	defs := c.lensDefs()
+	sr := seatRole(cat, tenant)
+	for _, l := range lenses {
+		if _, ok := exec[l]; ok || !defs[l].Veto {
+			continue
+		}
+		if sr == "" || !c.independentReviewer(cat, sr, defs[l].ReviewType, role) {
+			return false
+		}
+	}
+	return true
+}
+
+// notStarted are the roles of a tenant with an insight section whose analysis types no active
+// schedule and no route of the tenant enqueues (INS-1).
+func notStarted(cat *Catalog, tenant string) []string {
+	tv := cat.Tenants[tenant]
+	if tv == nil {
+		return nil
+	}
+	started := map[string]bool{}
+	for _, sc := range tv.Schedules {
+		if sc.Task != nil && !sc.Paused {
+			started[sc.Task.Type] = true
+		}
+	}
+	for _, rt := range tv.Routes {
+		if rt.Task != nil && rt.RouteMode() == "task" {
+			started[rt.Task.Type] = true
+		}
+	}
+	var out []string
+	for _, name := range slices.Sorted(mapKeys(cat.Roles)) {
+		ins := cat.Roles[name].Insight
+		if ins == nil || !slices.ContainsFunc(ins.Types, func(t string) bool {
+			return hasCap(tv, groupClosure(tv, []string{"system-ops"}), "task:"+t)
+		}) {
+			continue
+		}
+		if !slices.ContainsFunc(ins.Types, func(t string) bool { return started[t] }) {
+			out = append(out, name)
+		}
+	}
+	return out
 }

@@ -37,7 +37,13 @@ func (c *Core) checkChange(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 	case "action_request":
 		return c.checkActionRequest(ctx, tx, cat, a, ch)
 	case "human_change":
-		return c.checkHumanChange(cat, a, ch)
+		// No change path of the registry can be checked as realized yet, so an accepted manual
+		// change would always end not realized by its deadline: it is refused at creation, after
+		// the closed description is checked (PRP-28).
+		if _, err := c.checkHumanChange(cat, a, ch); err != nil {
+			return changeCheck{}, err
+		}
+		return changeCheck{}, rejection("forbidden_change")
 	case "manifest_change":
 		return c.checkManifestChange(now, cat, a, ch)
 	case "script":

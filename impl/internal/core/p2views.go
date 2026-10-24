@@ -560,6 +560,9 @@ func (c *Core) Doctor(ctx context.Context, op Operator, req TenantRequest) (*Doc
 		if err := c.doctorInsights(ctx, tx, now, cat, tenant, add); err != nil {
 			return err
 		}
+		if err := c.doctorGoals(ctx, tx, now, cat, tenant, add); err != nil {
+			return err
+		}
 		if err := c.doctorManager(ctx, tx, now, cat, tenant, add); err != nil {
 			return err
 		}

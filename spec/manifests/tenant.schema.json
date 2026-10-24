@@ -1157,6 +1157,11 @@
           "maximum": 3,
           "description": "From v0.3: farm manager notices to a person per day, counted in the person's card limit; 3 by default and can only be lowered (MGR-52).",
           "x-botaru-version": "v0.3"
+        },
+        "answer_feedback": {
+          "type": "boolean",
+          "description": "From v0.3: the optional \"Useful\" / \"Not needed\" card under a bot's answer to a person in a direct chat, sent once the answer went out and only in the room the person's daily card limit has left after decision cards and manager notices; off by default (INS-7).",
+          "x-botaru-version": "v0.3"
         }
       }
     },

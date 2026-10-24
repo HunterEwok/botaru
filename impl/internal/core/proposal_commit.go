@@ -396,14 +396,15 @@ func keysOverlap(a, b []string) bool {
 }
 
 // lockHolders are the proposals of the tenant that hold a lock on one of keys: a manifest
-// change in realizing, or realized while its trial runs (PRP-9). A lock also holds the direct
+// change in realizing, or realized while its trial runs (PRP-9) or while it stays in force with
+// a worse outcome (PRP-27). A lock also holds the direct
 // neighbours of the locked objects in the output coupling graph (EVO-1).
 func lockHolders(ctx context.Context, tx pgx.Tx, tenant, except string, keys []string) ([]any, error) {
 	if len(keys) == 0 {
 		return nil, nil
 	}
 	rows, err := tx.Query(ctx, `SELECT id, record FROM proposals WHERE tenant = $1 AND id <> $2
-		AND (state = 'realizing' OR state = 'realized' AND record->'trial'->>'outcome' IS NULL)
+		AND (state = 'realizing' OR state = 'realized' AND record->'trial'->>'outcome' IS NULL OR `+worseFollowed+`)
 		AND record->'body'->'change'->>'kind' = 'manifest_change' ORDER BY id`, tenant, except)
 	if err != nil {
 		return nil, err

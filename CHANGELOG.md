@@ -10,6 +10,14 @@ Entries are grouped by area; within a group the newest entry comes first.
 
 ### Skeleton & Contracts
 
+- The end of the improvement loop and the goal numbers (D-123..D-126, additions to v0.3): a change that came out
+  worse and nobody reverted keeps its fields locked, shows in `doctor` as `insights.worse_in_force`, and three days
+  after the executor's card the people who decide on its category get the "Revert" card once (PRP-27); a
+  `human_change`, which no verified link can realize yet, is refused at creation (PRP-28); `doctor` shows the numbers
+  of the six farm goals per tenant as `goals.*` checks, information only (PRP-29); with the new
+  `Tenant.spec.attention.answer_feedback` a bot's answer to a person gets an optional "Useful" / "Not needed" card
+  within the person's daily card limit, and analyses read the useful share per task type (INS-7, migration
+  `0084_answer_feedback`).
 - Cheaper calls without a change to any limit (D-121, additions to v0.3; a profile without the new fields keeps the
   behaviour of 0.3.0): from the second call of a run on P4 sets a second cache point on the last block of the last
   message, so a run reads what it has already sent at the cache read price (GW-18); the optional `ModelProfile.spec.effort`
@@ -42,6 +50,9 @@ Entries are grouped by area; within a group the newest entry comes first.
 
 ### Reference Implementation (impl/)
 
+- The improvement loop: an analysis an event starts keeps to `max_event_runs` per day and its insight limits like a
+  scheduled one; an alarm repeat stops once people took the incident; `doctor` names a veto lens without an
+  executor per role and an analysis that no schedule or route starts (`insights.not_started`).
 - `botaru-agent` uses the session of a chat (MEM-1): it reads the latest exchanges before the first model call and
   appends the goal and the answer before `complete`, so a person's second message is read with the first. The work
   item names how the earlier attempts of the task ended (extension field `previous_attempts`, without the provider's
