@@ -27,6 +27,7 @@ secrets:                             # rotation method of each named secret (SEC
   backup-write-only:     {rotation: overlap, window: 1d}
   bot-token:             {rotation: cutover}
   health-key:            {rotation: overlap, window: 1d}
+  farm-operator:         {rotation: overlap, window: 1d}
   operator:              {rotation: overlap, window: 1d}
   provider-key-demo:     {rotation: overlap, window: 7d}
   store-dsn:             {rotation: overlap, window: 1d}
@@ -40,7 +41,7 @@ hosts:
     processes:
       # P2 listens on the loopback of the core container only (p2_listen 127.0.0.1); admin names it.
       - {name: core, kind: core, user: botaru, networks: [core, store, provider-out],
-         secrets: [store-dsn, token-key, operator, provider-key-demo],
+         secrets: [store-dsn, token-key, operator, farm-operator, provider-key-demo],
          listeners: {p1: {networks: [core]}, p2: {networks: [admin]}}}
       - {name: store, kind: store, user: postgres, networks: [store], secrets: [store-password]}
       - {name: telegram, kind: channel, tenant: demo, user: botaru, networks: [core, messenger-out],

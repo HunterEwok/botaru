@@ -211,7 +211,7 @@ func TestMetadataWholeMonths(t *testing.T) {
 		t.Fatal(err)
 	}
 	ms = retentionSet(map[string]any{"classes": map[string]any{"metadata": "93d"}})(root, ms)
-	if res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "1111111111111111111111111111111111111111", Manifests: ms}); err != nil || !res.Applied {
+	if res, err := b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: "1111111111111111111111111111111111111111", Manifests: ms}); err != nil || !res.Applied {
 		t.Fatalf("apply %+v %v", res, err)
 	}
 	// The next month: a record under the 93 days.

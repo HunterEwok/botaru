@@ -24,7 +24,7 @@ func TestPrincipalOffboardFinal(t *testing.T) {
 	ms, _ := helloSet(t)
 	ms = append(ms, map[string]any{"apiVersion": "botaru/v1alpha1", "kind": "Group", "metadata": map[string]any{"name": "people-admins", "tenant": "demo"},
 		"spec": map[string]any{"caps": []any{"admin:people"}, "data": []any{"summary"}}})
-	if res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "7777777777777777777777777777777777777777", Manifests: ms}); err != nil || !res.Applied {
+	if res, err := b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: "7777777777777777777777777777777777777777", Manifests: ms}); err != nil || !res.Applied {
 		t.Fatalf("apply: %+v %v", res, err)
 	}
 	admin := ids.PrincipalID()

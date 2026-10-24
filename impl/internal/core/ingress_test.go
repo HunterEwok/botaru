@@ -224,7 +224,7 @@ func TestIngressLint(t *testing.T) {
 	codes := func(change func(ms []map[string]any) []map[string]any) map[string]bool {
 		t.Helper()
 		ms := change(deepCopyList(b.ms))
-		res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: strings.Repeat("0", 40), Manifests: ms, DryRun: true})
+		res, err := b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: strings.Repeat("0", 40), Manifests: ms, DryRun: true})
 		if err != nil {
 			t.Fatal(err)
 		}

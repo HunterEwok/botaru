@@ -98,8 +98,10 @@ type rig struct {
 	mock    *mockprovider.Server
 	bot     *fakeBotAPI
 	opToken string
-	root    string
-	botURL  string
+	// farmToken is the operator of farm, which apply takes for objects of every tenant.
+	farmToken string
+	root      string
+	botURL    string
 }
 
 func hashHex(s string) string {
@@ -147,9 +149,10 @@ func newRig(t *testing.T) *rig {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r.opToken = "op-" + ids.Secret(16)
+	r.opToken, r.farmToken = "op-"+ids.Secret(16), "op-"+ids.Secret(16)
 	srv, err := api.New(c, api.Config{
-		Operators:        []api.OperatorCred{{TokenSHA256: hashHex(r.opToken), Principal: ids.PrincipalID(), Tenant: "demo"}},
+		Operators: []api.OperatorCred{{TokenSHA256: hashHex(r.opToken), Principal: ids.PrincipalID(), Tenant: "demo"},
+			{TokenSHA256: hashHex(r.farmToken), Principal: ids.PrincipalID(), Tenant: "farm"}},
 		HealthKeysSHA256: []string{hashHex("health-key")},
 		ReportKeysSHA256: []string{hashHex("report-key")},
 	}, gw)
@@ -220,7 +223,7 @@ func TestHelloBotOverTheWire(t *testing.T) {
 	var applied struct {
 		Applied bool `json:"applied"`
 	}
-	r.p2call(t, r.opToken, "apply", map[string]any{"commit": strings.Repeat("a", 40), "manifests": ms}, &applied)
+	r.p2call(t, r.farmToken, "apply", map[string]any{"commit": strings.Repeat("a", 40), "manifests": ms}, &applied)
 	if !applied.Applied {
 		t.Fatal("apply refused")
 	}

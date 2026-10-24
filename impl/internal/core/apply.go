@@ -95,6 +95,9 @@ func (c *Core) manifestKinds() (map[string]kindInfo, error) {
 // Objects of the store that are not in the set stay and are reported as orphaned; they are
 // deleted only by the explicit delete list (MAN-6).
 func (c *Core) Apply(ctx context.Context, op Operator, req ApplyRequest) (*ApplyResult, error) {
+	if err := c.mayApply(op, req); err != nil {
+		return nil, err
+	}
 	// The lint reads the store before the transaction; an apply that lands in between makes
 	// this one start again, so that two applies never pass the lint on each other's old state.
 	for try := 0; ; try++ {
@@ -106,6 +109,40 @@ func (c *Core) Apply(ctx context.Context, op Operator, req ApplyRequest) (*Apply
 			return nil, fmt.Errorf("%w five times in a row; apply again", err)
 		}
 	}
+}
+
+// mayApply keeps a tenant's operator inside the tenant's wall, as the other P2 operations do:
+// such an operator applies only objects of its own tenant. Objects of every tenant (global
+// kinds, a global model profile), a Tenant object with its budgets and ceilings, skills,
+// deletions and the objects of another tenant take an operator of farm.
+func (c *Core) mayApply(op Operator, req ApplyRequest) error {
+	if op.Tenant == "farm" {
+		return nil
+	}
+	if len(req.Delete) > 0 {
+		return refuse("forbidden", "a delete in apply takes an operator of farm")
+	}
+	if len(req.Skills) > 0 {
+		return refuse("forbidden", "skills are of every tenant; their apply takes an operator of farm")
+	}
+	for _, k := range req.Knowledge {
+		if k.Tenant != op.Tenant {
+			return refuse("forbidden", "knowledge of another tenant takes an operator of farm")
+		}
+	}
+	kinds, err := c.manifestKinds()
+	if err != nil {
+		return err
+	}
+	for i, v := range req.Manifests {
+		d := manifest.FromValue(v, fmt.Sprintf("manifests/%d", i))
+		md, _ := v["metadata"].(map[string]any)
+		tenant, _ := md["tenant"].(string)
+		if scope := kinds[d.Kind].scope; scope != "tenant" && (scope != "either" || tenant == "") || tenant != op.Tenant {
+			return refuse("forbidden", "manifests/%d (%s %s) is not an object of tenant %s; its apply takes an operator of farm", i, d.Kind, d.Name, op.Tenant)
+		}
+	}
+	return nil
 }
 
 // errStoreChanged: another apply changed the store after this one read it for the lint.

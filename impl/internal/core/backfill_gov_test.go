@@ -105,7 +105,7 @@ func TestBackfillOnlyCharterDeclaresSeats(t *testing.T) {
 		t.Helper()
 		ms := cloneSet(t, b.applied)
 		edit(specOf(ms, "Governance", "demo"), specOf(ms, "Commission", "demo"))
-		res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: strings.Repeat("5", 40), Manifests: ms, DryRun: true})
+		res, err := b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: strings.Repeat("5", 40), Manifests: ms, DryRun: true})
 		if err != nil {
 			return []ApplyError{{Code: "refused", Detail: err.Error()}}
 		}
@@ -178,7 +178,7 @@ func TestBackfillOnlyCharterDeclaresSeats(t *testing.T) {
 	ms := cloneSet(t, b.applied)
 	c := specOf(ms, "Governance", "demo")["commission"].(map[string]any)
 	c["seats"] = c["seats"].([]any)[:3]
-	if res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: strings.Repeat("6", 40), Manifests: ms}); err == nil && res.Applied {
+	if res, err := b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: strings.Repeat("6", 40), Manifests: ms}); err == nil && res.Applied {
 		t.Fatal("an apply removed a seat with a holder")
 	}
 	if n := b.count(t, `SELECT count(*) FROM seats WHERE tenant = 'demo' AND id = 'commission:4' AND state = 'held' AND holder = $1`, bot); n != 1 {

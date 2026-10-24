@@ -379,6 +379,12 @@ func StartBench(ctx context.Context, cfg BenchConfig) (_ *Bench, err error) {
 		b.ops[t] = tok
 		creds = append(creds, api.OperatorCred{TokenSHA256: hashHex(tok), Principal: ids.PrincipalID(), Tenant: t})
 	}
+	if _, ok := b.ops["farm"]; !ok {
+		// apply takes an operator of farm for the objects of every tenant.
+		tok := "op-" + ids.Secret(16)
+		b.ops["farm"] = tok
+		creds = append(creds, api.OperatorCred{TokenSHA256: hashHex(tok), Principal: ids.PrincipalID(), Tenant: "farm"})
+	}
 	for _, name := range cfg.PersonOperators {
 		p := b.seed.Person(name)
 		if p == nil || p.ID == "" {
@@ -748,7 +754,7 @@ func (b *Bench) applySet(ctx context.Context, ms []map[string]any, commit, messa
 		req["personas"] = personas
 	}
 	var resp applyResponse
-	if err := b.P2(ctx, b.home(), "apply", req, &resp); err != nil {
+	if err := b.P2(ctx, "farm", "apply", req, &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil

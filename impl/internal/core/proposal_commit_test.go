@@ -107,10 +107,10 @@ func TestProposalCommitLink(t *testing.T) {
 			break
 		}
 	}
-	if res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "a000000000000000000000000000000000000001", Message: "Change\n\nBotaru-Proposal: " + id, Manifests: bad}); err == nil || res != nil {
+	if res, err := b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: "a000000000000000000000000000000000000001", Message: "Change\n\nBotaru-Proposal: " + id, Manifests: bad}); err == nil || res != nil {
 		t.Fatalf("a commit outside the tenant's folder was applied: %+v", res)
 	}
-	if res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "a000000000000000000000000000000000000002", Message: "Raise the queue\n\nBotaru-Proposal: " + id, Manifests: ms}); err != nil || !res.Applied {
+	if res, err := b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: "a000000000000000000000000000000000000002", Message: "Raise the queue\n\nBotaru-Proposal: " + id, Manifests: ms}); err != nil || !res.Applied {
 		t.Fatalf("apply %+v %v", res, err)
 	}
 	rec := recordOf(t, b, id)
@@ -129,7 +129,7 @@ func TestProposalCommitLink(t *testing.T) {
 	}
 	prev := asList(r["revert_patch"])[0].(map[string]any)["previous"]
 	back := withLimit(t, b, int(prev.(float64)))
-	if res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "a000000000000000000000000000000000000003", Message: "Revert\n\nBotaru-Revert: " + id + " harm_observed", Manifests: back}); err != nil || !res.Applied {
+	if res, err := b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: "a000000000000000000000000000000000000003", Message: "Revert\n\nBotaru-Revert: " + id + " harm_observed", Manifests: back}); err != nil || !res.Applied {
 		t.Fatalf("revert apply %+v %v", res, err)
 	}
 	rec = recordOf(t, b, id)
@@ -149,7 +149,7 @@ func TestProposalTrialOutcome(t *testing.T) {
 	ctx := context.Background()
 	b := newCommissionBench(t, true, presentEdit)
 	id, _ := acceptLimits(t, b)
-	if res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "a000000000000000000000000000000000000002", Message: "Botaru-Proposal: " + id, Manifests: withLimit(t, b, 7)}); err != nil || !res.Applied {
+	if res, err := b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: "a000000000000000000000000000000000000002", Message: "Botaru-Proposal: " + id, Manifests: withLimit(t, b, 7)}); err != nil || !res.Applied {
 		t.Fatalf("apply %+v %v", res, err)
 	}
 	b.advance(t, 15*24*3600)

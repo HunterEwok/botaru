@@ -331,7 +331,7 @@ func TestResultMediaTypes(t *testing.T) {
 	// The lint: active types and a PDF of an agent type.
 	ms, at := helloSet(t)
 	ms[at["TaskType"]]["spec"].(map[string]any)["result_media_types"] = []any{"text/html", "image/svg+xml", "application/xhtml+xml", "application/pdf", "text/csv"}
-	res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: strings.Repeat("8", 40), Manifests: ms, DryRun: true})
+	res, err := b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: strings.Repeat("8", 40), Manifests: ms, DryRun: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -346,7 +346,7 @@ func TestResultMediaTypes(t *testing.T) {
 	}
 	ms[at["TaskType"]]["spec"].(map[string]any)["worker_kind"] = "job"
 	ms[at["TaskType"]]["spec"].(map[string]any)["result_media_types"] = []any{"application/pdf"}
-	if res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: strings.Repeat("8", 40), Manifests: ms, DryRun: true}); err != nil || hasCode(res, "media_type_not_allowed") {
+	if res, err := b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: strings.Repeat("8", 40), Manifests: ms, DryRun: true}); err != nil || hasCode(res, "media_type_not_allowed") {
 		t.Fatalf("a job type with a PDF: %+v %v", res, err)
 	}
 }

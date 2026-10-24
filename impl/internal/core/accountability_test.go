@@ -43,7 +43,7 @@ func (b *bench) charter(t *testing.T, n int, edit func(com map[string]any)) *App
 	if edit != nil {
 		edit(specOf(ms, "Governance", "demo")["commission"].(map[string]any))
 	}
-	res, err := b.c.Apply(context.Background(), b.op, ApplyRequest{Commit: fmt.Sprintf("c%039x", n), Message: "Charter", Manifests: ms})
+	res, err := b.c.Apply(context.Background(), farmOf(b.op), ApplyRequest{Commit: fmt.Sprintf("c%039x", n), Message: "Charter", Manifests: ms})
 	if err != nil && res == nil {
 		if p, ok := AsProblem(err); !ok || p.Reason != "apply_lint_failed" {
 			t.Fatalf("apply: %v", err)
@@ -440,7 +440,7 @@ func TestTrialFarmGuards(t *testing.T) {
 	ctx := context.Background()
 	b := newCommissionBench(t, true, presentEdit)
 	id, _ := acceptLimits(t, b)
-	if res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "a000000000000000000000000000000000000002", Message: "Raise the queue\n\nBotaru-Proposal: " + id, Manifests: withLimit(t, b, 7)}); err != nil || !res.Applied {
+	if res, err := b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: "a000000000000000000000000000000000000002", Message: "Raise the queue\n\nBotaru-Proposal: " + id, Manifests: withLimit(t, b, 7)}); err != nil || !res.Applied {
 		t.Fatalf("apply %+v %v", res, err)
 	}
 	trial := mmapAny(recordOf(t, b, id)["trial"])

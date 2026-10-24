@@ -64,7 +64,7 @@ func TestIngressOverTheWire(t *testing.T) {
 		Applied bool `json:"applied"`
 		Errors  []any
 	}
-	r.p2call(t, r.opToken, "apply", map[string]any{"commit": strings.Repeat("b", 40), "manifests": ms}, &applied)
+	r.p2call(t, r.farmToken, "apply", map[string]any{"commit": strings.Repeat("b", 40), "manifests": ms}, &applied)
 	if !applied.Applied {
 		t.Fatalf("apply refused: %v", applied.Errors)
 	}

@@ -74,14 +74,14 @@ func TestVariantArchiveRevert(t *testing.T) {
 	if s := variantOf(t, b, id).Sig; s != "Tenant.spec.limits.max_queued:down" {
 		t.Fatalf("signature %q", s)
 	}
-	if res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "a000000000000000000000000000000000000002", Message: "Botaru-Proposal: " + id, Manifests: withLimit(t, b, 7)}); err != nil || !res.Applied {
+	if res, err := b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: "a000000000000000000000000000000000000002", Message: "Botaru-Proposal: " + id, Manifests: withLimit(t, b, 7)}); err != nil || !res.Applied {
 		t.Fatalf("apply %+v %v", res, err)
 	}
 	if v := variantOf(t, b, id); !v.Live || v.Outcome != "pending" {
 		t.Fatalf("realized variant %+v", v)
 	}
 	prev := asList(recordOf(t, b, id)["realization"].(map[string]any)["revert_patch"])[0].(map[string]any)["previous"]
-	if res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "a000000000000000000000000000000000000003", Message: "Botaru-Revert: " + id + " harm_observed",
+	if res, err := b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: "a000000000000000000000000000000000000003", Message: "Botaru-Revert: " + id + " harm_observed",
 		Manifests: withLimit(t, b, int(prev.(float64)))}); err != nil || !res.Applied {
 		t.Fatalf("revert %+v %v", res, err)
 	}
@@ -143,7 +143,7 @@ func TestVariantLineage(t *testing.T) {
 	ctx := context.Background()
 	b := newCommissionBench(t, true, presentEdit)
 	id, _ := acceptLimits(t, b)
-	if res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "a000000000000000000000000000000000000002", Message: "Botaru-Proposal: " + id, Manifests: withLimit(t, b, 7)}); err != nil || !res.Applied {
+	if res, err := b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: "a000000000000000000000000000000000000002", Message: "Botaru-Proposal: " + id, Manifests: withLimit(t, b, 7)}); err != nil || !res.Applied {
 		t.Fatalf("apply %+v %v", res, err)
 	}
 	parent := variantOf(t, b, id)
@@ -230,7 +230,7 @@ func TestP2VariantViews(t *testing.T) {
 	b := newCommissionBench(t, true, presentEdit)
 	alice := Operator{Principal: b.alice, Tenant: "demo"}
 	id, _ := acceptLimits(t, b)
-	if res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "a000000000000000000000000000000000000002", Message: "Botaru-Proposal: " + id, Manifests: withLimit(t, b, 7)}); err != nil || !res.Applied {
+	if res, err := b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: "a000000000000000000000000000000000000002", Message: "Botaru-Proposal: " + id, Manifests: withLimit(t, b, 7)}); err != nil || !res.Applied {
 		t.Fatalf("apply %+v %v", res, err)
 	}
 	l, err := b.c.VariantList(ctx, alice, VariantListRequest{Target: "Tenant:demo"})
@@ -251,7 +251,7 @@ func TestP2VariantViews(t *testing.T) {
 		t.Fatalf("an unknown variant: %v", err)
 	}
 	prev := asList(recordOf(t, b, id)["realization"].(map[string]any)["revert_patch"])[0].(map[string]any)["previous"]
-	if res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "a000000000000000000000000000000000000003", Message: "Botaru-Revert: " + id + " harm_observed",
+	if res, err := b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: "a000000000000000000000000000000000000003", Message: "Botaru-Revert: " + id + " harm_observed",
 		Manifests: withLimit(t, b, int(prev.(float64)))}); err != nil || !res.Applied {
 		t.Fatalf("revert %+v %v", res, err)
 	}

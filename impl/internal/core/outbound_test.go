@@ -119,7 +119,7 @@ func TestChannelCeilingWithholds(t *testing.T) {
 			privacy["channels"] = []any{map[string]any{"driver": "telegram", "third_party_storage": true, "ceiling": "summary"}}
 		}
 	}
-	if res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "2222222222222222222222222222222222222222", Manifests: ms}); err != nil || !res.Applied {
+	if res, err := b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: "2222222222222222222222222222222222222222", Manifests: ms}); err != nil || !res.Applied {
 		t.Fatalf("apply: %+v %v", res, err)
 	}
 	task := b.helloDone(t, "1", "internal", "error at 10:31 in nginx")
