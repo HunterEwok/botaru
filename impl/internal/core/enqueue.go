@@ -74,6 +74,9 @@ type enqueueInput struct {
 	Continues string
 	// Untrusted carries untrusted_seen over from the continued task (CNT-5).
 	Untrusted bool
+	// ServiceGoal marks a body an external program posted, of a type without goal_trust
+	// authored: someone else's text (INJ-13).
+	ServiceGoal bool
 	// ContinuesMark is the data mark of the continued task, whose outcome the new one carries.
 	ContinuesMark string
 	// EstimateMin is the least reserve of the task: a review reserves its type's tree budget,
@@ -400,6 +403,8 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 		personal = append(personal, "forward")
 	case in.Quoted:
 		record["untrusted_seen"], record["untrusted_source"] = true, "quote"
+	case in.ServiceGoal:
+		record["untrusted_seen"], record["untrusted_source"] = true, "goal:service"
 	}
 	if in.Quoted {
 		personal = append(personal, "quote")

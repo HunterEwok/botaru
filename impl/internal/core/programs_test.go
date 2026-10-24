@@ -148,6 +148,43 @@ func TestProgramEnqueue(t *testing.T) {
 	}
 }
 
+// INJ-13: a task from api:k1 of a type without goal_trust is marked at enqueue with the source
+// goal:service; a type with goal_trust authored keeps the program's goal trusted.
+func TestProgramEnqueueGoalTrust(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	mark := func(b *peopleBench, key string) (bool, string) {
+		t.Helper()
+		ref, err := b.c.ProgramEnqueue(ctx, b.prog, EnqueueRequest{Body: greet("summarise the ticket"), IdempotencyKey: key})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var seen bool
+		var source *string
+		if err := b.c.st.Pool.QueryRow(ctx, `SELECT (record->>'untrusted_seen')::boolean, record->>'untrusted_source' FROM tasks WHERE id = $1`,
+			ref.ID).Scan(&seen, &source); err != nil {
+			t.Fatal(err)
+		}
+		if source == nil {
+			return seen, ""
+		}
+		return seen, *source
+	}
+	if seen, source := mark(newPeopleBench(t, nil), "k1"); !seen || source != "goal:service" {
+		t.Fatalf("a program's goal of a type without goal_trust: %v %q", seen, source)
+	}
+	authored := newPeopleBench(t, func(ms []map[string]any) {
+		for _, m := range ms {
+			if m["kind"] == "TaskType" && m["metadata"].(map[string]any)["name"] == "hello.greet.v1" {
+				m["spec"].(map[string]any)["goal_trust"] = "authored"
+			}
+		}
+	})
+	if seen, source := mark(authored, "k1"); seen || source != "" {
+		t.Fatalf("a program's goal of a type with goal_trust authored: %v %q", seen, source)
+	}
+}
+
 // DSP-7 and MAN-5: at the queue ceiling a program gets over_capacity with retry_after_s and the
 // key is not taken; a budget.set below the git limit refuses the enqueue with budget_exhausted
 // until its expiry, a value above the git limit or without a future expiry is refused, and the
