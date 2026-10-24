@@ -3,6 +3,7 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -167,6 +168,7 @@ type fakeCore struct {
 	claimed   bool
 	session   bool     // the attempt has a session handle and an earlier attempt
 	appends   []string // the bearer and body of each session.append, and "complete" in turn
+	busy      []int    // model calls P4 refuses as rate limited first, with these waits in seconds
 }
 
 func (f *fakeCore) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -239,6 +241,15 @@ func (f *fakeCore) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{"tools": []any{}}})
 	case "/v1/p4/anthropic/v1/messages":
 		f.model = append(f.model, body)
+		if len(f.busy) > 0 {
+			after := f.busy[0]
+			f.busy = f.busy[1:]
+			w.Header().Set("Content-Type", "application/problem+json")
+			w.WriteHeader(http.StatusTooManyRequests)
+			_ = json.NewEncoder(w).Encode(map[string]any{"type": "urn:botaru:reason:provider_rate_limited", "title": "provider_rate_limited",
+				"status": 429, "reason": "provider_rate_limited", "retry_after_s": after})
+			return
+		}
 		if f.noCalls > 0 {
 			f.noCalls--
 			_ = json.NewEncoder(w).Encode(map[string]any{"id": "msg_0", "type": "message", "role": "assistant", "model": "m",
@@ -605,4 +616,44 @@ func p1Valid(schema string, body []byte) error {
 		return err
 	}
 	return specSet.Validate(schema, v)
+}
+
+// GW-20: a busy provider that names a short wait gets the same call again after it, and the
+// attempt completes; a long wait, or more than two, ends the run with the provider's reason.
+func TestAgentNamedWait(t *testing.T) {
+	f := &fakeCore{answers: []string{`{"answer":"ok","verdict":"no_cause"}`}, busy: []int{1}}
+	srv := httptest.NewServer(f)
+	defer srv.Close()
+	a := New(Config{Core: &p1client.Client{BaseURL: srv.URL, Token: "w"}})
+	if worked, err := a.Once(context.Background(), 0); err != nil || !worked {
+		t.Fatalf("once: %v %v", worked, err)
+	}
+	if len(f.model) != 2 || len(f.completes) != 1 || len(f.fails) != 0 {
+		t.Fatalf("model calls %d, completes %d, fails %v", len(f.model), len(f.completes), f.fails)
+	}
+	if !bytes.Equal(f.model[0], f.model[1]) {
+		t.Error("the call after the wait is not the same call")
+	}
+	for _, busy := range [][]int{{120}, {1, 1, 1}} {
+		f := &fakeCore{answers: []string{`{"answer":"ok","verdict":"no_cause"}`}, busy: busy}
+		srv := httptest.NewServer(f)
+		a := New(Config{Core: &p1client.Client{BaseURL: srv.URL, Token: "w"}})
+		if _, err := a.Once(context.Background(), 0); err != nil {
+			t.Fatal(err)
+		}
+		srv.Close()
+		if want := min(len(busy), maxWaits+1); len(f.model) != want || len(f.fails) != 1 || f.fails[0]["reason"] != "provider_rate_limited" {
+			t.Errorf("busy %v: model calls %d (want %d), fails %v", busy, len(f.model), want, f.fails)
+		}
+	}
+}
+
+func TestNamedWait(t *testing.T) {
+	now := time.Date(2026, 10, 24, 12, 0, 0, 0, time.UTC)
+	if namedWait("provider_unavailable", 5) != 5*time.Second || namedWait("provider_rate_limited", 31) != 0 || namedWait("model_error", 5) != 0 || namedWait("provider_rate_limited", 0) != 0 {
+		t.Error("namedWait")
+	}
+	if !waitFits("", now, 30*time.Second) || waitFits(now.Add(100*time.Second).Format(time.RFC3339), now, 30*time.Second) || !waitFits(now.Add(10*time.Minute).Format(time.RFC3339), now, 30*time.Second) {
+		t.Error("waitFits")
+	}
 }

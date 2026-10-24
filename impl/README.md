@@ -12,7 +12,10 @@ How each subsystem behaves: [ARCHITECTURE.md](ARCHITECTURE.md).
 
 - The implementation does not change skeleton files outside `impl/`. A change of a contract goes through the skeleton
   rules: additive only inside a version (MAN-3), a new schema file `.v(N+1)` for a breaking change.
-- It passes the `conformance/` suite and the evals of the skeleton; a rule with `waivable: false` cannot go into its
+- It runs the behaviour cases of `conformance/` that have a fixture and the evals of the skeleton with the mock model;
+  the conformance runner (`internal/conform`) writes a coverage table per rule into the summary of the CI job. Most
+  rules are still checked by their description, the code and the Go tests a rule's `fixtures` names, not by a
+  behaviour case: `python3 ci/readiness.py` counts them per version. A rule with `waivable: false` cannot go into the
   list of expected failures.
 - The agent runtime is our own loop over P4 (D-93); conversation memory, sessions and transcript compression live in the
   core stores.

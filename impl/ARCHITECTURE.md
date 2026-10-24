@@ -220,7 +220,9 @@ only these.
   runtime as the extension field `attempt_until`. The stall loop ends a lease past it with `attempt_timeout`, which
   spends the attempt, unless the task deadline has passed too, which the deadline loop answers; a read tool call of the attempt is abandoned with it, a write runs on under its own lease. The
   rule's `retry.max_attempts` lowers the type's attempts in `endAttempt`. `botaru-agent` makes its last model call,
-  without tools, when less than 90 s, or a quarter of a shorter attempt, are left.
+  without tools, when less than 90 s, or a quarter of a shorter attempt, are left. When P4 refuses a call with
+  `provider_rate_limited` or `provider_unavailable` and names a `retry_after_s` of at most 30 s, the agent waits it
+  and sends the same call again, at most twice per attempt and only while those 90 s stay (GW-20).
 
 ### Holds
 

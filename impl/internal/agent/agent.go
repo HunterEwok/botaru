@@ -424,6 +424,8 @@ func (a *Agent) run(ctx context.Context, p attemptPayload) (map[string]any, stri
 	}
 	messages := []anthropic.MessageParam{anthropic.NewUserMessage(first...)}
 	repaired, schemaRepaired := false, false
+	// waits counts the waits a busy provider named in this attempt (GW-20).
+	waits := 0
 	var firstTools []byte
 	for turn := 0; turn < maxTurns; turn++ {
 		// The catalog is read before every model call: P4 requires the current one, and an
@@ -473,15 +475,24 @@ func (a *Agent) run(ctx context.Context, p attemptPayload) (map[string]any, stri
 			}
 		}
 		msg, err := client.Messages.New(ctx, params)
+		// A busy provider that names a short wait gets the same call again after it, while the
+		// attempt has the time (GW-20); the run does not start over from its first call.
+		for err != nil && waits < maxWaits {
+			reason, after := p4Problem(err)
+			d := namedWait(reason, after)
+			if d == 0 || !waitFits(p.AttemptUntil, time.Now(), d) {
+				break
+			}
+			waits++
+			a.log.Info("the provider named a wait; the same call goes again after it", "task", p.Task.ID, "reason", reason, "wait_s", after)
+			if sleep(ctx, d); ctx.Err() != nil {
+				break
+			}
+			msg, err = client.Messages.New(ctx, params)
+		}
 		if err != nil {
-			var apiErr *anthropic.Error
-			if errors.As(err, &apiErr) {
-				var prob struct {
-					Reason string `json:"reason"`
-				}
-				if json.Unmarshal([]byte(apiErr.RawJSON()), &prob) == nil && prob.Reason != "" {
-					return nil, failReason(prob.Reason), err
-				}
+			if reason, _ := p4Problem(err); reason != "" {
+				return nil, failReason(reason), err
 			}
 			return nil, "model_error", err
 		}
@@ -608,6 +619,48 @@ func cutToolUses(msg *anthropic.Message) []anthropic.ContentBlockParamUnion {
 
 // cutCallText is the tool result of a call that the output limit cut.
 const cutCallText = "This call was cut at the output token limit and did not run. Send it again, shorter, or answer."
+
+// maxNamedWait is the longest wait a provider may name for the runtime to wait it out and send
+// the same call again within the attempt, and maxWaits how often an attempt does so (GW-20).
+const (
+	maxNamedWait = 30 * time.Second
+	maxWaits     = 2
+)
+
+// p4Problem is the reason and the named wait in seconds of a P4 refusal; "" for another error.
+func p4Problem(err error) (string, int) {
+	var apiErr *anthropic.Error
+	if !errors.As(err, &apiErr) {
+		return "", 0
+	}
+	var prob struct {
+		Reason     string `json:"reason"`
+		RetryAfter int    `json:"retry_after_s"`
+	}
+	if json.Unmarshal([]byte(apiErr.RawJSON()), &prob) != nil {
+		return "", 0
+	}
+	return prob.Reason, prob.RetryAfter
+}
+
+// namedWait is the wait before the same call goes again: the wait a busy provider named, when
+// it is short; zero when the call does not go again (GW-20).
+func namedWait(reason string, after int) time.Duration {
+	d := time.Duration(after) * time.Second
+	if (reason != "provider_rate_limited" && reason != "provider_unavailable") || d <= 0 || d > maxNamedWait {
+		return 0
+	}
+	return d
+}
+
+// waitFits says whether the attempt keeps the margin of its last call after a wait of d.
+func waitFits(until string, now time.Time, d time.Duration) bool {
+	if until == "" {
+		return true
+	}
+	t, err := time.Parse(time.RFC3339, until)
+	return err == nil && t.Sub(now.Add(d)) >= lastCallMargin
+}
 
 // failReason maps a P4 refusal to the reason of fail: the provider codes do not spend the
 // attempt, the others end the run.
