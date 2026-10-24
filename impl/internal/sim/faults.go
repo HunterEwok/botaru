@@ -280,9 +280,9 @@ type FaultRun struct {
 }
 
 // InjectFault puts a farm fault on and heals it after its time; the stand's run ends any heal
-// still waiting. F-1 stops the running replica that holds the newest attempt lease in the tenant (or,
-// with none, a replica of the tenant's role with the most replicas); F-8 returns once the core
-// started again.
+// still waiting. F-1 stops the running replica that holds the newest attempt lease in the tenant
+// among the roles with another running replica there (or, with none, a replica of the tenant's
+// role with the most replicas); F-8 returns once the core started again.
 func (s *Stand) InjectFault(ctx context.Context, code, tenant string) (*FaultRun, error) {
 	return s.injectFault(ctx, code, tenant, "")
 }
@@ -337,31 +337,8 @@ func (s *Stand) injectFault(ctx context.Context, code, tenant, task string) (*Fa
 // silenceReplica stops the replica of F-1 as a crash would and starts it again after
 // replicaDown, under the stand's run.
 func (s *Stand) silenceReplica(ctx context.Context, tenant, want string, run *FaultRun) error {
-	// The newest lease of a replica that still runs (a silent one keeps its lease until it
-	// expires), or the lease of the task asked for.
-	running := map[string]bool{}
-	for _, n := range s.Bench.Workers() {
-		running[n] = true
-	}
-	rows, err := s.Bench.Store().Pool.Query(ctx, `SELECT worker_id, work_id FROM leases WHERE tenant = $1 AND kind = 'attempt' AND state = 'active'
-		AND ($2 = '' OR work_id = $2) ORDER BY created_at DESC`, tenant, want)
+	name, task, err := s.leaseHolder(ctx, tenant, want, want == "")
 	if err != nil {
-		return err
-	}
-	name, task := "", ""
-	for rows.Next() {
-		var id, t string
-		if err := rows.Scan(&id, &t); err != nil {
-			rows.Close()
-			return err
-		}
-		if n := s.Bench.WorkerName(id); running[n] {
-			name, task = n, t
-			break
-		}
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
 		return err
 	}
 	if want != "" && name == "" {
@@ -391,6 +368,71 @@ func (s *Stand) silenceReplica(ctx context.Context, tenant, want string, run *Fa
 	})
 	return nil
 }
+
+// leaseHolder is the running replica that holds the newest attempt lease of the tenant (a
+// silent one keeps its lease until it expires), or the lease of the task asked for, with its
+// task; "" when none does. With shared it takes only a replica whose role runs another replica
+// in the tenant: only then can the attempt move on within two lease terms (M-5), while a role
+// with one replica waits for the restart.
+func (s *Stand) leaseHolder(ctx context.Context, tenant, want string, shared bool) (string, string, error) {
+	running := map[string]bool{}
+	replicas := map[string]int{}
+	for _, n := range s.Bench.Workers() {
+		running[n] = true
+		replicas[roleOf(n)]++
+	}
+	rows, err := s.Bench.Store().Pool.Query(ctx, `SELECT worker_id, work_id FROM leases WHERE tenant = $1 AND kind = 'attempt' AND state = 'active'
+		AND ($2 = '' OR work_id = $2) ORDER BY created_at DESC`, tenant, want)
+	if err != nil {
+		return "", "", err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, t string
+		if err := rows.Scan(&id, &t); err != nil {
+			return "", "", err
+		}
+		if n := s.Bench.WorkerName(id); running[n] && (!shared || replicas[roleOf(n)] > 1) {
+			return n, t, nil
+		}
+	}
+	return "", "", rows.Err()
+}
+
+// WaitAttemptLease waits up to max for a running replica of the tenant (the home tenant when
+// empty), of a role with another replica, to hold an attempt lease, so that F-1 of a load
+// profile stops a replica in the middle of a task rather than an idle one, which leaves M-5
+// nothing to measure. It says whether one came.
+func (s *Stand) WaitAttemptLease(ctx context.Context, tenant string, max time.Duration) bool {
+	if tenant == "" {
+		tenant = s.Home()
+	}
+	end := time.Now().Add(max)
+	for {
+		if name, _, err := s.leaseHolder(ctx, tenant, "", true); err == nil && name != "" {
+			return true
+		}
+		if time.Now().After(end) {
+			return false
+		}
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(leasePoll):
+		}
+	}
+}
+
+// roleOf is the tenant and role of a replica name "tenant/role/n".
+func roleOf(name string) string {
+	if i := strings.LastIndex(name, "/"); i > 0 {
+		return name[:i]
+	}
+	return name
+}
+
+// leasePoll is how often WaitAttemptLease looks for an attempt lease.
+const leasePoll = 500 * time.Millisecond
 
 // spawn runs fn under the stand's run unless the stand is closing; Close waits for it.
 func (s *Stand) spawn(fn func(context.Context)) bool {

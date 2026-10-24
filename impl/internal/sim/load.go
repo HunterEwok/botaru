@@ -280,6 +280,21 @@ type LoadSummary struct {
 func (d *Director) RunLoad(ctx context.Context, p *LoadProfile, seed int64) LoadSummary {
 	g := &loadGen{d: d, p: p, r: rand.New(rand.NewPCG(uint64(seed), 17)), step: d.S.cfg.Step, started: map[string]int{}, skipped: map[string]int{}, analysing: map[string]int{}, costly: map[string][]time.Time{}, faulty: map[string]bool{}}
 	d.S.log.Addf(KindDirector, "load %s: %d kinds of work over %s", p.Name, len(p.Works), strings.Join(d.S.TenantNames(), ", "))
+	// A load run starts on a fresh store, where the analyses of ops-reader would rightly find
+	// nothing to improve: the tenants with a manager get the history of past investigations
+	// that the scenario incident-and-commission seeds, so the path of improvement (M-10) has a
+	// weak spot to find.
+	var tenants []*FarmTenant
+	if f := d.S.Farm(); f != nil {
+		tenants = f.Tenants
+	}
+	for _, t := range tenants {
+		if t.Manager {
+			if err := d.S.SeedInvestigationLoadIn(ctx, t.Name); err != nil {
+				d.S.log.Addf(KindDirector, "load %s: seeding the investigations of %s: %v", p.Name, t.Name, err)
+			}
+		}
+	}
 	start := time.Now()
 	faults := map[string]int{}
 	for _, f := range p.Faults {
@@ -329,6 +344,12 @@ func (g *loadGen) faults(ctx context.Context, f LoadFault, count map[string]int)
 			return
 		case <-time.After(wait):
 		}
+		if f.Code == "F-1" && !g.d.S.WaitAttemptLease(ctx, f.Tenant, f1Wait) {
+			if ctx.Err() != nil {
+				return
+			}
+			g.d.S.log.Addf(KindFault, "F-1: no replica of %s with another of its role held an attempt lease within %s; it stops an idle one", tenantOr(f.Tenant, "the home tenant"), f1Wait)
+		}
 		if run, err := g.d.S.InjectFault(ctx, f.Code, f.Tenant); err != nil {
 			g.d.S.log.Addf(KindFault, "%s: %v", f.Code, err)
 		} else {
@@ -341,6 +362,17 @@ func (g *loadGen) faults(ctx context.Context, f LoadFault, count map[string]int)
 		}
 		wait = f.Every
 	}
+}
+
+// f1Wait is how long F-1 of a profile waits past its time for a replica in the middle of a task.
+const f1Wait = 10 * time.Minute
+
+// tenantOr is the tenant, or other when it is empty.
+func tenantOr(tenant, other string) string {
+	if tenant == "" {
+		return other
+	}
+	return tenant
 }
 
 // poisson draws a Poisson number with the mean (Knuth; the means here are far below one).
