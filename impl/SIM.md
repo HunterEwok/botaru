@@ -217,7 +217,9 @@ Each step (`-step`, 5 seconds by default) the physics:
   the home tenant's first db machine, `disk-filling:<host>` on that machine; `slow-site` likewise on a web machine);
 - samples the series the monitoring system serves (`vfs.fs.size[<mount>,pused|pfree]`, `system.cpu.load[all,avg1]`,
   `vm.memory.utilization`, the in and out traffic of `eth0`, `net.tcp.service[http]`) on every machine, so each
-  closed field of `monitor/item_history` (`cpu_load`, `mem_used`, `disk_used`, `net_in`, `net_out`) has points;
+  closed field of `monitor/item_history` (`cpu_load`, `mem_used`, `disk_used`, `net_in`, `net_out`) has points
+  (the stand starts the monitor plugin with `-item disk_used=vfs.fs.size[/data,pused]`: the data volume, where the
+  pipeline writes and the disk alarm watches, so on a machine without one `disk_used` ends with `item_unknown`);
 - opens and closes the problems of the catalog triggers: `4407` (`service_down`) while nginx on a web machine is
   not active, `4401` (`disk_free`) below 15% free on the data volume of a db machine (it closes at 20%);
 - appends the log lines of the moment: `502` with `connect() failed` while app-api is down, `504` with `upstream

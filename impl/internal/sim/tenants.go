@@ -367,8 +367,11 @@ func hostPlugins(cfg Config, f *Farm, roots map[string]string, e evals.HostEnv) 
 		if mon == "" {
 			mon = t.First(KindDB)
 		}
+		// disk_used reads the data volume, where the pipeline writes and the disk alarms watch, as
+		// an installation sets it for its data machines; the root volume never changes here.
 		out = append(out, evals.HostPlugins{Host: mon, Tenant: t.Name, Plugins: map[string][]string{
-			"monitor": {"-manifest", m("monitor"), "-api", e.MonitorAPI, "-api-token-file", e.MonitorTokenFile, "-catalog", catalogFile(cfg.Work, t.Name), "-tenant", t.Name},
+			"monitor": {"-manifest", m("monitor"), "-api", e.MonitorAPI, "-api-token-file", e.MonitorTokenFile, "-catalog", catalogFile(cfg.Work, t.Name), "-tenant", t.Name,
+				"-item", "disk_used=" + diskItem("/data", "pused")},
 		}})
 	}
 	return out
