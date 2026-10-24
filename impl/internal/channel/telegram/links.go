@@ -157,8 +157,7 @@ func findMentions(s string) [][2]int {
 	return out
 }
 
-// isSeparator is Telegram's separator class: a C1 control is not one there, but cleanText turns
-// the controls into spaces.
+
 func isASCII(s string) bool {
 	for i := 0; i < len(s); i++ {
 		if s[i] >= 0x80 {
@@ -168,6 +167,8 @@ func isASCII(s string) bool {
 	return true
 }
 
+// isSeparator is Telegram's separator class: a C1 control is not one there, but cleanText turns
+// the controls into spaces.
 func isSeparator(r rune) bool { return unicode.In(r, unicode.Z) }
 
 func isURLRune(r rune) bool {
