@@ -2,12 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:botaru:schema:p1-card-feedback-request:1",
   "title": "P1 card.feedback: request",
-  "description": "From v0.3: the buttons \"Useful\" and \"Not needed\" of a farm manager notice (manager_attention) and of an analysis report (postmortem_report). The answer only goes into the share of useful notices in the holder report (MGR-50, MGR-52) and changes nothing else. Who pressed and from which chat, the channel passes in the headers Botaru-On-Behalf and Botaru-Chat (spec/bindings/http/README.md).",
+  "description": "From v0.3: the buttons \"Useful\" and \"Not needed\" of a farm manager notice (manager_attention) and of an analysis report (postmortem_report); from v0.3 also of the optional card under a bot's answer (task_answer, INS-7). The answer only goes into the share of useful notices in the holder report (MGR-50, MGR-52) or, for an answer, into the useful share per task type an analysis reads (INS-7), and changes nothing else. Who pressed and from which chat, the channel passes in the headers Botaru-On-Behalf and Botaru-Chat (spec/bindings/http/README.md).",
   "x-botaru-direction": "input",
   "x-botaru-version": "v0.3",
   "x-botaru-rules": [
     "MGR-52",
-    "MGR-50"
+    "MGR-50",
+    "INS-7"
   ],
   "type": "object",
   "additionalProperties": false,

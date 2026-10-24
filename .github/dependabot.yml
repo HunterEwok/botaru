@@ -4,8 +4,11 @@
 # Enabled: GitHub Actions (actions are pinned to a commit SHA, Dependabot
 # updates the SHA and the version comment) and pip for the skeleton checks in ci/
 # (requirements.txt with hashes), and gomod for the Go implementation in impl/ (D-91, D-92;
-# its tools staticcheck and govulncheck are tool dependencies there). The skeleton has no
-# container images: deploy/compose.example.yaml is an example, not a launch file.
+# its tools staticcheck and govulncheck are tool dependencies there), npm for the Gemini CLI of
+# the review workflow (ci/gemini), and docker and docker-compose for the images of
+# impl/deploy/compose. A new
+# version is proposed only a week after its release (cooldown), so a release taken over and
+# pulled within days does not arrive here; security updates are not delayed.
 # The schedule time zone is UTC.
 version: 2
 
@@ -16,6 +19,8 @@ updates:
       interval: "weekly"
       day: "monday"
       timezone: "UTC"
+    cooldown:
+      default-days: 7
     groups:
       github-actions:
         patterns: ["*"]
@@ -26,6 +31,8 @@ updates:
       interval: "weekly"
       day: "monday"
       timezone: "UTC"
+    cooldown:
+      default-days: 7
     groups:
       ci-python:
         patterns: ["*"]
@@ -36,6 +43,44 @@ updates:
       interval: "weekly"
       day: "monday"
       timezone: "UTC"
+    cooldown:
+      default-days: 7
     groups:
       go:
+        patterns: ["*"]
+
+  - package-ecosystem: "npm"
+    directory: "/ci/gemini"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      timezone: "UTC"
+    cooldown:
+      default-days: 7
+    groups:
+      gemini-cli:
+        patterns: ["*"]
+
+  - package-ecosystem: "docker"
+    directory: "/impl/deploy/compose"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      timezone: "UTC"
+    cooldown:
+      default-days: 7
+    groups:
+      images:
+        patterns: ["*"]
+
+  - package-ecosystem: "docker-compose"
+    directory: "/impl/deploy/compose"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      timezone: "UTC"
+    cooldown:
+      default-days: 7
+    groups:
+      compose-images:
         patterns: ["*"]

@@ -91,6 +91,21 @@ func (c *Core) eventRoutes(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 			}
 			continue
 		}
+		// Analysis from an event keeps to the merge window and the event run limit of its role:
+		// over them the route is skipped and the model is not called (INS-4).
+		if tt.Purpose == "insight" {
+			over, err := insightOverLimit(ctx, tx, now, cat, tenant, typ, true)
+			if err != nil {
+				return nil, err
+			}
+			if over {
+				c.log.Info("a route on an event was skipped by the analysis limits", "tenant", tenant, "route", name, "event", ev.ID)
+				if err := c.denyRoute(ctx, tx, now, tenant, name, typ, ev.ID, "insight_limit"); err != nil {
+					return nil, err
+				}
+				continue
+			}
+		}
 		goal := rt.Task.Goal
 		if goal == "" {
 			goal = tt.Title

@@ -115,7 +115,7 @@ Without that run, the words of a PR are checked only after the merge, that is, a
 
 ## Gemini review
 
-The workflow `.github/workflows/gemini-review.yml` is a second automatic reviewer, for when Codex has no quota left. A comment `/gemini review` on a pull request by the owner, a member or a collaborator runs the Gemini CLI (`@google/gemini-cli`, version pinned in the workflow) over the PR's diff and posts its findings as a PR comment. The PR's changes are read as a diff from the API and never fetched or checked out; the model gets the diff only, with every tool denied by an admin-tier policy (plan mode alone is not enough: without a person it may switch itself to yolo), and its step has no GitHub token. The comment always runs the workflow as it is on the default branch, so a change of the workflow takes effect only after its merge. The key is the repository secret `GEMINI_API_KEY` (Settings > Secrets and variables > Actions); a PR from a fork never gets it. The workflow is not a required check.
+The workflow `.github/workflows/gemini-review.yml` is a second automatic reviewer, for when Codex has no quota left. A comment `/gemini review` on a pull request by the owner, a member or a collaborator runs the Gemini CLI (`@google/gemini-cli`, installed by `npm ci --ignore-scripts` from the lockfile `ci/gemini/package-lock.json` of the default branch, in a step without the key) over the PR's diff and posts its findings as a PR comment. The PR's changes are read as a diff from the API and never fetched or checked out; the model gets the diff only, with every tool denied by an admin-tier policy (plan mode alone is not enough: without a person it may switch itself to yolo), and its step has no GitHub token. The comment always runs the workflow as it is on the default branch, so a change of the workflow takes effect only after its merge. The key is the repository secret `GEMINI_API_KEY` (Settings > Secrets and variables > Actions); a PR from a fork never gets it. The workflow is not a required check.
 
 ## Claude review
 
@@ -299,6 +299,7 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `series_class_below_source` | observation series data_class below the output_class of its source tool | OBV-2 |
 | `series_name_reserved` | observation series named like a core series (a name of core-series.yaml or the farm. prefix) | OBV-6 |
 | `series_source_invalid` | observation series source does not fit its kind (tool without tool or field, a tool on another kind, job without field) | OBV-2, OBV-7 |
+| `service_name_duplicate` | a service name appears twice in one tenant catalog | MON-8 |
 | `service_no_card` | service no_card holds something other than restart | MON-8 |
 | `service_script_unknown` | no script from monitor_scripts_allowed for a service verb | MON-8, MON-10 |
 | `service_unit_missing` | via: host without unit, or unit with via: monitor | MON-8 |

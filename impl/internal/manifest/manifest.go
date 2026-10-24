@@ -250,6 +250,9 @@ type TenantAttention struct {
 	// NoncriticalPerDay is how many cards of non-urgent decisions a person gets a day; nil
 	// means the default 10 (APR-15).
 	NoncriticalPerDay *int `json:"noncritical_per_day"`
+	// AnswerFeedback puts the optional "Useful" / "Not needed" card under a bot's answer to a
+	// person; off by default (INS-7).
+	AnswerFeedback bool `json:"answer_feedback"`
 }
 
 // TenantDispatch holds the dispatch rules of the tenant policy (DSP-3, DSP-7).

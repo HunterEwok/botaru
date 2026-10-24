@@ -335,7 +335,7 @@ func directChat(ctx context.Context, q store.Querier, tv *TenantView, principal,
 	}
 	var identity string
 	err := q.QueryRow(ctx, `SELECT identity FROM identities WHERE tenant = $1 AND principal = $2 AND identity LIKE $3 ORDER BY identity LIMIT 1`,
-		tv.Name, principal, ch.IdentityKind+":%").Scan(&identity)
+		tv.Name, principal, likeEscape(ch.IdentityKind)+":%").Scan(&identity)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", nil
 	}

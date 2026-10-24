@@ -8,6 +8,7 @@ import (
 	"errors"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/dlclark/regexp2"
 	"github.com/santhosh-tekuri/jsonschema/v6"
@@ -42,6 +43,9 @@ func compileSchema(schema map[string]any) *jsonschema.Schema {
 		if err != nil {
 			return nil, err
 		}
+		// A bound against a runaway match of a pattern a manifest or a plugin wrote, as in
+		// spec.Load; a match past it fails.
+		re.MatchTimeout = time.Second
 		return re2{re}, nil
 	})
 	if err := c.AddResource("urn:botaru:agent:result", doc); err != nil {

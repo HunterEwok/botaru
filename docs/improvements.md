@@ -389,6 +389,14 @@ The core checks the guards once a day. A guard beyond tolerance in the bad direc
 
 At the end of the window code computes the outcome ([PRP-22](../conformance/rules.md#PRP-22)): a fired guard gives `worse`; another change on the same subjects gives `mixed`; otherwise the metric is compared in all three computations, and a worsening in any gives `worse`, an improvement in all gives `better`, the rest `unchanged`; too few samples give `undetermined`. The third computation stops two bots of one role from making things worse before "Accept" and better after. When the metric comes only from the author's own attempts, the remaining computation is marked `self_measured`, and a promotion trigger needs a person's "Count it".
 
+A change with the outcome `worse` that nobody reverted is in force though worse ([PRP-27](../conformance/rules.md#PRP-27)). The farm still reverts nothing, but its fields stay locked as while the trial ran, so no new proposal is built on the worse value; `doctor` lists it in `insights.worse_in_force`; three days after the executor's "Revert" card the people who decide on the category get the same card once. A revert commit ends the state.
+
+A manual change (`human_change`) has no verified link yet: the core links only commits of manifest changes. From v0.3 such a proposal is refused at creation with `forbidden_change` after its description is checked, so no money goes to its reviews ([PRP-28](../conformance/rules.md#PRP-28)).
+
+**The goal numbers.** `doctor` of one tenant (the farm operator names it) shows the numbers the farm goals are measured by, over the last 7 days unless said otherwise ([PRP-29](../conformance/rules.md#PRP-29)): `goals.g1.done_share`, `goals.g1.refused` and `goals.g1.queue_wait_p95_s` for the tasks people asked for themselves, `goals.g3.limit_stops`, `goals.g4.sev1_incidents` and `goals.g4.preventable`, `goals.g5.better`, `goals.g5.worse` and `goals.g5.worse_in_force` since the start, and `goals.g6.cards_max_per_person_day`. They only show; the thresholds are those of the goals.
+
+**Was the answer useful.** With `attention.answer_feedback: true` a bot's answer to a person in a direct chat gets a card with "Useful" and "Not needed" ([INS-7](../conformance/rules.md#INS-7)). Pressing is optional; the card goes out only after the answer itself, and only in the room the person's daily card limit has left, so decision cards never wait for it. An analysis of the tenant reads, per task type of the last 30 days, how many such cards went out and how many were pressed each way, in the extension field `answer_feedback`.
+
 ### Safe evolution of the scaffold from v0.3
 
 The model stays frozen; the farm gets better only through versioned manifests, and code guards every step (D-120).
@@ -570,6 +578,7 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [INS-3](../conformance/rules.md#INS-3) | Proposals are created only when an attempt finishes successfully | v0.1 | yes |
 | [INS-4](../conformance/rules.md#INS-4) | Analysis frequency and merge window | v0.1 | yes |
 | [INS-6](../conformance/rules.md#INS-6) | A visible "loop disabled" signal | v0.1 | no |
+| [INS-7](../conformance/rules.md#INS-7) | An optional "Useful" button under a bot's answer | v0.3 | no |
 | [OBV-1](../conformance/rules.md#OBV-1) | Only code writes observation points | v0.1 | yes |
 | [OBV-2](../conformance/rules.md#OBV-2) | An observation series is declared in git | v0.1 | yes |
 | [OBV-3](../conformance/rules.md#OBV-3) | Observations are read only by a closed query | v0.1 | yes |
@@ -600,3 +609,6 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [PRP-23](../conformance/rules.md#PRP-23) | The "Revert" card for the executor | v0.1 | no |
 | [PRP-24](../conformance/rules.md#PRP-24) | A rejected proposal can be submitted again | v0.3 | no |
 | [PRP-26](../conformance/rules.md#PRP-26) | Every trial guards the farm's work | v0.3 | no |
+| [PRP-27](../conformance/rules.md#PRP-27) | A worse change in force stays visible and locked | v0.3 | no |
+| [PRP-28](../conformance/rules.md#PRP-28) | A manual change is refused until it can be checked | v0.3 | no |
+| [PRP-29](../conformance/rules.md#PRP-29) | Doctor shows the numbers of the farm goals | v0.3 | no |

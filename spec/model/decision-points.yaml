@@ -1,5 +1,5 @@
 registry: decision-points
-version: 6
+version: 7
 description: >-
   Registry of human decisions (APR-12): one row for each kind of card and
   notice. A kind without a row does not pass the skeleton CI, and the core does not create such
@@ -246,12 +246,12 @@ entries:
     since: v0.1
     kind: notice
     subject: null
-    recipients: the executor of the accepted proposal; the "Revert" button is the hold.set operation with their hold.set:<scope>
-    ttl: until the end of the change trial
-    on_silence: {state: null, outcome: the change trial runs to the end}
+    recipients: the executor of the accepted proposal; the "Revert" button is the hold.set operation with their hold.set:<scope>; from v0.3, once more to the deciders of the proposal when a change the trial found worse is still in force three days later (PRP-27)
+    ttl: until the end of the change trial; the reminder until the change is reverted
+    on_silence: {state: null, outcome: the change trial runs to the end; after the reminder the change stays in force and its fields stay locked}
     undo: none
     urgent: false
-    rules: [APR-12]
+    rules: [APR-12, PRP-27]
   # v0.2
   - id: proposal_sample_card
     since: v0.2
@@ -489,6 +489,16 @@ entries:
     undo: none
     urgent: false
     rules: [APR-12, MGR-53]
+  - id: task_answer
+    since: v0.3
+    kind: notice
+    subject: null
+    recipients: the person who asked, under a bot's answer to a work task in a direct chat, only with attention.answer_feedback true; planned once the answer went out, only in the room the person's daily card limit has left after decision cards and manager notices, and left out, not deferred, once the limit is reached; the buttons "Useful" and "Not needed" through P1 card.feedback (INS-7)
+    ttl: none
+    on_silence: {state: null, outcome: nothing}
+    undo: none
+    urgent: false
+    rules: [APR-15, INS-7]
   - id: holder_report
     since: v0.3
     kind: notice

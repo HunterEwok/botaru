@@ -4,6 +4,7 @@ package core
 
 import (
 	"context"
+	"math"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -76,6 +77,10 @@ func (c *Core) TestClockAdvance(ctx context.Context, byS int64) (*TestClock, err
 	return c.testClock(ctx, "test/clock.advance", func(time.Time) (time.Duration, error) {
 		if byS < 0 {
 			return 0, refuse("input_schema_invalid", "the store clock only moves forward")
+		}
+		// Past about 292 years the duration would wrap around and move the clock back.
+		if byS > int64(math.MaxInt64/time.Second) {
+			return 0, refuse("input_schema_invalid", "the shift is too large")
 		}
 		return time.Duration(byS) * time.Second, nil
 	})

@@ -332,6 +332,19 @@ func Check(p Plugin, forbidden map[string]bool) []Issue {
 	return out
 }
 
+// Forbidden says whether a program's base name is on the forbidden list (INJ-14), also without
+// a suffix after its first dot and without trailing version digits: python3.12, python2 and
+// vim.basic are python3, python and vim.
+func Forbidden(base string, forbidden map[string]bool) bool {
+	head, _, _ := strings.Cut(base, ".")
+	for _, n := range []string{base, head, strings.TrimRight(head, "0123456789-")} {
+		if forbidden[n] {
+			return true
+		}
+	}
+	return false
+}
+
 func checkCommand(t Tool, name string, c Command, forbidden map[string]bool) []Issue {
 	var out []Issue
 	if len(c.Argv) == 0 {
@@ -341,7 +354,7 @@ func checkCommand(t Tool, name string, c Command, forbidden map[string]bool) []I
 	if !path.IsAbs(prog) || strings.Contains(prog, "{") {
 		out = append(out, Issue{Code: "cmd_argv_path", Tool: t.Name, Path: name})
 	}
-	if forbidden[path.Base(prog)] {
+	if Forbidden(path.Base(prog), forbidden) {
 		out = append(out, Issue{Code: "cmd_forbidden_program", Tool: t.Name, Path: name})
 	}
 	sep := slices.Index(c.Argv, "--")

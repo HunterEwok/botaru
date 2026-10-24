@@ -1,0 +1,9 @@
+{
+  "name": "botaru-gemini-review",
+  "private": true,
+  "description": "The Gemini CLI of .github/workflows/gemini-review.yml, installed from this lockfile.",
+  "license": "AGPL-3.0-only",
+  "dependencies": {
+    "@google/gemini-cli": "0.64.0"
+  }
+}

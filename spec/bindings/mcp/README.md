@@ -18,7 +18,7 @@ Sheets P3 and E3 and the rules say "tool protocol" and name no revision; this fi
 |---|---|---|
 | `server/discover` | P3 capabilities (only `tools`), profile version `botaru-tool-gateway/1` | P3 |
 | `tools/list` | the catalog by handle from the manifests, in a stable order; description and schema from the manifest, not from the live plugin; "which resource" parameters have an `enum` from the tenant's catalog | P3 (INJ-2, PRM-4) |
-| `tools/call` | the core checks holds, permissions, tier, class and schema, creates the call and waits for the toolhost result; the result as a separate `content` block with the untrusted mark; `isError: true` with a reason from `reasons.yaml`, the model gets only a short "no permission" | P3 (PRM-3, PRM-8, INJ-4, INJ-13) |
+| `tools/call` | the core checks holds, permissions, tier, class and schema, and refuses a plugin call past 100 calls of the attempt with `service_rate_limited`, whatever the runtime's own limit; it creates the call and waits for the toolhost result; the result as a separate `content` block with the untrusted mark; `isError: true` with a reason from `reasons.yaml`, the model gets only a short "no permission" | P3 (PRM-3, PRM-8, INJ-4, INJ-13) |
 | cancellation | `notifications/cancelled` from the runtime stops the waiting; a call that lost the attempt lease is refused | P3 (FEN-4) |
 | handle | the authorization header, at least 128 bits, lives with the lease; the handle is not in the request body or in `_meta` | SEC-3 |
 

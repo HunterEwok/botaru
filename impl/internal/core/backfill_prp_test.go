@@ -9,8 +9,10 @@ import (
 	"maps"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/HunterEwok/botaru/impl/internal/manifest"
+	"github.com/jackc/pgx/v5"
 )
 
 // changeOf decodes a proposal change from JSON.
@@ -177,5 +179,130 @@ func TestBackfillTrialRevertCard(t *testing.T) {
 	}
 	if storedHash(t, b, "Tenant", "demo", "demo") != tenantHash {
 		t.Fatal("PRP-23: the farm reverted the change itself")
+	}
+}
+
+// PRP-27: a change that came out worse and stays in force keeps its fields locked, shows in
+// doctor, and after three days the people who decide on the category get the "Revert" card once.
+func TestWorseInForce(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	b := newCommissionBench(t, true, presentEdit)
+	id, _ := acceptLimits(t, b)
+	if res, err := b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: "a000000000000000000000000000000000000002", Message: "Botaru-Proposal: " + id, Manifests: withLimit(t, b, 7)}); err != nil || !res.Applied {
+		t.Fatalf("apply %+v %v", res, err)
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE proposals SET record = jsonb_set(jsonb_set(record, '{trial,metric,series}', '"gone.series"'),
+		'{trial,guards}', '[{"series": "gone.guard", "broken_at": "2026-01-01T00:00:00Z"}]') WHERE id = $1`, id); err != nil {
+		t.Fatal(err)
+	}
+	b.advance(t, 15*24*3600)
+	b.loop(t, "proposal")
+	cards := func() int {
+		var n int
+		if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM deliveries WHERE kind = $1 AND subject_id = $2`, rollbackCard, id).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	if n := cards(); n != 1 {
+		t.Fatalf("rollback cards %d", n)
+	}
+	var keys []string
+	var held []any
+	if err := b.c.tx(ctx, func(tx pgx.Tx, _ time.Time) error {
+		p, err := readProposal(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		keys = lockKeys(p.body())
+		held, err = lockHolders(ctx, tx, "demo", "", keys)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(keys) == 0 || !slices.Contains(held, any(id)) {
+		t.Fatalf("PRP-27: the worse change holds no lock: keys %v held %v", keys, held)
+	}
+	doc, err := b.c.Doctor(ctx, b.op, TenantRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.ContainsFunc(doc.Checks, func(ch DoctorCheck) bool {
+		return ch.ID == "insights.worse_in_force" && ch.Tenant == "demo" && !ch.OK && ch.Value == id
+	}) {
+		t.Fatal("PRP-27: doctor does not show the change")
+	}
+	if !slices.ContainsFunc(doc.Checks, func(ch DoctorCheck) bool {
+		return ch.ID == "goals.g5.worse_in_force" && ch.Tenant == "demo" && ch.Value == 1
+	}) {
+		t.Fatal("PRP-29: the goal G5 does not count the change")
+	}
+	// Under three days nothing more; after them one card to each decider, once.
+	b.advance(t, 24*3600)
+	b.loop(t, "proposal")
+	if n := cards(); n != 1 {
+		t.Fatalf("early reminder: %d cards", n)
+	}
+	b.advance(t, 3*24*3600)
+	b.loop(t, "proposal")
+	after := cards()
+	if after < 2 {
+		t.Fatalf("PRP-27: no second card, %d", after)
+	}
+	b.advance(t, 3*24*3600)
+	b.loop(t, "proposal")
+	if n := cards(); n != after {
+		t.Fatalf("PRP-27: the second card repeats: %d then %d", after, n)
+	}
+	if r := recordOf(t, b, id)["realization"].(map[string]any); r["worse_reminded"] == nil {
+		t.Fatalf("realization %v", r)
+	}
+	inForceNow := func() []string {
+		var out []string
+		if err := b.c.tx(ctx, func(tx pgx.Tx, _ time.Time) error {
+			var err error
+			out, err = worseInForce(ctx, tx, "demo")
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	// A person edits the field by hand to another value: the change is no longer in force, and
+	// its follow-up and lock end.
+	if res, err := b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: "a000000000000000000000000000000000000003", Message: "edit by hand", Manifests: withLimit(t, b, 9)}); err != nil || !res.Applied {
+		t.Fatalf("apply %+v %v", res, err)
+	}
+	b.loop(t, "proposal")
+	if r := recordOf(t, b, id)["realization"].(map[string]any); r["worse_released"] == nil || len(inForceNow()) != 0 {
+		t.Fatalf("PRP-27: a change edited away stays followed: %v", r)
+	}
+	// A change that came out worse before PRP-27 carries no mark and is not followed.
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE proposals SET record = record #- '{realization,worse_watch}' #- '{realization,worse_released}' WHERE id = $1`, id); err != nil {
+		t.Fatal(err)
+	}
+	if n := inForceNow(); len(n) != 0 {
+		t.Fatalf("PRP-27: an older worse change is followed: %v", n)
+	}
+}
+
+// PRP-28: a valid human_change is still refused at creation, since nothing can link it.
+func TestHumanChangeRefused(t *testing.T) {
+	t.Parallel()
+	b := newToolBench(t)
+	ctx := context.Background()
+	cat, err := b.c.Catalog(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := proposalAuthor{Tenant: "demo", Role: "hello", Mark: "summary"}
+	ch := changeOf(t, `{"kind": "human_change", "human_change": {"target": {"kind": "Host", "name": "web1"}, "path": "catalog.host.disk_gb", "direction": "up", "value": 200}}`)
+	err = b.c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+		_, err := b.c.checkChange(ctx, tx, now, cat, a, ch)
+		return err
+	})
+	if r := rejectedWith(t, err); r != "forbidden_change" {
+		t.Fatalf("PRP-28: %q", r)
 	}
 }

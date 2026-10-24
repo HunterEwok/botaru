@@ -1135,7 +1135,7 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 10000,
-          "description": "Cards per hour per tenant; 20 by default (APR-2)."
+          "description": "Cards per hour per tenant; 20 by default. A quarter stays for people: bots and scripts take the rest, and those that saw untrusted data a quarter (APR-2)."
         },
         "noncritical_per_day": {
           "type": "integer",
@@ -1156,6 +1156,11 @@
           "minimum": 0,
           "maximum": 3,
           "description": "From v0.3: farm manager notices to a person per day, counted in the person's card limit; 3 by default and can only be lowered (MGR-52).",
+          "x-botaru-version": "v0.3"
+        },
+        "answer_feedback": {
+          "type": "boolean",
+          "description": "From v0.3: the optional \"Useful\" / \"Not needed\" card under a bot's answer to a person in a direct chat, sent once the answer went out and only in the room the person's daily card limit has left after decision cards and manager notices; off by default (INS-7).",
           "x-botaru-version": "v0.3"
         }
       }

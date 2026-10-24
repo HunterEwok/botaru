@@ -48,6 +48,7 @@ CODES = {
     'charter_direction': ('a charter duration below its default, promotion.exclude_change_kinds without none, or incident_stop.decide_within above 7d', 'GOV-33'),
     'lens_persona_missing': ('a charter seat names a lens without a persona addendum in commission.lenses', 'COM-19'),
     'ref_missing': ('reference to an object that is not in the set', ''),
+    'service_name_duplicate': ('a service name appears twice in one tenant catalog', 'MON-8'),
     'service_no_card': ('service no_card holds something other than restart', 'MON-8'),
     'lens_unknown': ('a charter seat or the commission manifest names a lens neither in lenses.yaml (lenses since the version: spec/VERSION for this lint, the claimed version for a core) nor declared with its meaning in the charter', 'COM-19'),
     'lens_weight_fixed': ('the commission manifest sets the weight of a lens whose weight is set by rule (farm_manager from v0.2), whatever the value, 1 included', 'COM-8'),

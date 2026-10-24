@@ -43,6 +43,7 @@ var (
 	// x-api-key), then =, :, => or := and the value: a quoted string whole (to the end of the
 	// line when the closing quote is missing, as in a cut log line), or a bare word.
 	keyValue = regexp.MustCompile(`(?i)(^|[^A-Za-z0-9_])((?:[A-Za-z0-9]+[_.\-])*` + secretNames + `|` + shortNames + `)(["']?[ \t]*(?:=>|:=|=|:(?:[ \t]*\n[ \t]+)?)[ \t]*)("(?:[^"\\\n]|\\.)*"?|'[^'\n]*'?|[^\s"'&,;=][^\s"'&,;]*)`)
+	count    = regexp.MustCompile(`^[0-9]+(?:/[0-9]+)?$`)
 	// An object key that names a secret, for Value.
 	secretKey = regexp.MustCompile(`(?i)^(?:(?:[A-Za-z0-9]+[_.\-])*` + secretNames + `|` + shortNames + `)$`)
 	// A bearer token without its header, as in a command line or a log line: 16 characters or
@@ -110,8 +111,9 @@ func maskValue(m string) string {
 		// An empty value hides nothing.
 		return m
 	}
-	// "Pass: 12" in a test summary is a count: a bare pass takes = or a quoted name.
-	if n := strings.ToLower(g[2]); (n == "pass" || strings.HasSuffix(n, "-pass")) && strings.HasPrefix(strings.TrimLeft(g[3], " \t"), ":") && !strings.HasPrefix(g[3], ":=") {
+	// "Pass: 12" and "e2e-pass: 5/5" in a test summary are counts, not secrets.
+	if n := strings.ToLower(g[2]); (n == "pass" || strings.HasSuffix(n, "-pass")) && count.MatchString(v) &&
+		strings.HasPrefix(strings.TrimLeft(g[3], " \t"), ":") && !strings.HasPrefix(g[3], ":=") {
 		return m
 	}
 	open, closed := "", ""

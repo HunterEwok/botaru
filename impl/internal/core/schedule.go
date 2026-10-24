@@ -139,7 +139,7 @@ func (c *Core) runSchedule(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 	if sc.SkipIfWaiting == nil || *sc.SkipIfWaiting {
 		var waiting bool
 		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM tasks WHERE tenant = $1 AND idempotency_key LIKE $2 AND idempotency_key <> $3 AND state = 'submitted')`,
-			tv.Name, keyPrefix+"%", keyPrefix+slot).Scan(&waiting); err != nil {
+			tv.Name, likeEscape(keyPrefix)+"%", keyPrefix+slot).Scan(&waiting); err != nil {
 			return err
 		}
 		if waiting {
@@ -167,7 +167,7 @@ func (c *Core) runSchedule(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 	tt := cat.TaskTypes[sc.Task.Type]
 	// Analysis keeps to the run limit and the merge window of its role (INS-4).
 	if tt.Purpose == "insight" {
-		if over, err := insightOverLimit(ctx, tx, now, cat, tv.Name, sc.Task.Type); err != nil {
+		if over, err := insightOverLimit(ctx, tx, now, cat, tv.Name, sc.Task.Type, false); err != nil {
 			return err
 		} else if over {
 			return skip("insight_limit")
@@ -354,9 +354,10 @@ func scheduleOf(ctx context.Context, tx pgx.Tx, r treeRecord, id string) (string
 	return name, nil
 }
 
-// insightOverLimit says whether a scheduled analysis of the role that runs the type would pass
-// its max_runs or start inside its merge window, which is at least an hour (INS-4).
-func insightOverLimit(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tenant, typ string) (bool, error) {
+// insightOverLimit says whether an analysis of the role that runs the type would start inside its
+// merge window, which is at least an hour, or pass its run limit: max_runs for a scheduled one,
+// max_event_runs (1 per day by default) for one a route on an event starts (INS-4).
+func insightOverLimit(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tenant, typ string, fromEvent bool) (bool, error) {
 	var ins *manifest.RoleInsight
 	for _, name := range slices.Sorted(mapKeys(cat.Roles)) {
 		if r := cat.Roles[name]; r.Insight != nil && slices.Contains(r.Insight.Types, typ) {
@@ -373,18 +374,25 @@ func insightOverLimit(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalo
 	}
 	since := now.Add(-window)
 	per, limit := since, -1
-	if ins.MaxRuns != nil {
-		limit = ins.MaxRuns.Count
-		if ins.MaxRuns.Per == "week" {
+	runs, key := ins.MaxRuns, "system:schedule:%"
+	if fromEvent {
+		runs, key = ins.MaxEventRuns, "system:event:%"
+		if runs == nil {
+			runs = &manifest.RunsPer{Per: "day", Count: 1}
+		}
+	}
+	if runs != nil {
+		limit = runs.Count
+		if runs.Per == "week" {
 			per = now.AddDate(0, 0, -7)
 		} else {
 			per = now.AddDate(0, 0, -1)
 		}
 	}
-	var recent, runs int
-	if err := tx.QueryRow(ctx, `SELECT count(*) FILTER (WHERE created_at > $3), count(*) FILTER (WHERE created_at > $4 AND idempotency_key LIKE 'system:schedule:%')
-		FROM tasks WHERE tenant = $1 AND type = ANY($2) AND created_at > least($3, $4)`, tenant, ins.Types, since, per).Scan(&recent, &runs); err != nil {
+	var recent, count int
+	if err := tx.QueryRow(ctx, `SELECT count(*) FILTER (WHERE created_at > $3), count(*) FILTER (WHERE created_at > $4 AND idempotency_key LIKE $5)
+		FROM tasks WHERE tenant = $1 AND type = ANY($2) AND created_at > least($3, $4)`, tenant, ins.Types, since, per, key).Scan(&recent, &count); err != nil {
 		return false, err
 	}
-	return recent > 0 || limit >= 0 && runs >= limit, nil
+	return recent > 0 || limit >= 0 && count >= limit, nil
 }

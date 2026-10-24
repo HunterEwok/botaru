@@ -132,13 +132,16 @@
     `attention.cards_per_tenant_hour` (default 20): how many action approvals (from
     `request_action`, from INJ-15 and from `/run` with a button) the core creates in this tenant per
     hour; above the limit the request gets `service_rate_limited`, no approval is created, and a
-    call under INJ-15 is not executed.
+    call under INJ-15 is not executed. A quarter of that limit (at least one approval when the limit
+    is 2 or more) is kept for people: requests of bots and of script steps stop before it, and
+    those of them that saw untrusted data stop at a quarter of the limit (at least one), with the
+    same refusal.
   goal: G2
   check: [blackbox]
   waivable: false
   version: v0.1
   profile: core
-  decisions: []
+  decisions: [D-128]
   fixtures: [blackbox:model/action-args-outside-schema, blackbox:model/action-without-right, blackbox:model/fourth-action-request, blackbox:core/fourth-card-rate-limited, blackbox:core/cards-per-tenant-hour]
   doc: docs/permissions.md
 
@@ -6341,6 +6344,29 @@
   fixtures: [ins-04]
   doc: docs/improvements.md
 
+- id: INS-7
+  title: An optional "Useful" button under a bot's answer
+  status: active
+  text: >-
+    With `attention.answer_feedback: true` in the Tenant manifest, the core plans, once a bot's
+    answer to a work task went out to the person who asked in a direct chat, a card `task_answer`
+    with the buttons "Useful" and "Not needed" through P1 `card.feedback`. Pressing is optional and
+    changes nothing but the numbers below. The card goes only into the room the person's daily card
+    limit (APR-15) has left: decision cards and manager notices count first and never wait for it,
+    and it is left out, not deferred, once those and the day's answer cards reach the limit. An
+    analysis task of the
+    tenant gets the extension field `answer_feedback` (MAN-3): per task type of the last 30 days the
+    cards sent and the "Useful" and "Not needed" presses, closed numbers only. Without the setting
+    nothing changes.
+  goal: G5
+  check: [impl]
+  waivable: true
+  version: v0.3
+  profile: insights
+  decisions: [D-126]
+  fixtures: [impl:internal/core/TestAnswerFeedback, impl:internal/core/TestAnswerFeedbackOff]
+  doc: docs/improvements.md
+
 - id: KNW-1
   title: A corpus and its index belong to one tenant
   status: active
@@ -11254,6 +11280,70 @@
   profile: insights
   decisions: [D-110]
   fixtures: [blackbox:insights/farm-guards]
+  doc: docs/improvements.md
+
+- id: PRP-27
+  title: A worse change in force stays visible and locked
+  status: active
+  text: >-
+    A realized change whose trial has the outcome `worse` and that nobody reverted is in force
+    though worse. Its fields stay locked like those of a running trial (PRP-9), so no proposal is
+    built on the worse value; `doctor` shows each such change of a tenant in the check
+    `insights.worse_in_force`; three days after the "Revert" card to the executor (PRP-23), the
+    people who may decide on the proposal's category get the same card once. The farm itself still
+    reverts nothing (PRP-23); a revert commit (PRP-20) ends the state, and so does a field edited by
+    hand away from the change's value, since the change is then no longer in force. A change whose
+    trial came out worse before this rule keeps the rules of its time.
+  goal: G5
+  check: [impl]
+  waivable: true
+  version: v0.3
+  profile: insights
+  decisions: [D-123]
+  fixtures: [impl:internal/core/TestWorseInForce]
+  doc: docs/improvements.md
+
+- id: PRP-28
+  title: A manual change is refused until it can be checked
+  status: active
+  text: >-
+    A proposal becomes `realized` only through a verified link (PRP-19), and no path of
+    `spec/model/change-paths.yaml` has one: the core links only a commit that sets fields of a
+    manifest change. From v0.3 a proposal of the kind `human_change` is therefore refused at
+    creation with `forbidden_change`, after its closed description is checked (PRP-13), instead of
+    passing the commission and people and ending not realized by its deadline. A later version that
+    can check a manual change lifts the refusal path by path.
+  goal: G3
+  check: [impl]
+  waivable: true
+  version: v0.3
+  profile: insights
+  decisions: [D-124]
+  fixtures: [impl:internal/core/TestHumanChangeRefused]
+  doc: docs/improvements.md
+
+- id: PRP-29
+  title: Doctor shows the numbers of the farm goals
+  status: active
+  text: >-
+    `doctor` shows, for the tenant of the request, the numbers the six farm goals are measured by,
+    as checks `goals.*` that are always ok with severity `info`; the farm scope leaves them out, and
+    the farm operator names a tenant to see them. For G1 the share of the tasks people asked for
+    themselves (not child tasks, continuations or campaign items) of the last 7 days that reached a
+    result, the tasks a rule stopped (a right lost, the person turned off, a money limit) counted
+    apart and not as failures, their number, and the 95th percentile of their queue wait in seconds;
+    for G3 the tasks a money limit stopped, the budget or the provider ceiling; for G4 the incidents of severity `sev1` opened
+    and those marked preventable by the farm manager; for G5 the accepted changes with the trial
+    outcomes `better` and `worse` since the start and the worse ones in force (PRP-27); for G6 the
+    most cards one person got in one day. The checks only show; a person compares them with the
+    thresholds of the goals.
+  goal: G5
+  check: [impl]
+  waivable: true
+  version: v0.3
+  profile: insights
+  decisions: [D-125]
+  fixtures: [impl:internal/core/TestDoctorGoals, impl:internal/core/TestAnswerFeedback]
   doc: docs/improvements.md
 
 - id: PRV-1

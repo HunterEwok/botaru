@@ -203,7 +203,7 @@ func (c *Core) proposalLoop(ctx context.Context) error {
 	var ids []string
 	if err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
 		rows, err := tx.Query(ctx, `SELECT id FROM proposals WHERE state IN ('screened', 'in_review', 'recommended', 'parked', 'presented', 'realizing', 'sample_presented', 'sample_judged')
-			OR state = 'realized' AND record->'trial'->>'outcome' IS NULL ORDER BY created_at, id`)
+			OR state = 'realized' AND record->'trial'->>'outcome' IS NULL OR `+worseFollowed+` ORDER BY created_at, id`)
 		if err != nil {
 			return err
 		}

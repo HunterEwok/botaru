@@ -6,3 +6,5 @@ __pycache__/
 _review/
 # The output of botaru-sim runs from impl
 impl/sim-out/
+# Operator secrets that DEPLOY.md creates next to the compose files
+impl/deploy/compose/secrets/

@@ -4,6 +4,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"slices"
 	"time"
@@ -57,6 +58,9 @@ func change(s seriesDef, before, after map[string]any) (int, bool) {
 func (c *Core) trialStep(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tv *TenantView, p *proposalRow) error {
 	t := mmapAny(p.Rec["trial"])
 	w := mmapAny(t["window"])
+	if t["outcome"] == "worse" {
+		return c.worseStep(ctx, tx, now, tv, p)
+	}
 	if t == nil || t["outcome"] != nil || w["starts_at"] == nil {
 		return nil
 	}
@@ -99,6 +103,11 @@ func (c *Core) trialStep(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 	if !now.Before(end) {
 		if err := c.trialOutcome(ctx, tx, cat, p, t, series, start, end, author); err != nil {
 			return err
+		}
+		// From here the worse change is followed while it stays in force (PRP-27). A change
+		// that came out worse before this rule has no mark and keeps the rules of its time.
+		if r := mmapAny(p.Rec["realization"]); r != nil && t["outcome"] == "worse" {
+			r["worse_watch"] = fmtTime(now)
 		}
 	}
 	if err := c.saveProposal(ctx, tx, now, p); err != nil {
@@ -223,4 +232,91 @@ func minTime(a, b time.Time) time.Time {
 		return a
 	}
 	return b
+}
+
+// worseRemindAfter is how long a change that came out worse may stay in force before the
+// people who decide on its category get the "Revert" card too.
+const worseRemindAfter = 3 * 24 * time.Hour
+
+// worseStep follows a realized change whose trial came out worse and that nobody reverted:
+// the farm does not revert it itself (O1), but after worseRemindAfter it sends the "Revert"
+// card once to everyone who decides on the category (PRP-27). Its fields stay locked meanwhile
+// (lockHolders). Once a field no longer holds the change's value, edited by hand, the change is
+// no longer in force: the follow-up ends and the lock with it.
+func (c *Core) worseStep(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, p *proposalRow) error {
+	r := mmapAny(p.Rec["realization"])
+	if r == nil || r["worse_watch"] == nil || r["worse_released"] != nil {
+		return nil
+	}
+	held, err := inForce(ctx, tx, p)
+	if err != nil {
+		return err
+	}
+	if !held {
+		r["worse_released"] = fmtTime(now)
+		p.Rec["realization"] = r
+		return c.saveProposal(ctx, tx, now, p)
+	}
+	if r["worse_reminded"] != nil {
+		return nil
+	}
+	since := parseTime(asString(r["rollback_sent"]))
+	if since.IsZero() {
+		since = parseTime(asString(mmapAny(p.Rec["trial"])["checked_at"]))
+	}
+	if since.IsZero() || now.Sub(since) < worseRemindAfter {
+		return nil
+	}
+	r["worse_reminded"] = fmtTime(now)
+	p.Rec["realization"] = r
+	if err := c.saveProposal(ctx, tx, now, p); err != nil {
+		return err
+	}
+	people, err := c.deciders(ctx, tx, now, tv, p.body().Category, asString(p.Rec["data_mark"]))
+	if err != nil {
+		return err
+	}
+	for _, person := range people {
+		if err := c.planProposalCard(ctx, tx, now, tv, p, rollbackCard, person, map[string]any{"reminder": true}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// inForce says whether every field a manifest change set still holds the value it set. A field
+// whose path no longer resolves to one value, such as a list item after a second item was
+// added, counts as held: only a value seen to differ, or a document gone, ends the follow-up.
+func inForce(ctx context.Context, tx pgx.Tx, p *proposalRow) (bool, error) {
+	mc := p.body().Change.ManifestChange
+	if mc == nil {
+		return false, nil
+	}
+	for _, op := range mc.Ops {
+		doc, _, err := storedDoc(ctx, tx, op.Target.Kind, p.Tenant, op.Target.Name)
+		if err != nil {
+			return false, err
+		}
+		if doc == nil {
+			return false, nil
+		}
+		if cur, ok := pathValue(doc, op.Field); ok && fmt.Sprint(cur) != fmt.Sprint(op.Value) {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+// worseFollowed is the SQL condition of a realized change whose trial came out worse under
+// PRP-27 and that is still followed: not reverted, and no field edited away from it.
+const worseFollowed = `state = 'realized' AND record->'trial'->>'outcome' = 'worse'
+	AND record->'realization'->>'worse_watch' IS NOT NULL AND record->'realization'->>'worse_released' IS NULL`
+
+// worseInForce are the followed worse changes of a tenant: the count the goal G5 keeps at zero.
+func worseInForce(ctx context.Context, q pgx.Tx, tenant string) ([]string, error) {
+	rows, err := q.Query(ctx, `SELECT id FROM proposals WHERE tenant = $1 AND `+worseFollowed+` ORDER BY id`, tenant)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowTo[string])
 }

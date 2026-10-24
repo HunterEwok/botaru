@@ -40,7 +40,7 @@ The line under a rule heading:
 | [IDN](#idn) | Identity | [docs/bots.md](../docs/bots.md) | 16 | 13 | 13 | 1 | 2 | 0 |
 | [ING](#ing) | Incoming external events | [docs/capabilities.md](../docs/capabilities.md) | 4 | 3 | 0 | 4 | 0 | 0 |
 | [INJ](#inj) | Injection resistance | [docs/permissions.md](../docs/permissions.md) | 16 | 16 | 16 | 0 | 0 | 0 |
-| [INS](#ins) | Analysis of own data | [docs/improvements.md](../docs/improvements.md) | 5 | 4 | 5 | 0 | 0 | 0 |
+| [INS](#ins) | Analysis of own data | [docs/improvements.md](../docs/improvements.md) | 6 | 4 | 5 | 0 | 1 | 0 |
 | [KNW](#knw) | Tenant knowledge | [docs/capabilities.md](../docs/capabilities.md) | 5 | 5 | 0 | 5 | 0 | 0 |
 | [LCY](#lcy) | Tenant lifecycle | [docs/operations.md](../docs/operations.md) | 7 | 3 | 3 | 4 | 0 | 0 |
 | [MAN](#man) | Manifests | [docs/task-language.md](../docs/task-language.md) | 10 | 4 | 10 | 0 | 0 | 0 |
@@ -54,7 +54,7 @@ The line under a rule heading:
 | [OUT](#out) | Structured results | [docs/tasks-and-delivery.md](../docs/tasks-and-delivery.md) | 2 | 1 | 1 | 1 | 0 | 0 |
 | [PRF](#prf) | Role profiles | [docs/coordination.md](../docs/coordination.md) | 1 | 1 | 1 | 0 | 0 | 0 |
 | [PRM](#prm) | Permissions | [docs/permissions.md](../docs/permissions.md) | 17 | 17 | 16 | 1 | 0 | 0 |
-| [PRP](#prp) | Improvement proposals | [docs/improvements.md](../docs/improvements.md) | 23 | 14 | 20 | 1 | 2 | 0 |
+| [PRP](#prp) | Improvement proposals | [docs/improvements.md](../docs/improvements.md) | 26 | 14 | 20 | 1 | 5 | 0 |
 | [PRV](#prv) | Instruction versions and execution fingerprint | [docs/capabilities.md](../docs/capabilities.md) | 4 | 4 | 2 | 2 | 0 | 0 |
 | [REP](#rep) | Reporters | [docs/messaging.md](../docs/messaging.md) | 11 | 11 | 9 | 2 | 0 | 0 |
 | [RET](#ret) | Retention and deletion | [docs/operations.md](../docs/operations.md) | 10 | 9 | 8 | 2 | 0 | 0 |
@@ -66,7 +66,7 @@ The line under a rule heading:
 | [TEN](#ten) | Tenants | [docs/architecture.md](../docs/architecture.md) | 8 | 8 | 8 | 0 | 0 | 0 |
 | [TIM](#tim) | Time and clocks | [docs/operations.md](../docs/operations.md) | 4 | 2 | 3 | 1 | 0 | 0 |
 | [TRN](#trn) | Translator | [docs/coordination.md](../docs/coordination.md) | 7 | 5 | 4 | 1 | 2 | 0 |
-| Total | | | 490 | 376 | 377 | 69 | 44 | 0 |
+| Total | | | 494 | 376 | 377 | 69 | 48 | 0 |
 
 Retired numbers (46) are listed in [retired.md](retired.md), deferred rules (43) in [deferred.md](deferred.md).
 
@@ -126,9 +126,9 @@ Checked by: `blackbox:core/write-tool-hidden`
 <a id="APR-2"></a>
 ### APR-2. Action request
 
-serves [G2](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: blackbox
+serves [G2](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: blackbox · decisions: D-128
 
-`request_action` is accepted if the action is in the role's `actions_may_request`, every initiator of the attempt has `action.request:<action>` (MSG-7), and the arguments, after the core fills in default values, pass the closed schema of the action (INJ-1). P3 writes the allowed values of the tenant catalog into the `request_action` schema for this action as `enum`. No more than 3 requests per task; a campaign proposal with an action counts as one of them, and campaign items make no requests of their own. An identical pending request (the same action with the same arguments) returns the number of the existing one. Campaign permissions are checked under ORC-5 and ORC-6. The approvals that INJ-15 creates instead of executing `service/control` and `monitor/script_run` count toward the same 3 per task. A tenant has the field `attention.cards_per_tenant_hour` (default 20): how many action approvals (from `request_action`, from INJ-15 and from `/run` with a button) the core creates in this tenant per hour; above the limit the request gets `service_rate_limited`, no approval is created, and a call under INJ-15 is not executed.
+`request_action` is accepted if the action is in the role's `actions_may_request`, every initiator of the attempt has `action.request:<action>` (MSG-7), and the arguments, after the core fills in default values, pass the closed schema of the action (INJ-1). P3 writes the allowed values of the tenant catalog into the `request_action` schema for this action as `enum`. No more than 3 requests per task; a campaign proposal with an action counts as one of them, and campaign items make no requests of their own. An identical pending request (the same action with the same arguments) returns the number of the existing one. Campaign permissions are checked under ORC-5 and ORC-6. The approvals that INJ-15 creates instead of executing `service/control` and `monitor/script_run` count toward the same 3 per task. A tenant has the field `attention.cards_per_tenant_hour` (default 20): how many action approvals (from `request_action`, from INJ-15 and from `/run` with a button) the core creates in this tenant per hour; above the limit the request gets `service_rate_limited`, no approval is created, and a call under INJ-15 is not executed. A quarter of that limit (at least one approval when the limit is 2 or more) is kept for people: requests of bots and of script steps stop before it, and those of them that saw untrusted data stop at a quarter of the limit (at least one), with the same refusal.
 
 Checked by: `blackbox:model/action-args-outside-schema`, `blackbox:model/action-without-right`, `blackbox:model/fourth-action-request`, `blackbox:core/fourth-card-rate-limited`, `blackbox:core/cards-per-tenant-hour`
 
@@ -2233,6 +2233,15 @@ The core considers a tenant's improvement cycle disabled if at least one reason 
 
 Checked by: `ins-04`
 
+<a id="INS-7"></a>
+### INS-7. An optional "Useful" button under a bot's answer
+
+serves [G5](../docs/goals.md) · since v0.3 · waivable · profile insights · check: impl · decisions: D-126
+
+With `attention.answer_feedback: true` in the Tenant manifest, the core plans, once a bot's answer to a work task went out to the person who asked in a direct chat, a card `task_answer` with the buttons "Useful" and "Not needed" through P1 `card.feedback`. Pressing is optional and changes nothing but the numbers below. The card goes only into the room the person's daily card limit (APR-15) has left: decision cards and manager notices count first and never wait for it, and it is left out, not deferred, once those and the day's answer cards reach the limit. An analysis task of the tenant gets the extension field `answer_feedback` (MAN-3): per task type of the last 30 days the cards sent and the "Useful" and "Not needed" presses, closed numbers only. Without the setting nothing changes.
+
+Checked by: `impl:internal/core/TestAnswerFeedback`, `impl:internal/core/TestAnswerFeedbackOff`
+
 <a id="knw"></a>
 ## KNW: Tenant knowledge
 
@@ -3895,6 +3904,33 @@ serves [G1](../docs/goals.md) · since v0.3 · waivable · profile insights · c
 From v0.3 every change trial (PRP-21) carries, besides the guards of its tables, two farm guards that a tenant cannot remove: the share of successful tasks of the tenant (`farm.task.outcome`) and the 95th percentile of the queue wait (`farm.queue.wait`), with their values before. A change that improved its metric but tripped one of these guards has the outcome `worse` (PRP-22). The manager's daily review and analyses read the same two series.
 
 Checked by: `blackbox:insights/farm-guards`
+
+<a id="PRP-27"></a>
+### PRP-27. A worse change in force stays visible and locked
+
+serves [G5](../docs/goals.md) · since v0.3 · waivable · profile insights · check: impl · decisions: D-123
+
+A realized change whose trial has the outcome `worse` and that nobody reverted is in force though worse. Its fields stay locked like those of a running trial (PRP-9), so no proposal is built on the worse value; `doctor` shows each such change of a tenant in the check `insights.worse_in_force`; three days after the "Revert" card to the executor (PRP-23), the people who may decide on the proposal's category get the same card once. The farm itself still reverts nothing (PRP-23); a revert commit (PRP-20) ends the state, and so does a field edited by hand away from the change's value, since the change is then no longer in force. A change whose trial came out worse before this rule keeps the rules of its time.
+
+Checked by: `impl:internal/core/TestWorseInForce`
+
+<a id="PRP-28"></a>
+### PRP-28. A manual change is refused until it can be checked
+
+serves [G3](../docs/goals.md) · since v0.3 · waivable · profile insights · check: impl · decisions: D-124
+
+A proposal becomes `realized` only through a verified link (PRP-19), and no path of `spec/model/change-paths.yaml` has one: the core links only a commit that sets fields of a manifest change. From v0.3 a proposal of the kind `human_change` is therefore refused at creation with `forbidden_change`, after its closed description is checked (PRP-13), instead of passing the commission and people and ending not realized by its deadline. A later version that can check a manual change lifts the refusal path by path.
+
+Checked by: `impl:internal/core/TestHumanChangeRefused`
+
+<a id="PRP-29"></a>
+### PRP-29. Doctor shows the numbers of the farm goals
+
+serves [G5](../docs/goals.md) · since v0.3 · waivable · profile insights · check: impl · decisions: D-125
+
+`doctor` shows, for the tenant of the request, the numbers the six farm goals are measured by, as checks `goals.*` that are always ok with severity `info`; the farm scope leaves them out, and the farm operator names a tenant to see them. For G1 the share of the tasks people asked for themselves (not child tasks, continuations or campaign items) of the last 7 days that reached a result, the tasks a rule stopped (a right lost, the person turned off, a money limit) counted apart and not as failures, their number, and the 95th percentile of their queue wait in seconds; for G3 the tasks a money limit stopped, the budget or the provider ceiling; for G4 the incidents of severity `sev1` opened and those marked preventable by the farm manager; for G5 the accepted changes with the trial outcomes `better` and `worse` since the start and the worse ones in force (PRP-27); for G6 the most cards one person got in one day. The checks only show; a person compares them with the thresholds of the goals.
+
+Checked by: `impl:internal/core/TestDoctorGoals`, `impl:internal/core/TestAnswerFeedback`
 
 <a id="prv"></a>
 ## PRV: Instruction versions and execution fingerprint

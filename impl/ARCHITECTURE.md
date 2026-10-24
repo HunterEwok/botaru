@@ -705,7 +705,9 @@ its initiator may request (`action.request:<action>`); the write tool of an acti
 
 - A request is checked against the action manifest and its arguments (MAN-9), gets the hash of its arguments and returns
   an identical pending approval instead of a new one (APR-2). A task makes at most 3 requests, and a tenant gets at most
-  `attention.cards_per_tenant_hour` new cards an hour (20 by default).
+  `attention.cards_per_tenant_hour` new cards an hour (20 by default). A quarter of them (at least one) stays for
+  people: requests with `requested_by.kind` `bot` or `script_step` stop before it, and those of them with
+  `untrusted_seen` stop at a quarter (`machineCards`, D-128).
 - The cards to the approvers (`action.approve:<action>`, the initiator excluded) are planned once the attempt that asked
   has ended, in the first channel of the tenant where the approver has an identity; the initiator gets a copy without
   buttons. A card is drawn by the channel driver from the approval record at hand-out, with the context line taken from
@@ -1041,8 +1043,9 @@ The driver:
   its one attachment;
 - claims a delivery id before it puts the body: an identical delivery in flight is answered `503` with `Retry-After`; it
   remembers the last 4096 delivery ids;
-- counts only authentic deliveries for the per-source rate; its listener ceiling defaults to 10 times the source's
-  `per_minute`;
+- counts only authentic deliveries for the per-source rate, and a repeat of a delivery the core took not at all; its
+  listener ceiling counts only refused requests, per sender network (/24 or /48, at most 4096 networks remembered), and
+  defaults to 10 times the source's `per_minute`;
 - always requires TLS; `-secret-files` and `-source-token-files` take two files during a rotation.
 
 The core:
@@ -2065,7 +2068,7 @@ On a successful `complete`, in the same transaction, each body is checked:
   only as `none`;
 - after untrusted text only `none` or a manifest change in the safe direction;
 - the change kind by the allowlist: an action of the role's vocabulary, a service or monitoring script call within the
-  role's lists, a `human_change` by `spec/model/change-paths.yaml`, a `script` draft (see Campaigns, Scripts &
+  role's lists, a `human_change` by `spec/model/change-paths.yaml` (then refused, PRP-28), a `script` draft (see Campaigns, Scripts &
   Translator), `set` on `Schedule.spec.cron` as a window shift without lowering the frequency more than twice, or at the
   same frequency for a backup schedule, on `Schedule.spec.timezone`, on tenant limits, campaign and script ceilings only
   downward, and on the guarded fields of a tenant's single dispatcher rule;
@@ -2081,7 +2084,8 @@ the role's `max_open_proposals` and `max_per_week` (3 each) and the tenant's `ma
   the attempt's mark and `untrusted_seen` with its source, and the share of the author's and the role's own points in
   the evidence series (`self_influence`).
 - `doctor` shows `insights.loop_disabled` with the reasons: `no_insight_role`, `insight_line_zero:<role>`,
-  `review_line_zero`, `no_present_to`, `no_decider`.
+  `veto_lens_no_executor:<role>`, `review_line_zero`, `no_present_to`, `no_decider`, and `insights.not_started` with
+  the roles whose analysis no active schedule and no route starts, which never runs though the cycle is on.
 - Not built: a route that starts analysis from `obs.*` and `alarm.*` events, `create_from_template` changes, catalog
   fields of the allowlist (no manifest path), the turn order of analysis tasks (INS-5 is deferred; they go by the
   ordinary dispatch order).

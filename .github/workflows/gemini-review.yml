@@ -3,7 +3,9 @@
 # Gemini CLI over the PR's diff and posts its answer as a PR comment. A comment event always runs
 # this file as it is on the default branch, so a PR cannot change what runs next to the key.
 # The only secret: GEMINI_API_KEY. The PR is read only as a diff from the API, the CLI runs with
-# every tool denied, its step has no GitHub token, and a PR from a fork is refused. Actions are pinned to a full commit SHA; the CLI version is pinned below.
+# every tool denied, its step has no GitHub token, and a PR from a fork is refused. Actions are pinned to a full commit SHA; the CLI
+# and everything it pulls in come from the lockfile ci/gemini/package-lock.json of the default
+# branch, installed without install scripts in a step without the key.
 name: gemini-review
 
 on:
@@ -13,10 +15,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: gemini-review-${{ github.event.issue.number }}
-  cancel-in-progress: false
-
 jobs:
   review:
     if: >-
@@ -25,13 +23,16 @@ jobs:
       contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    # At the job, so a later comment of anyone that skips the job does not cancel a waiting run.
+    concurrency:
+      group: gemini-review-${{ github.event.issue.number }}
+      cancel-in-progress: false
     permissions:
       contents: read
       pull-requests: write
       issues: write
     env:
       PR: ${{ github.event.issue.number }}
-      GEMINI_CLI: "@google/gemini-cli@0.64.0"
     steps:
       - name: acknowledge
         env:
@@ -52,6 +53,14 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
           node-version: "22"
+      # Only the lockfile of the default branch is checked out; nothing of the PR.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: ci/gemini
+          persist-credentials: false
+      - name: install the CLI
+        run: npm ci --ignore-scripts --no-audit --no-fund --prefix ci/gemini
       - name: diff
         env:
           GH_TOKEN: ${{ github.token }}
@@ -111,7 +120,7 @@ jobs:
           denyMessage = "No tools in a review run."
           EOF
           set +e
-          npx -y "$GEMINI_CLI" --approval-mode plan --admin-policy "$RUNNER_TEMP/deny-all.toml" --skip-trust -p "$(cat "$RUNNER_TEMP/prompt.txt")" \
+          "$GITHUB_WORKSPACE/ci/gemini/node_modules/.bin/gemini" --approval-mode plan --admin-policy "$RUNNER_TEMP/deny-all.toml" --skip-trust -p "$(cat "$RUNNER_TEMP/prompt.txt")" \
             < "$RUNNER_TEMP/pr.diff" > "$RUNNER_TEMP/review.md" 2> "$RUNNER_TEMP/cli.log"
           code=$?
           set -e

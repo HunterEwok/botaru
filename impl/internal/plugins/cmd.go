@@ -70,7 +70,7 @@ func program(name string, forbidden map[string]bool) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if forbidden[filepath.Base(real)] {
+	if toolspec.Forbidden(filepath.Base(real), forbidden) {
 		return "", fmt.Errorf("the program %s is %s, a forbidden program", name, real)
 	}
 	return real, nil

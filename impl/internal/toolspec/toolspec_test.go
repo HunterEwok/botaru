@@ -273,3 +273,18 @@ func TestOutsideTextCommand(t *testing.T) {
 		t.Fatalf("journal of class internal: %v", got)
 	}
 }
+
+// TestForbidden: a versioned or suffixed name of a forbidden program is forbidden too (INJ-14).
+func TestForbidden(t *testing.T) {
+	f := map[string]bool{"python3": true, "python": true, "vim": true, "lua": true}
+	for _, n := range []string{"python3", "python3.12", "python2.7", "vim.basic", "lua5.4"} {
+		if !Forbidden(n, f) {
+			t.Errorf("%s passes", n)
+		}
+	}
+	for _, n := range []string{"systemctl", "journalctl", "pythonista", "df"} {
+		if Forbidden(n, f) {
+			t.Errorf("%s is refused", n)
+		}
+	}
+}
