@@ -12,7 +12,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
+	"os"
 	"strings"
 	"time"
 )
@@ -22,6 +25,31 @@ type Client struct {
 	BaseURL string // for example http://127.0.0.1:8401
 	Token   string
 	HTTP    *http.Client
+}
+
+// PlainPrivateEnv is the variable a worker on a private network sets to 1 to reach the core
+// over plain HTTP on another machine, as on the internal network of a compose file.
+const PlainPrivateEnv = "BOTARU_CORE_PLAIN_PRIVATE"
+
+// CheckCore refuses a core address that would carry the worker token in clear over a network:
+// plain HTTP is for the same machine only, other machines take https (spec/bindings/http),
+// unless PlainPrivateEnv is 1.
+func CheckCore(base string) error {
+	u, err := url.Parse(base)
+	if err != nil {
+		return fmt.Errorf("the core address %q: %w", base, err)
+	}
+	switch u.Scheme {
+	case "https":
+		return nil
+	case "http":
+		host := u.Hostname()
+		if ip := net.ParseIP(host); host == "localhost" || ip != nil && ip.IsLoopback() || os.Getenv(PlainPrivateEnv) == "1" {
+			return nil
+		}
+		return fmt.Errorf("the core address %s sends the worker token in clear to another machine: use https, or set %s=1 on a private network", base, PlainPrivateEnv)
+	}
+	return fmt.Errorf("the core address %q is neither http nor https", base)
 }
 
 // Error is a refusal of the core: problem details with a reason code.
@@ -75,6 +103,9 @@ func (c *Client) CallAs(ctx context.Context, op string, headers map[string]strin
 func (c *Client) post(ctx context.Context, path, lease string, headers map[string]string, req, out any) error {
 	if req == nil {
 		req = map[string]any{}
+	}
+	if err := CheckCore(c.BaseURL); err != nil {
+		return err
 	}
 	body, err := json.Marshal(req)
 	if err != nil {

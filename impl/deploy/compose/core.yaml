@@ -5,6 +5,7 @@ token_key_file: /run/secrets/token-key
 token_key_id: k1
 test_bench: true
 p1_listen: 0.0.0.0:8401          # the core network of the compose file only, no published port
+p1_plain_private_network: true   # that network is internal: plain HTTP, no TLS files
 p2_listen: 127.0.0.1:8402        # farmctl inside the core container only (IDN-7)
 operator: "Example operator"
 farm_hosts: [core1]

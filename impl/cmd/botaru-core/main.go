@@ -22,6 +22,7 @@ import (
 	"github.com/HunterEwok/botaru/impl/internal/config"
 	"github.com/HunterEwok/botaru/impl/internal/core"
 	"github.com/HunterEwok/botaru/impl/internal/gateway"
+	"github.com/HunterEwok/botaru/impl/internal/httpbound"
 	"github.com/HunterEwok/botaru/impl/internal/spec"
 	"github.com/HunterEwok/botaru/impl/internal/store"
 	"github.com/HunterEwok/botaru/impl/internal/texts"
@@ -150,16 +151,25 @@ func run(path string, log *slog.Logger) error {
 		go c.Run(ctx)
 	}
 
-	p1 := &http.Server{Addr: cfg.P1Listen, Handler: srv.P1Handler(), ReadHeaderTimeout: 10 * time.Second}
-	p2 := &http.Server{Addr: cfg.P2Listen, Handler: srv.P2Handler(), ReadHeaderTimeout: 10 * time.Second}
+	// A client gets a minute for its request body and two for an idle connection: without a
+	// bound a client that sends slowly, or never closes, holds a connection of the core
+	// without any credential.
+	p1 := httpbound.Server(cfg.P1Listen, srv.P1Handler(), time.Minute, 2*time.Minute)
+	p2 := httpbound.Server(cfg.P2Listen, srv.P2Handler(), time.Minute, 2*time.Minute)
 	servers := map[*http.Server]net.Listener{p1: l1, p2: l2}
 	if lt != nil {
-		servers[&http.Server{Addr: cfg.TestListen, Handler: srv.TestHandler(), ReadHeaderTimeout: 10 * time.Second}] = lt
+		servers[httpbound.Server(cfg.TestListen, srv.TestHandler(), time.Minute, 2*time.Minute)] = lt
 	}
 	errc := make(chan error, len(servers))
 	for s, l := range servers {
 		go func() {
-			if err := s.Serve(l); !errors.Is(err, http.ErrServerClosed) {
+			var err error
+			if s == p1 && cfg.P1TLSCertFile != "" {
+				err = s.ServeTLS(l, cfg.P1TLSCertFile, cfg.P1TLSKeyFile)
+			} else {
+				err = s.Serve(l)
+			}
+			if !errors.Is(err, http.ErrServerClosed) {
 				errc <- err
 			}
 		}()
