@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/HunterEwok/botaru/impl/internal/p1client"
+	"github.com/anthropics/anthropic-sdk-go"
 )
 
 func TestParseResult(t *testing.T) {
@@ -156,6 +157,8 @@ type fakeCore struct {
 	cut       bool     // the first model answer is a tool call the output limit cut
 	cuts      int      // more cut answers after the first
 	stops     []string // the stop_reason of the text answers in turn; end_turn when empty
+	tools     bool     // the attempt has a tools handle with an empty P3 catalog
+	noCalls   int      // answers that stop with tool_use and hold no block
 	model     [][]byte
 	fails     []map[string]any
 	completes []map[string]any
@@ -174,9 +177,13 @@ func (f *fakeCore) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		f.claimed = true
+		handles := map[string]any{"model": "bh_x"}
+		if f.tools {
+			handles["tools"] = "th_x"
+		}
 		payload, _ := json.Marshal(map[string]any{
 			"task":        map[string]any{"id": "t1", "type": "ops.investigate.v1", "body": map[string]any{"goal": "Why is the site down?"}},
-			"instruction": "Find the cause.", "handles": map[string]any{"model": "bh_x"}, "reply_locale": "et",
+			"instruction": "Find the cause.", "handles": handles, "reply_locale": "et",
 			"result_schema":      map[string]any{"type": "object"},
 			"full_result_schema": investigateSchema,
 		})
@@ -194,8 +201,20 @@ func (f *fakeCore) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = json.Unmarshal(body, &req)
 		f.fails = append(f.fails, req)
 		_, _ = w.Write([]byte(`{}`))
+	case "/v1/p3/mcp":
+		var req struct {
+			ID json.RawMessage `json:"id"`
+		}
+		_ = json.Unmarshal(body, &req)
+		_ = json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{"tools": []any{}}})
 	case "/v1/p4/anthropic/v1/messages":
 		f.model = append(f.model, body)
+		if f.noCalls > 0 {
+			f.noCalls--
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": "msg_0", "type": "message", "role": "assistant", "model": "m",
+				"content": []any{}, "stop_reason": "tool_use", "usage": map[string]any{"input_tokens": 1, "output_tokens": 389}})
+			return
+		}
 		if f.cut || f.cuts > 0 {
 			if f.cut {
 				f.cut = false
@@ -416,5 +435,63 @@ func TestAgentLastTurn(t *testing.T) {
 	}
 	if len(f.completes) != 1 || f.completes[0]["result"] == nil {
 		t.Fatalf("completes %v", f.completes)
+	}
+}
+
+// A reply that stops with tool_use but holds no tool call is an answer: an empty one gets the
+// repair turn instead of a user message without tool results, which P4 refuses.
+func TestAgentToolUseWithoutCall(t *testing.T) {
+	f := &fakeCore{tools: true, noCalls: 1, answers: []string{`{"answer":"nginx is down","verdict":"cause_found","services":["nginx"]}`}}
+	srv := httptest.NewServer(f)
+	defer srv.Close()
+	a := New(Config{Core: &p1client.Client{BaseURL: srv.URL, Token: "w"}})
+	if worked, err := a.Once(context.Background(), 0); err != nil || !worked {
+		t.Fatalf("once: %v %v", worked, err)
+	}
+	if len(f.model) != 2 {
+		t.Fatalf("%d model calls, want 2", len(f.model))
+	}
+	var second struct {
+		Messages []struct {
+			Role    string `json:"role"`
+			Content []struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(f.model[1], &second); err != nil {
+		t.Fatal(err)
+	}
+	for i, m := range second.Messages {
+		if len(m.Content) == 0 {
+			t.Errorf("message %d has no content: %+v", i, m)
+		}
+	}
+	last := second.Messages[len(second.Messages)-1]
+	if last.Role != "user" || len(last.Content) != 1 || last.Content[0].Text != repairPrompt {
+		t.Errorf("the message after the empty reply %+v", last)
+	}
+	if len(f.completes) != 1 || f.completes[0]["result"] == nil {
+		t.Fatalf("completes %v", f.completes)
+	}
+}
+
+// The last call goes without thinking blocks: its changed system text would unbind them. A
+// message of thinking only is dropped.
+func TestWithoutThinking(t *testing.T) {
+	in := []anthropic.MessageParam{
+		anthropic.NewUserMessage(anthropic.NewTextBlock("task")),
+		anthropic.NewAssistantMessage(anthropic.NewThinkingBlock("sig", ""), anthropic.NewToolUseBlock("t1", map[string]any{}, "logs_tail")),
+		anthropic.NewUserMessage(anthropic.NewToolResultBlock("t1", "ok", false)),
+		anthropic.NewAssistantMessage(anthropic.NewRedactedThinkingBlock("x")),
+		anthropic.NewUserMessage(anthropic.NewTextBlock(repairPrompt)),
+	}
+	out := withoutThinking(in)
+	if len(out) != 4 || len(out[1].Content) != 1 || out[1].Content[0].OfToolUse == nil {
+		t.Fatalf("without thinking %+v", out)
+	}
+	if len(in[1].Content) != 2 {
+		t.Error("the history itself lost a block")
 	}
 }

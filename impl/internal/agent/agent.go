@@ -8,6 +8,7 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -370,6 +371,7 @@ func (a *Agent) run(ctx context.Context, p attemptPayload) (map[string]any, stri
 	}
 	messages := []anthropic.MessageParam{anthropic.NewUserMessage(first...)}
 	repaired, schemaRepaired := false, false
+	var firstTools []byte
 	for turn := 0; turn < maxTurns; turn++ {
 		// The catalog is read before every model call: P4 requires the current one, and an
 		// apply between turns may change it (GW-1).
@@ -384,6 +386,13 @@ func (a *Agent) run(ctx context.Context, p attemptPayload) (map[string]any, stri
 			}
 			tools = list
 		}
+		// A changed catalog unbinds the thinking blocks of the earlier answers like a changed
+		// system text, so the calls after the change go without them.
+		toolsJSON, _ := json.Marshal(tools)
+		if turn == 0 {
+			firstTools = toolsJSON
+		}
+		toolsChanged := !bytes.Equal(toolsJSON, firstTools)
 		params := anthropic.MessageNewParams{
 			Model:     anthropic.Model("base"), // P4 sets the model of the slot (GW-7)
 			MaxTokens: a.cfg.MaxTokens,
@@ -391,12 +400,18 @@ func (a *Agent) run(ctx context.Context, p attemptPayload) (map[string]any, stri
 			Messages:  messages,
 			Tools:     tools,
 		}
+		if toolsChanged {
+			params.Messages = withoutThinking(messages)
+		}
 		if turn > 0 && turn+1 == maxTurns {
 			// The last call: the model hears so and gets no tools, so the attempt ends with
 			// its answer instead of a tool call that would never run. The note goes into the
 			// system text, not after the tool results: a text block right after tool results
-			// makes the model end its turn with an empty answer.
+			// makes the model end its turn with an empty answer. A changed system text unbinds
+			// the thinking blocks of the earlier answers (the provider refuses them as bound to
+			// a different conversation), so this call goes without them.
 			params.System = append(params.System, anthropic.TextBlockParam{Text: lastTurnNote})
+			params.Messages = withoutThinking(messages)
 			if len(tools) > 0 {
 				params.ToolChoice = anthropic.ToolChoiceUnionParam{OfNone: &anthropic.ToolChoiceNoneParam{}}
 			}
@@ -426,7 +441,13 @@ func (a *Agent) run(ctx context.Context, p attemptPayload) (map[string]any, stri
 			// detail so that the stand counts refusals apart from wrong answers.
 			return nil, "model_error", errors.New("the model refused the request (stop_reason refusal)")
 		}
-		if msg.StopReason != anthropic.StopReasonToolUse || p3 == nil {
+		// A reply is an answer unless it holds a tool call: a model may stop with tool_use and
+		// no tool_use block, and a user message without tool results is refused by P4.
+		calls := false
+		for _, b := range msg.Content {
+			calls = calls || b.Type == "tool_use"
+		}
+		if !calls || msg.StopReason != anthropic.StopReasonToolUse || p3 == nil {
 			var text strings.Builder
 			for _, b := range msg.Content {
 				if b.Type == "text" {
@@ -436,7 +457,8 @@ func (a *Agent) run(ctx context.Context, p attemptPayload) (map[string]any, stri
 			res, err := parseResult(text.String(), rschema)
 			if err != nil && !repaired && rschema != nil && turn+1 < maxTurns {
 				// A model that answered in prose gets one more turn to put the answer into
-				// the result object; a second prose answer ends the attempt.
+				// the result object; a second prose answer ends the attempt. A reply with no
+				// blocks stays out of the history: the API refuses an empty assistant message.
 				repaired = true
 				prompt := repairPrompt
 				if msg.StopReason == anthropic.StopReasonMaxTokens {
@@ -444,7 +466,10 @@ func (a *Agent) run(ctx context.Context, p attemptPayload) (map[string]any, stri
 					// again gets the same long answer.
 					prompt = cutAnswerPrompt
 				}
-				messages = append(messages, msg.ToParam(), anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)))
+				if len(msg.Content) > 0 {
+					messages = append(messages, msg.ToParam())
+				}
+				messages = append(messages, anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)))
 				continue
 			}
 			if err != nil {
@@ -489,6 +514,25 @@ func (a *Agent) run(ctx context.Context, p attemptPayload) (map[string]any, stri
 		messages = append(messages, anthropic.NewUserMessage(results...))
 	}
 	return nil, "runtime_error", errors.New("the model did not answer within the turn limit")
+}
+
+// withoutThinking is a copy of the messages without thinking blocks; a message left with no
+// block is dropped, and the provider joins the user messages around it.
+func withoutThinking(messages []anthropic.MessageParam) []anthropic.MessageParam {
+	out := make([]anthropic.MessageParam, 0, len(messages))
+	for _, m := range messages {
+		var content []anthropic.ContentBlockParamUnion
+		for _, b := range m.Content {
+			if b.OfThinking == nil && b.OfRedactedThinking == nil {
+				content = append(content, b)
+			}
+		}
+		if len(content) > 0 {
+			m.Content = content
+			out = append(out, m)
+		}
+	}
+	return out
 }
 
 // cutToolUses are the error results for the tool calls of an answer the output limit ended: the
