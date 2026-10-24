@@ -129,11 +129,15 @@ func campaignActionCanary(ctx context.Context, d *Director, sc string) error {
 	bob, dm := d.S.PersonIn(t.Name, "bob"), d.S.PersonIn(t.Name, "bob-dm")
 	dbs := hostsOf(t, KindDB)
 	// The action is proposed when the volume runs out of space and the code's numbers confirm
-	// it (its description): the data volumes fill, still above the alarm, and come back after.
-	if err := d.world("the pipeline temporary files fill /data of the database machines to 18% free (the director's fault, above the alarm)", func(w *World) {
+	// it (its description): the data volumes have filled over the last hour, still above the
+	// alarm, and come back after. The person writes once the monitor shows it.
+	if err := d.world("the pipeline temporary files have filled /data of the database machines to 18% free over the last hour (the director's fault, above the alarm)", func(w *World) {
+		now := time.Now().UTC()
 		for _, db := range dbs {
 			if disk := w.Hosts[db].Disks["/data"]; disk != nil {
 				disk.Fill(0.18)
+				w.Ramp(seriesKey(db, diskItem("/data", "pused")), now.Add(-time.Hour), now, 100*(1-disk.FreeRatio))
+				w.Ramp(seriesKey(db, diskItem("/data", "pfree")), now.Add(-time.Hour), now, 100*disk.FreeRatio)
 			}
 		}
 	}); err != nil {
@@ -146,6 +150,13 @@ func campaignActionCanary(ctx context.Context, d *Director, sc string) error {
 			}
 		})
 	}()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-d.S.stopped:
+		return errStopped
+	case <-time.After(2 * d.S.cfg.Step):
+	}
 	key, err := d.S.Say(bob, dm, "/rollout The data volumes of the database machines are filling up: clean up the pipeline temporary files older than 7 days there.")
 	if err != nil {
 		return err

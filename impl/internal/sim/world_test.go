@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -290,5 +291,21 @@ func TestBrain(t *testing.T) {
 	out = brainCall(t, b, map[string]any{"model": "m", "system": system, "messages": inj, "tools": tools})
 	if use := out["content"].([]any)[1].(map[string]any); use["name"] != "service_control" {
 		t.Fatalf("the injection: %v", out)
+	}
+}
+
+func TestRamp(t *testing.T) {
+	w := &World{Series: map[string][]Sample{}}
+	now := time.Unix(10000, 0)
+	for at := now.Add(-2 * time.Hour); at.Before(now); at = at.Add(30 * time.Minute) {
+		w.Sample("k", at, 20)
+	}
+	w.Ramp("k", now.Add(-time.Hour), now, 80)
+	var got []float64
+	for _, s := range w.Series["k"] {
+		got = append(got, s.Value)
+	}
+	if want := []float64{20, 20, 20, 50, 80}; !slices.Equal(got, want) {
+		t.Fatalf("ramp %v, want %v", got, want)
 	}
 }

@@ -547,7 +547,7 @@ func slowSite(ctx context.Context, d *Director, sc string) error {
 		return errStopped
 	case <-time.After(4 * d.S.cfg.Step):
 	}
-	key, err := d.S.Say("alice", "alice-dm", "/logs Why was the site slow yesterday evening?")
+	key, err := d.S.Say("alice", "alice-dm", "/logs Why has the site been slow for the last few minutes?")
 	if err != nil {
 		return err
 	}

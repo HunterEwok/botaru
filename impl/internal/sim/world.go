@@ -261,6 +261,26 @@ func (w *World) Sample(key string, at time.Time, v float64) {
 	w.Series[key] = s
 }
 
+// Ramp moves the samples of a series since a moment in a straight line from their value to
+// to, the newest reaching it, so the history shows a change that came over that time.
+func (w *World) Ramp(key string, since, now time.Time, to float64) {
+	span := now.Sub(since).Seconds()
+	if span <= 0 {
+		return
+	}
+	// A copy: readers share the stored slice and rely on its samples never changing.
+	s := slices.Clone(w.Series[key])
+	for i, x := range s {
+		if x.Clock < since.Unix() {
+			continue
+		}
+		f := min(1, float64(x.Clock-since.Unix())/span)
+		s[i].Value = x.Value + (to-x.Value)*f
+	}
+	w.Series[key] = s
+	w.Sample(key, now, to)
+}
+
 // OpenProblem opens a problem of a trigger on a host for a reason, once: an open problem of the
 // same reason stays the one problem. It returns the problem and whether it is new.
 func (w *World) OpenProblem(host, trigger, reason string, severity int, at time.Time, values map[string]any) (*Problem, bool) {
