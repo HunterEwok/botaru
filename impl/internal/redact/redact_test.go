@@ -24,6 +24,18 @@ func TestText(t *testing.T) {
 		{"bot 123456789:" + "AAabcdefghijklmnopqrstuvwxyz0123456", "bot [secret]"},
 		{"-----BEGIN RSA " + "PRIVATE KEY-----\nMIIE\n-----END RSA " + "PRIVATE KEY----- after", "[secret] after"},
 		{"version 1.2.3 of 4", "version 1.2.3 of 4"},
+		{"DB_PASSWORD=hunter2 next", "DB_PASSWORD=[secret] next"},
+		{"db.password: hunter2", "db.password: [secret]"},
+		{"X-Api-Key=abc123", "X-Api-Key=[secret]"},
+		{"AWS_SECRET_ACCESS_KEY=abc/def", "AWS_SECRET_ACCESS_KEY=[secret]"},
+		{`password = "two words"`, `password = "[secret]"`},
+		{`password='two words' x`, `password='[secret]' x`},
+		{`{"token":"a\"b c"}`, `{"token":"[secret]"}`},
+		{"curl -H 'X: 1' --oauth2-bearer abcdefghijklmnop1234", "curl -H 'X: 1' --oauth2-bearer [secret]"},
+		{"Bearer abcdefghijklmnop1234==", "Bearer [secret]"},
+		{"a Bearer token is needed", "a Bearer token is needed"},
+		{"bypass=1 compass: north", "bypass=1 compass: north"},
+		{"password=a,token=b", "password=[secret],token=[secret]"},
 	} {
 		if got := Text(c.in, all); got != c.want {
 			t.Errorf("Text(%q) = %q, want %q", c.in, got, c.want)
@@ -41,6 +53,18 @@ func TestValue(t *testing.T) {
 	v := Value(map[string]any{"a": []any{"x 198.51.100.1", 3.0}, "b": "token=zz", "gh" + "p_abcdefghijklmnopqrstuvwxyz": 1.0}, []string{IP, Secret}).(map[string]any)
 	if v["[secret]"] != 1.0 {
 		t.Fatalf("a key was not masked: %v", v)
+	}
+	w := Value(map[string]any{"DB_PASSWORD": "hunter2", "Token": "two words", "token_count": 5.0, "name": "x"}, []string{Secret}).(map[string]any)
+	if w["DB_PASSWORD"] != "[secret]" || w["Token"] != "[secret]" || w["token_count"] != 5.0 || w["name"] != "x" {
+		t.Fatalf("a value under a secret key %v", w)
+	}
+	if u := Value(map[string]any{"password": "x"}, []string{IP}).(map[string]any); u["password"] != "x" {
+		t.Fatalf("masked without the secret kind %v", u)
+	}
+	for _, s := range []string{"password=[secret]", `"token": "[secret]"`, "Bearer [secret]", "Authorization: [secret]"} {
+		if HasSecret(s) {
+			t.Errorf("HasSecret(%q) on masked text", s)
+		}
 	}
 	if v["a"].([]any)[0] != "x [ip]" || v["a"].([]any)[1] != 3.0 || v["b"] != "token=[secret]" {
 		t.Fatalf("Value %v", v)

@@ -8,6 +8,7 @@ package redact
 
 import (
 	"regexp"
+	"slices"
 	"strings"
 	"unicode/utf8"
 )
@@ -18,6 +19,9 @@ const (
 	Email  = "email"
 	Secret = "secret"
 )
+
+// secretNames are the names whose value is a secret.
+const secretNames = `(?:password|passwd|pwd|pass|passphrase|secret|client_secret|secret_key|secret_access_key|token|access_token|refresh_token|auth_token|session_token|api[_\-]?key|apikey|private_key|credentials?)`
 
 var (
 	ipv4 = regexp.MustCompile(`\b(?:25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])(?:\.(?:25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])){3}\b`)
@@ -30,8 +34,14 @@ var (
 	privateKey = regexp.MustCompile(`-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z0-9 ]*PRIVATE KEY-----|\z)`)
 	authHeader = regexp.MustCompile(`(?i)\b((?:proxy-)?authorization)\s*:\s*[^\r\n]*`)
 	cookie     = regexp.MustCompile(`(?i)\b(set-cookie|cookie)\s*:\s*[^\r\n]*`)
-	keyValue   = regexp.MustCompile(`(?i)\b(password|passwd|pwd|pass|secret|client_secret|token|access_token|refresh_token|api[_-]?key|apikey|private_key)("?\s*[=:]\s*"?)([^\s"'&,;]+)`)
-	urlCreds   = regexp.MustCompile(`(?i)\b([a-z][a-z0-9+.\-]*://)[^\s/:@]+:[^\s/@]+@`)
+	// A secret name, alone or as the last part of a longer name (DB_PASSWORD, db.password,
+	// x-api-key), then = or : and the value: a quoted string whole, or a bare word.
+	keyValue = regexp.MustCompile(`(?i)(^|[^A-Za-z0-9])((?:[A-Za-z0-9]+[_.\-])*` + secretNames + `)(["']?\s*[=:]\s*)("(?:[^"\\\n]|\\.)*"|'[^'\n]*'|[^\s"'&,;]+)`)
+	// An object key that names a secret, for Value.
+	secretKey = regexp.MustCompile(`(?i)^(?:[A-Za-z0-9]+[_.\-])*` + secretNames + `$`)
+	// A bearer token without its header, as in a command line or a log line.
+	bearer   = regexp.MustCompile(`(?i)\b(bearer)\s+[A-Za-z0-9._~+/\-]{16,}=*`)
+	urlCreds = regexp.MustCompile(`(?i)\b([a-z][a-z0-9+.\-]*://)[^\s/:@]+:[^\s/@]+@`)
 	// Known token forms: Anthropic keys, this farm's own tokens and handles, cloud and chat
 	// tokens, bot tokens and JSON Web Tokens.
 	tokens = regexp.MustCompile(`\b(?:sk-ant-[A-Za-z0-9_\-]{8,}|sk-[A-Za-z0-9_\-]{20,}|(?:bw1|bh|bc2|bo2)_[A-Za-z0-9_\-]{16,}|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[abprs]-[A-Za-z0-9\-]{10,}|[0-9]{6,12}:AA[A-Za-z0-9_\-]{30,}|eyJ[A-Za-z0-9_\-]{8,}\.eyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,})`)
@@ -72,9 +82,21 @@ func Secrets(s string) string {
 	s = authHeader.ReplaceAllString(s, "$1: [secret]")
 	s = cookie.ReplaceAllString(s, "$1: [secret]")
 	s = urlCreds.ReplaceAllString(s, "$1[secret]@")
-	s = keyValue.ReplaceAllString(s, "$1$2[secret]")
+	s = keyValue.ReplaceAllStringFunc(s, maskValue)
+	s = bearer.ReplaceAllString(s, "$1 [secret]")
 	s = tokens.ReplaceAllString(s, "[secret]")
 	return s
+}
+
+// maskValue masks the value of one keyValue match and keeps its quotes.
+func maskValue(m string) string {
+	g := keyValue.FindStringSubmatch(m)
+	v := g[4]
+	q := ""
+	if v[0] == '"' || v[0] == '\'' {
+		q = v[:1]
+	}
+	return g[1] + g[2] + g[3] + q + "[secret]" + q
 }
 
 // HasSecret says whether s still holds something Secrets would mask.
@@ -93,8 +115,14 @@ func Value(v any, kinds []string) any {
 		return out
 	case map[string]any:
 		// Keys are masked too: an object key can carry a secret as well as a value.
+		// A string under a key that names a secret is a secret whole: {"password": "x"}
+		// has no "password=" in any one string.
+		masks := slices.Contains(kinds, Secret)
 		out := make(map[string]any, len(x))
 		for k, e := range x {
+			if _, ok := e.(string); ok && masks && secretKey.MatchString(k) {
+				e = "[secret]"
+			}
 			out[Text(k, kinds)] = Value(e, kinds)
 		}
 		return out
