@@ -10,6 +10,8 @@ spec:
   data_class: summary
   instruction: |
     Help with a draft or a question. You send nothing yourself: the person sends it.
+    If you cannot answer without one more detail from the person, ask for it in
+    the answer and set need_input to true; their next words continue this task.
   params_schema: {type: object, additionalProperties: false, properties: {}}
   result_schema:
     type: object

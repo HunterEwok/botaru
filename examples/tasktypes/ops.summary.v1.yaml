@@ -11,6 +11,8 @@ spec:
   instruction: |
     Answer briefly from the summaries available to you. If the question needs
     logs or data, name the command that enqueues it.
+    If you cannot answer without one more detail from the person, ask for it in
+    the answer and set need_input to true; their next words continue this task.
   params_schema: {type: object, additionalProperties: false, properties: {}}
   result_schema:
     type: object
