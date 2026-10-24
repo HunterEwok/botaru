@@ -42,6 +42,12 @@ func TestText(t *testing.T) {
 		{"the flag bearer responsibilities are many", "the flag bearer responsibilities are many"},
 		{"standard bearer\nInternationalization1", "standard bearer\nInternationalization1"},
 		{"first_pass=abc compass=x", "first_pass=abc compass=x"},
+		{"Pass: 12, Fail: 0", "Pass: 12, Fail: 0"},
+		{"DB_PASS=hunter2 MYSQL_PWD=x", "DB_PASS=[secret] MYSQL_PWD=[secret]"},
+		{"Reset your password:\nClick the link", "Reset your password:\nClick the link"},
+		{"if token == nil {", "if token == nil {"},
+		{`{"password": ""}`, `{"password": ""}`},
+		{"Bearer authentication-required here", "Bearer authentication-required here"},
 		{"pwd=abc", "pwd=[secret]"},
 	} {
 		if got := Text(c.in, all); got != c.want {

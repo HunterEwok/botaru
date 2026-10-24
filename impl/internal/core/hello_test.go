@@ -688,14 +688,22 @@ func TestApplyTenantWall(t *testing.T) {
 	if err != nil || len(res.Errors) > 0 || res.Applied {
 		t.Fatalf("a tenant's plan: %+v %v", res, err)
 	}
-	res, err = b.c.Apply(ctx, other, ApplyRequest{Commit: commit, Manifests: ms, DryRun: true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, ch := range res.Changes {
-		if ch.Tenant == "demo" || ch.Kind == "Tenant" && ch.Name != "demo2" {
-			t.Errorf("the plan of demo2 shows %+v", ch)
+	// A plan still holds no object of another tenant and no delete, whose refusals would tell
+	// about the objects of another tenant.
+	for name, req := range map[string]ApplyRequest{
+		"another tenant's plan": {Commit: commit, Manifests: ms, DryRun: true},
+		"a planned delete":      {Commit: commit, DryRun: true, Delete: []ApplyDelete{{Kind: "Group", Tenant: "demo", Name: "hello"}}},
+	} {
+		_, err := b.c.Apply(ctx, other, req)
+		if p, ok := AsProblem(err); !ok || p.Reason != "forbidden" {
+			t.Errorf("%s: %v", name, err)
 		}
+	}
+	r := &ApplyResult{Changes: []ApplyChange{{Kind: "Group", Tenant: "demo", Name: "a"}, {Kind: "Tenant", Name: "demo2"}, {Kind: "Role", Name: "r"}},
+		Errors: []ApplyError{{Kind: "Route", Tenant: "demo", Name: "x", Code: "ref_missing"}}}
+	r.only("demo2")
+	if len(r.Changes) != 2 || len(r.Errors) != 1 || r.Errors[0].Code != "other_tenant_findings" {
+		t.Errorf("only: %+v", r)
 	}
 	unknown := map[string]any{"apiVersion": "botaru/v1", "kind": "NoSuchKind", "metadata": map[string]any{"name": "x", "tenant": "demo"}}
 	res, err = b.c.Apply(ctx, b.op, ApplyRequest{Commit: commit, Manifests: []map[string]any{unknown}})

@@ -136,7 +136,7 @@ func (c *Core) accountabilityLint(ctx context.Context, docs []manifest.Doc, inde
 			return nil, err
 		}
 		if !ready {
-			out = append(out, ApplyError{Kind: d.Kind, Name: d.Name, Code: "accountability_not_ready", Path: fmt.Sprintf("/manifests/%d/spec/commission/accountability", index[i])})
+			out = append(out, ApplyError{Kind: d.Kind, Tenant: d.Tenant, Name: d.Name, Code: "accountability_not_ready", Path: fmt.Sprintf("/manifests/%d/spec/commission/accountability", index[i])})
 		}
 	}
 	return out, nil

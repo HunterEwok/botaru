@@ -23,8 +23,9 @@ const (
 // secretNames are the names whose value is a secret.
 const secretNames = `(?:password|passwd|passphrase|secret|client_secret|secret_key|secret_access_key|token|access_token|refresh_token|auth_token|session_token|api[_\-]?key|apikey|private_key)`
 
-// shortNames are secret names too common as parts of other words to take a prefix.
-const shortNames = `(?:pwd|pass)`
+// shortNames are secret names too common as words (Pass: 12) to stand alone in any case: pwd,
+// and PASS or PWD as the last part of an upper-case variable name (DB_PASS, MYSQL_PWD).
+const shortNames = `(?:pwd|(?-i:[A-Z0-9]+_(?:PASS|PWD)))`
 
 var (
 	ipv4 = regexp.MustCompile(`\b(?:25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])(?:\.(?:25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])){3}\b`)
@@ -40,11 +41,12 @@ var (
 	// A secret name, alone or as the last part of a longer name (DB_PASSWORD, db.password,
 	// x-api-key), then =, :, => or := and the value: a quoted string whole (to the end of the
 	// line when the closing quote is missing, as in a cut log line), or a bare word.
-	keyValue = regexp.MustCompile(`(?i)(^|[^A-Za-z0-9_])((?:[A-Za-z0-9]+[_.\-])*` + secretNames + `|` + shortNames + `)(["']?\s*(?:=>|:=|[=:])\s*)("(?:[^"\\\n]|\\.)*"?|'[^'\n]*'?|[^\s"'&,;]+)`)
+	keyValue = regexp.MustCompile(`(?i)(^|[^A-Za-z0-9_])((?:[A-Za-z0-9]+[_.\-])*` + secretNames + `|` + shortNames + `)(["']?[ \t]*(?:=>|:=|[=:])[ \t]*)("(?:[^"\\\n]|\\.)*"?|'[^'\n]*'?|[^\s"'&,;=][^\s"'&,;]*)`)
 	// An object key that names a secret, for Value.
 	secretKey = regexp.MustCompile(`(?i)^(?:(?:[A-Za-z0-9]+[_.\-])*` + secretNames + `|` + shortNames + `)$`)
 	// A bearer token without its header, as in a command line or a log line: 16 characters or
-	// more with a digit or a sign in them, so that "bearer" before a long word stays.
+	// more with a digit or a sign other than "-" in them, so that "bearer" before a long word or
+	// a hyphenated phrase stays.
 	bearer   = regexp.MustCompile(`(?i)\b(bearer)[ \t]+([A-Za-z0-9._~+/\-]{16,}=*)`)
 	urlCreds = regexp.MustCompile(`(?i)\b([a-z][a-z0-9+.\-]*://)[^\s/:@]+:[^\s/@]+@`)
 	// Known token forms: Anthropic keys, this farm's own tokens and handles, cloud and chat
@@ -90,7 +92,7 @@ func Secrets(s string) string {
 	s = keyValue.ReplaceAllStringFunc(s, maskValue)
 	s = bearer.ReplaceAllStringFunc(s, func(m string) string {
 		g := bearer.FindStringSubmatch(m)
-		if !strings.ContainsAny(g[2], "0123456789._~+/-=") {
+		if !strings.ContainsAny(g[2], "0123456789._~+/=") {
 			return m
 		}
 		return g[1] + " [secret]"
@@ -103,6 +105,10 @@ func Secrets(s string) string {
 func maskValue(m string) string {
 	g := keyValue.FindStringSubmatch(m)
 	v := g[4]
+	if v == `""` || v == "''" {
+		// An empty value hides nothing.
+		return m
+	}
 	open, closed := "", ""
 	if v[0] == '"' || v[0] == '\'' {
 		open = v[:1]

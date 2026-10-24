@@ -95,12 +95,8 @@ func (c *Core) manifestKinds() (map[string]kindInfo, error) {
 // Objects of the store that are not in the set stay and are reported as orphaned; they are
 // deleted only by the explicit delete list (MAN-6).
 func (c *Core) Apply(ctx context.Context, op Operator, req ApplyRequest) (*ApplyResult, error) {
-	// A plan changes nothing, so a tenant's operator plans any set, as the gate of a proposal
-	// does over the shared objects; it sees only the findings of its tenant and of every tenant.
-	if !req.DryRun {
-		if err := c.mayApply(op, req); err != nil {
-			return nil, err
-		}
+	if err := c.mayApply(op, req); err != nil {
+		return nil, err
 	}
 	// The lint reads the store before the transaction; an apply that lands in between makes
 	// this one start again, so that two applies never pass the lint on each other's old state.
@@ -121,7 +117,9 @@ func (c *Core) Apply(ctx context.Context, op Operator, req ApplyRequest) (*Apply
 // mayApply keeps a tenant's operator inside the tenant's wall, as the other P2 operations do:
 // such an operator applies only objects of its own tenant. Objects of every tenant (global
 // kinds, a global model profile), a Tenant object with its budgets and ceilings, skills,
-// deletions and the objects of another tenant take an operator of farm.
+// deletions and the objects of another tenant take an operator of farm. A plan changes
+// nothing, so it may also hold the objects of every tenant and the tenant's own Tenant object,
+// as the gate of a proposal plans the shared set; it still holds no object of another tenant.
 func (c *Core) mayApply(op Operator, req ApplyRequest) error {
 	if op.Tenant == "farm" {
 		return nil
@@ -129,7 +127,7 @@ func (c *Core) mayApply(op Operator, req ApplyRequest) error {
 	if len(req.Delete) > 0 {
 		return refuse("forbidden", "a delete in apply takes an operator of farm")
 	}
-	if len(req.Skills) > 0 {
+	if len(req.Skills) > 0 && !req.DryRun {
 		return refuse("forbidden", "skills are of every tenant; their apply takes an operator of farm")
 	}
 	for _, k := range req.Knowledge {
@@ -150,7 +148,11 @@ func (c *Core) mayApply(op Operator, req ApplyRequest) error {
 			// An unknown kind gets its own code from the lint (unknown_kind).
 			continue
 		}
-		if scope := ki.scope; scope != "tenant" && (scope != "either" || tenant == "") || tenant != op.Tenant {
+		own := tenant == op.Tenant && (ki.scope == "tenant" || ki.scope == "either")
+		if req.DryRun && !own {
+			own = d.Kind == "Tenant" && d.Name == op.Tenant || ki.scope == "global" || ki.scope == "either" && tenant == ""
+		}
+		if !own {
 			return refuse("forbidden", "manifests/%d (%s %s) is not an object of tenant %s; its apply takes an operator of farm", i, d.Kind, d.Name, op.Tenant)
 		}
 	}
@@ -182,7 +184,12 @@ func (r *ApplyResult) only(t string) {
 		}
 		return out
 	}
+	n := len(r.Errors)
 	r.Errors = keep(r.Errors)
+	if len(r.Errors) < n {
+		// The set still fails: a plan never reads clean because its findings were not shown.
+		r.Errors = append(r.Errors, ApplyError{Code: "other_tenant_findings", Detail: "the set has findings outside this tenant"})
+	}
 	if r.Warnings != nil {
 		r.Warnings = keep(r.Warnings)
 	}
