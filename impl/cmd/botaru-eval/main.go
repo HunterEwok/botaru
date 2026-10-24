@@ -228,7 +228,11 @@ func runWith(o options, stdout, stderr io.Writer) (int, error) {
 	for _, cp := range plan.Cases {
 		planCases = append(planCases, cp.Case)
 	}
-	b, err := evals.StartBench(ctx, evals.BenchConfig{Root: root, DSN: dsn, WorkDir: work, Model: model, Cases: planCases,
+	skills, err := evals.SkillFolders(root)
+	if err != nil {
+		return 1, fmt.Errorf("skills: %w", err)
+	}
+	b, err := evals.StartBench(ctx, evals.BenchConfig{Root: root, DSN: dsn, WorkDir: work, Model: model, Cases: planCases, Skills: skills,
 		Logger: slog.New(slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: level})),
 		Plugin: func(kind string, args []string) ([]string, []string) {
 			return append([]string{exe, "plugin", kind}, args...), nil

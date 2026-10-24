@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package sim
+package evals
 
 import (
 	"encoding/base64"
@@ -9,10 +9,10 @@ import (
 	"path/filepath"
 )
 
-// skillFolders reads the skill folders of examples/skills as apply carries them (SKL-1): the
+// SkillFolders reads the skill folders of examples/skills as apply carries them (SKL-1): the
 // files of each folder by slash path, with their bytes and mode. The reference bot ops-reader
 // pins one of them, and its tasks wait with skill_missing without it.
-func skillFolders(root string) (map[string][]map[string]any, error) {
+func SkillFolders(root string) (map[string][]map[string]any, error) {
 	dir := filepath.Join(root, "examples", "skills")
 	entries, err := os.ReadDir(dir)
 	if err != nil {
