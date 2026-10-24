@@ -98,6 +98,18 @@ func (c *Core) Apply(ctx context.Context, op Operator, req ApplyRequest) (*Apply
 	if err := c.mayApply(op, req); err != nil {
 		return nil, err
 	}
+	if req.DryRun && op.Tenant != "farm" {
+		// A tenant's plan takes its Tenant object as stored: the budgets and ceilings of a
+		// Tenant are checked against the sums of all tenants, and trying values of its own
+		// would tell those sums.
+		var ms []map[string]any
+		for _, m := range req.Manifests {
+			if m["kind"] != "Tenant" {
+				ms = append(ms, m)
+			}
+		}
+		req.Manifests = ms
+	}
 	// The lint reads the store before the transaction; an apply that lands in between makes
 	// this one start again, so that two applies never pass the lint on each other's old state.
 	for try := 0; ; try++ {
@@ -179,6 +191,11 @@ func (r *ApplyResult) only(t string) {
 		out := es[:0]
 		for _, e := range es {
 			if mine(e.Kind, e.Tenant, e.Name) {
+				if e.Tenant == "" && e.Kind != "Tenant" {
+					// The detail of a finding on an object of every tenant can name the tenant
+					// that found it, such as the tenant of a role without eval reports.
+					e.Detail = ""
+				}
 				out = append(out, e)
 			}
 		}
