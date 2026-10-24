@@ -8,6 +8,7 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -370,6 +371,7 @@ func (a *Agent) run(ctx context.Context, p attemptPayload) (map[string]any, stri
 	}
 	messages := []anthropic.MessageParam{anthropic.NewUserMessage(first...)}
 	repaired, schemaRepaired := false, false
+	var firstTools []byte
 	for turn := 0; turn < maxTurns; turn++ {
 		// The catalog is read before every model call: P4 requires the current one, and an
 		// apply between turns may change it (GW-1).
@@ -384,12 +386,22 @@ func (a *Agent) run(ctx context.Context, p attemptPayload) (map[string]any, stri
 			}
 			tools = list
 		}
+		// A changed catalog unbinds the thinking blocks of the earlier answers like a changed
+		// system text, so the calls after the change go without them.
+		toolsJSON, _ := json.Marshal(tools)
+		if turn == 0 {
+			firstTools = toolsJSON
+		}
+		toolsChanged := !bytes.Equal(toolsJSON, firstTools)
 		params := anthropic.MessageNewParams{
 			Model:     anthropic.Model("base"), // P4 sets the model of the slot (GW-7)
 			MaxTokens: a.cfg.MaxTokens,
 			System:    []anthropic.TextBlockParam{{Text: system}},
 			Messages:  messages,
 			Tools:     tools,
+		}
+		if toolsChanged {
+			params.Messages = withoutThinking(messages)
 		}
 		if turn > 0 && turn+1 == maxTurns {
 			// The last call: the model hears so and gets no tools, so the attempt ends with
