@@ -461,16 +461,23 @@ func (c *Core) runTakeover(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 		FROM tasks o, takeovers k JOIN tasks s ON s.id = k.seat_task WHERE o.id = $1 AND k.id = $2`, r.Task, r.ID).Scan(&untrusted); err != nil {
 		return "", "", err
 	}
-	inherit := map[string]any{"takeover_of": r.Task, "executor_role": role}
-	if untrusted {
-		inherit["untrusted_seen"], inherit["untrusted_source"] = true, "continues"
-	}
-	extra, err := json.Marshal(inherit)
+	extra, err := json.Marshal(map[string]any{"takeover_of": r.Task, "executor_role": role})
 	if err != nil {
 		return "", "", err
 	}
 	if _, err := tx.Exec(ctx, `UPDATE tasks SET record = record || $2::jsonb WHERE id = $1`, res.TaskID, extra); err != nil {
 		return "", "", err
+	}
+	// The same body keeps its flags and their sources; untrusted text the seat read comes as
+	// continues, unless the task already names a source (INJ-13, AUD-5).
+	if err := carryBodyFlags(ctx, tx, res.TaskID, r.Task); err != nil {
+		return "", "", err
+	}
+	if untrusted {
+		if _, err := tx.Exec(ctx, `UPDATE tasks SET record = record || jsonb_build_object('untrusted_seen', true,
+			'untrusted_source', coalesce(record->'untrusted_source', '"continues"'::jsonb)) WHERE id = $1`, res.TaskID); err != nil {
+			return "", "", err
+		}
 	}
 	if err := takeoverPoint(ctx, tx, now, r.Tenant, typ, role, r.ID); err != nil {
 		return "", "", err

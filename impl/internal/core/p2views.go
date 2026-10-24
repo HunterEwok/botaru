@@ -235,6 +235,9 @@ func (c *Core) redriveTask(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 			FROM tasks o WHERE n.id = $1 AND o.id = $2`, res.TaskID, id); err != nil {
 			return "", nil, err
 		}
+		if err := carryBodyFlags(ctx, tx, res.TaskID, id); err != nil {
+			return "", nil, err
+		}
 	}
 	return res.TaskID, nil, nil
 }

@@ -74,6 +74,9 @@ type enqueueInput struct {
 	Continues string
 	// Untrusted carries untrusted_seen over from the continued task (CNT-5).
 	Untrusted bool
+	// ServiceGoal marks a body an external program posted, of a type without goal_trust
+	// authored: someone else's text (INJ-13).
+	ServiceGoal bool
 	// ContinuesMark is the data mark of the continued task, whose outcome the new one carries.
 	ContinuesMark string
 	// EstimateMin is the least reserve of the task: a review reserves its type's tree budget,
@@ -400,6 +403,8 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 		personal = append(personal, "forward")
 	case in.Quoted:
 		record["untrusted_seen"], record["untrusted_source"] = true, "quote"
+	case in.ServiceGoal:
+		record["untrusted_seen"], record["untrusted_source"] = true, "goal:service"
 	}
 	if in.Quoted {
 		personal = append(personal, "quote")
@@ -978,4 +983,21 @@ func (c *Core) wakeShare(ctx context.Context, tx pgx.Tx, now time.Time, tv *Tena
 		return refuse("budget_exhausted", "the personal day limit is used up"), nil
 	}
 	return nil, nil
+}
+
+// carryBodyFlags gives a task enqueued again with the stored body of another (a redrive, a
+// takeover) the flags of that body: it is the same someone else's text and the same personal
+// data. untrusted_seen is only ever set and keeps the old source unless the new task names its
+// own (INJ-13); personal_seen and personal_subjects are joined, so an erasure and an export
+// still find the copy (AUD-5).
+func carryBodyFlags(ctx context.Context, tx pgx.Tx, task, from string) error {
+	_, err := tx.Exec(ctx, `UPDATE tasks n SET record = n.record
+		|| CASE WHEN coalesce((o.record->>'untrusted_seen')::boolean, false) AND NOT coalesce((n.record->>'untrusted_seen')::boolean, false)
+			THEN jsonb_strip_nulls(jsonb_build_object('untrusted_seen', true, 'untrusted_source', o.record->'untrusted_source')) ELSE '{}'::jsonb END
+		|| CASE WHEN jsonb_typeof(o.record->'personal_seen') = 'array' THEN jsonb_build_object('personal_seen',
+			(SELECT jsonb_agg(DISTINCT v) FROM jsonb_array_elements(coalesce(n.record->'personal_seen', '[]'::jsonb) || (o.record->'personal_seen')) v)) ELSE '{}'::jsonb END
+		|| CASE WHEN jsonb_typeof(o.record->'personal_subjects') = 'array' THEN jsonb_build_object('personal_subjects',
+			(SELECT jsonb_agg(DISTINCT v) FROM jsonb_array_elements(coalesce(n.record->'personal_subjects', '[]'::jsonb) || (o.record->'personal_subjects')) v)) ELSE '{}'::jsonb END
+		FROM tasks o WHERE n.id = $1 AND o.id = $2`, task, from)
+	return err
 }

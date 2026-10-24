@@ -196,3 +196,29 @@ func TestStatusFarmManagerDisabled(t *testing.T) {
 		}
 	}
 }
+
+// A redrive enqueues the same body again: the new task keeps untrusted_seen with its source and
+// the personal data flags, so an erasure of the quoted person still finds the copy (INJ-13,
+// AUD-5).
+func TestRedriveKeepsBodyFlags(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	b := newBench(t)
+	task := b.hello(t, "1")
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE tasks SET state = 'failed', reason = 'attempts_exhausted', record = record
+		|| '{"untrusted_seen": true, "untrusted_source": "quote", "personal_seen": ["quote"], "personal_subjects": ["person:bob"]}'::jsonb WHERE id = $1`, task); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.Redrive(ctx, b.op, RedriveRequest{Op: "task.redrive", ID: task}); err != nil {
+		t.Fatal(err)
+	}
+	var seen bool
+	var source, personal, subjects string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT (record->>'untrusted_seen')::boolean, record->>'untrusted_source', record->>'personal_seen', record->>'personal_subjects'
+		FROM tasks WHERE record->'refs' ? $1`, task).Scan(&seen, &source, &personal, &subjects); err != nil {
+		t.Fatal(err)
+	}
+	if !seen || source != "quote" || personal != `["quote"]` || subjects != `["person:bob"]` {
+		t.Fatalf("the redriven task: %v %q %s %s", seen, source, personal, subjects)
+	}
+}

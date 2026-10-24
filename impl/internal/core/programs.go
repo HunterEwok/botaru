@@ -111,6 +111,8 @@ func (c *Core) ProgramEnqueue(ctx context.Context, p *Program, req EnqueueReques
 		res, err := c.enqueue(ctx, tx, now, cat, enqueueInput{
 			Tenant: p.Tenant, Type: typ, Body: req.Body, IdempotencyKey: req.IdempotencyKey, Initiator: p.Principal,
 			EnqueuedBy: "program:api:" + p.KeyID, Priority: prio, Source: "interactive", Refs: req.Refs, OwnRefs: true,
+			// A program's goal is someone else's text unless the type trusts it (INJ-13).
+			ServiceGoal: cat.TaskTypes[typ].GoalTrust != "authored",
 		})
 		if err != nil {
 			return err

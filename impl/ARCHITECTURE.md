@@ -412,6 +412,8 @@ so nothing split across blocks escapes it, and structured output above the tool 
 ### Flags of the record
 
 A forwarded or quoted message sets `untrusted_seen` on the task with the source `forward` or `quote` (INJ-13, AUD-5).
+A task an external program enqueues gets it with the source `goal:service`, unless its type declares `goal_trust:
+authored` (INJ-13).
 `personal_seen` lists without content where the task met personal data: a forward, a quote, or tool output in which the
 toolhost masked an address (`masking`); the audit record of `task.complete` carries the same list. When the channel
 names the author of the forwarded or quoted text (`forwarded_from`, `quoted_from`) and the tenant knows that identity,
