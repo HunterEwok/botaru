@@ -59,6 +59,8 @@ store_dsn_file: /etc/botaru/secrets/dsn
 token_key_file: /etc/botaru/secrets/token.key
 test_bench: true
 p1_listen: 127.0.0.1:8401        # workers
+# p1_tls_cert_file: /etc/botaru/secrets/p1.crt   # needed when p1_listen is reachable from other machines
+# p1_tls_key_file: /etc/botaru/secrets/p1.key
 p2_listen: 127.0.0.1:8402        # farmctl only; a separate listener (IDN-7)
 # test_listen: 127.0.0.1:8403    # optional: the test-control port for the conformance runner
 # test_key_sha256: <the SHA-256 of the test bench key>   # needed with test_listen; only with test_bench: true
@@ -210,7 +212,7 @@ A bot reads a machine through a toolhost on that machine (E3): `botaru-toolhost`
 
    [Service]
    User=botaru-tools-demo
-   ExecStart=/opt/botaru/bin/botaru-toolhost -core http://core1.example.org:8401 -token-file /etc/botaru/secrets/toolhost-demo -config /etc/botaru/toolhost-demo.yaml
+   ExecStart=/opt/botaru/bin/botaru-toolhost -core https://core1.example.org:8401 -token-file /etc/botaru/secrets/toolhost-demo -config /etc/botaru/toolhost-demo.yaml
    Restart=on-failure
    NoNewPrivileges=yes
    CapabilityBoundingSet=
@@ -223,6 +225,8 @@ A bot reads a machine through a toolhost on that machine (E3): `botaru-toolhost`
    [Install]
    WantedBy=multi-user.target
    ```
+
+   The toolhost runs on another machine, so it reaches P1 over TLS: on the core set `p1_listen` to an address of that network (for example `0.0.0.0:8401`) with `p1_tls_cert_file` and `p1_tls_key_file` (step 5). The core does not start with a P1 address other machines can reach and no TLS files, and a worker refuses plain `http://` to another machine, because the worker token would cross the network in clear. With TLS on, every worker reaches P1 by `https://`, the workers on the core machine too: change `-core http://127.0.0.1:8401` of the agent, channel and monitor units to `-core https://core1.example.org:8401`, the name the certificate covers. A certificate of your own CA is trusted through `Environment=SSL_CERT_FILE=/etc/botaru/core-ca.pem` in each unit. Only on a network that nothing else can reach, such as the internal network of a compose file, `p1_plain_private_network: true` on the core and `BOTARU_CORE_PLAIN_PRIVATE=1` on the workers allow plain HTTP.
 
 At start the toolhost asks every plugin for its `tools/list` and reports the fingerprint in `hello`. If the manifests in the checkout on the machine differ from those applied to the core, the core moves the toolhost to `blocked`: update the checkout or apply again, then enroll a new toolhost. After an `apply` that changes a plugin manifest, restart the toolhosts of that plugin once their checkout carries the same manifest: until they say hello again they take no calls. A call that no toolhost of the machine takes within 30 seconds ends with `no_executor`, and the model is told so; to stop all tool calls of a tenant at once, set a hold with the effect `no_tool`.
 
