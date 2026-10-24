@@ -8,6 +8,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"slices"
@@ -37,6 +38,13 @@ type Core struct {
 	TestBench bool   `yaml:"test_bench"`
 	P1Listen  string `yaml:"p1_listen"`
 	P2Listen  string `yaml:"p2_listen"`
+	// P1TLSCertFile and P1TLSKeyFile serve P1 over TLS (spec/bindings/http). A P1 address
+	// that other machines can reach needs them, unless P1PlainPrivateNetwork says the network
+	// in between is private, such as the internal network of a compose file: plain HTTP there
+	// carries the worker tokens in clear.
+	P1TLSCertFile         string `yaml:"p1_tls_cert_file"`
+	P1TLSKeyFile          string `yaml:"p1_tls_key_file"`
+	P1PlainPrivateNetwork bool   `yaml:"p1_plain_private_network"`
 	// TestListen is the separate listener of the test-control port (spec/ports/test-control.md);
 	// empty means no port. It needs test_bench and the hex SHA-256 of the test bench key.
 	TestListen    string `yaml:"test_listen"`
@@ -115,6 +123,12 @@ func Load(path string) (*Core, error) {
 	if c.P1Listen == c.P2Listen {
 		return nil, errors.New("config: P2 listens separately from P1 (IDN-7)")
 	}
+	if (c.P1TLSCertFile == "") != (c.P1TLSKeyFile == "") {
+		return nil, errors.New("config: p1_tls_cert_file and p1_tls_key_file go together")
+	}
+	if c.P1TLSCertFile == "" && !c.P1PlainPrivateNetwork && !Loopback(c.P1Listen) {
+		return nil, fmt.Errorf("config: p1_listen %s is reachable from other machines, so P1 needs p1_tls_cert_file and p1_tls_key_file (or p1_plain_private_network: true on a private network)", c.P1Listen)
+	}
 	if c.TestKeySHA256 != "" && !c.TestBench {
 		// A test bench key outside a test bench must stop the start (APR-9).
 		return nil, errors.New("config: test_key_sha256 is set, but test_bench is not")
@@ -128,6 +142,20 @@ func Load(path string) (*Core, error) {
 		}
 	}
 	return &c, nil
+}
+
+// Loopback says whether a listen address host:port takes connections only from this machine.
+// An empty host listens on every interface.
+func Loopback(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // ProviderKeySecrets maps the name of each provider key secret to the tenants whose workspace

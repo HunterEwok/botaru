@@ -18,6 +18,9 @@ import (
 // part, without a lease; headers carries Botaru-On-Behalf and Botaru-Chat for a channel's file.
 // It returns the file_ref.
 func (c *Client) FilePut(ctx context.Context, headers map[string]string, meta map[string]any, content []byte) (string, error) {
+	if err := CheckCore(c.BaseURL); err != nil {
+		return "", err
+	}
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
 	raw, err := json.Marshal(meta)

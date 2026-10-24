@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/HunterEwok/botaru/impl/internal/config"
+	"github.com/HunterEwok/botaru/impl/internal/httpbound"
 	"github.com/HunterEwok/botaru/impl/internal/manifest"
 	"github.com/HunterEwok/botaru/impl/internal/monitor/zabbix"
 	"github.com/HunterEwok/botaru/impl/internal/p1client"
@@ -85,7 +86,9 @@ func main() {
 		WebhookToken: webhookToken, Logger: log, MaintenanceEvery: time.Duration(*maintenancePoll) * time.Second,
 	})
 	if *listen != "" {
-		srv := &http.Server{Addr: *listen, Handler: a.Webhook(), ReadHeaderTimeout: 10 * time.Second}
+		// The webhook bounds the request and the idle connection, so an outsider without the
+		// token cannot hold its connections open.
+		srv := httpbound.Server(*listen, a.Webhook(), 30*time.Second, time.Minute)
 		go func() {
 			if err := srv.ListenAndServeTLS(*certFile, *keyFile); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				fail("webhook", err)

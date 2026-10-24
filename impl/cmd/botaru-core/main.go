@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"flag"
 	"fmt"
@@ -22,6 +23,7 @@ import (
 	"github.com/HunterEwok/botaru/impl/internal/config"
 	"github.com/HunterEwok/botaru/impl/internal/core"
 	"github.com/HunterEwok/botaru/impl/internal/gateway"
+	"github.com/HunterEwok/botaru/impl/internal/httpbound"
 	"github.com/HunterEwok/botaru/impl/internal/spec"
 	"github.com/HunterEwok/botaru/impl/internal/store"
 	"github.com/HunterEwok/botaru/impl/internal/texts"
@@ -54,6 +56,15 @@ func run(path string, log *slog.Logger) error {
 	// Bind both listeners before touching the store: a second core started by mistake on
 	// the same addresses must stop here, before its start-up ends the leases of the core
 	// that is already running.
+	// A TLS key pair that does not load stops the start here too, not after the start-up.
+	var p1TLS *tls.Config
+	if cfg.P1TLSCertFile != "" {
+		pair, err := tls.LoadX509KeyPair(cfg.P1TLSCertFile, cfg.P1TLSKeyFile)
+		if err != nil {
+			return fmt.Errorf("the P1 TLS key pair: %w", err)
+		}
+		p1TLS = &tls.Config{Certificates: []tls.Certificate{pair}, MinVersion: tls.VersionTLS12}
+	}
 	l1, err := net.Listen("tcp", cfg.P1Listen)
 	if err != nil {
 		return err
@@ -150,16 +161,27 @@ func run(path string, log *slog.Logger) error {
 		go c.Run(ctx)
 	}
 
-	p1 := &http.Server{Addr: cfg.P1Listen, Handler: srv.P1Handler(), ReadHeaderTimeout: 10 * time.Second}
-	p2 := &http.Server{Addr: cfg.P2Listen, Handler: srv.P2Handler(), ReadHeaderTimeout: 10 * time.Second}
+	// A client gets a bounded time for its request body and two minutes for an idle
+	// connection: without a bound a client that sends slowly, or never closes, holds a
+	// connection of the core without any credential. P1 takes files and model requests of up
+	// to 33 MiB from other machines, so its window is five minutes.
+	p1 := httpbound.Server(cfg.P1Listen, srv.P1Handler(), 5*time.Minute, 2*time.Minute)
+	p1.TLSConfig = p1TLS
+	p2 := httpbound.Server(cfg.P2Listen, srv.P2Handler(), time.Minute, 2*time.Minute)
 	servers := map[*http.Server]net.Listener{p1: l1, p2: l2}
 	if lt != nil {
-		servers[&http.Server{Addr: cfg.TestListen, Handler: srv.TestHandler(), ReadHeaderTimeout: 10 * time.Second}] = lt
+		servers[httpbound.Server(cfg.TestListen, srv.TestHandler(), time.Minute, 2*time.Minute)] = lt
 	}
 	errc := make(chan error, len(servers))
 	for s, l := range servers {
 		go func() {
-			if err := s.Serve(l); !errors.Is(err, http.ErrServerClosed) {
+			var err error
+			if s == p1 && p1TLS != nil {
+				err = s.ServeTLS(l, "", "")
+			} else {
+				err = s.Serve(l)
+			}
+			if !errors.Is(err, http.ErrServerClosed) {
 				errc <- err
 			}
 		}()
