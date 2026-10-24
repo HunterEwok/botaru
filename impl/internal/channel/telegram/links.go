@@ -157,7 +157,6 @@ func findMentions(s string) [][2]int {
 	return out
 }
 
-
 func isASCII(s string) bool {
 	for i := 0; i < len(s); i++ {
 		if s[i] >= 0x80 {
