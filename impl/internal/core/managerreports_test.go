@@ -281,6 +281,15 @@ func TestPostmortemWaitsForMoneyV03(t *testing.T) {
 	if _, err := b.c.SeatAssign(ctx, b.farmOp(), SeatRequest{Seat: managerSeatID}); err != nil {
 		t.Fatal(err)
 	}
+	// The test spans half an hour of the tenant's Berlin day; noon of the next day keeps the
+	// spend and the claims on one day whenever it runs (TIM-2).
+	berlin, err := time.LoadLocation("Europe/Berlin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := b.now(t).In(berlin)
+	noon := time.Date(now.Year(), now.Month(), now.Day()+1, 12, 0, 0, 0, berlin)
+	b.advance(t, int(noon.Sub(now).Seconds()))
 	// 1.39 EUR of the 2 EUR day: below the 70% that work outside sev1 may use, but with no room
 	// for the first call of an analysis.
 	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO spend (id, tenant, line, unit, state, eur_micros, provider, time)

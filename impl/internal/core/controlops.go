@@ -122,6 +122,16 @@ func seatLimits(cat *Catalog) controlLimits {
 	return l
 }
 
+// controlTargetKinds are the target kinds each served operation takes in controlDo.
+var controlTargetKinds = map[string][]string{
+	"hold":       {"worker", "bot", "role", "tasktype", "resource"},
+	"quarantine": {"worker"},
+	"drain":      {"worker"},
+	"preempt":    {"task"},
+	"cancel":     {"task"},
+	"release":    {"hold (the id of your own hold)"},
+}
+
 // controlEffects are the hold effects of an operation: the request's own for hold, the fixed
 // set of quarantine and drain (control-ops.yaml).
 func controlEffects(req ControlRequest) []string {
@@ -1108,7 +1118,15 @@ func (c *Core) controlTool(cat *Catalog, g *toolsGrant) *catalogTool {
 			"ttl": map[string]any{"type": "string", "maxLength": 8, "pattern": "^[1-9][0-9]{0,3}(s|m|h)$"},
 		},
 	}
-	desc := "Apply a control operation of the farm manager seat on a target involved in the incident or in the directive's scope: hold, quarantine, drain, preempt, cancel, or release your own hold. A target that only a finding names goes to a person; name the finding."
+	// Each operation names the target kinds controlDo takes, since every refusal counts toward
+	// the safeguard (MGR-14): a model that drains a host trips it in three calls.
+	takes := []string{}
+	for _, o := range ops {
+		takes = append(takes, fmt.Sprintf("%s takes %s", o, strings.Join(controlTargetKinds[o.(string)], ", ")))
+	}
+	desc := "Apply a control operation of the farm manager seat on a target involved in the incident or in the directive's scope. " +
+		"The operations and their targets (kind of target): " + strings.Join(takes, "; ") + "; a hold also names its effects. A farm worker is not a monitored host: a host or service is a resource. " +
+		"Each refusal counts toward the safeguard, which stops the seat after a few in a row. A target that only a finding names goes to a person; name the finding."
 	return &catalogTool{Name: controlToolName, Builtin: true, Tool: toolspec.Tool{Description: desc}, Schema: schema}
 }
 

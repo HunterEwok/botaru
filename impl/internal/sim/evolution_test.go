@@ -229,3 +229,17 @@ func TestWidenBudgets(t *testing.T) {
 		t.Errorf("postmortem ceiling %v", pm)
 	}
 }
+
+// The stand notes the attempt limits of the task types, by which F-1 leaves a task on its last
+// attempt alone (M-5); an unset limit is the core's two.
+func TestNoteProfilesAttempts(t *testing.T) {
+	s := &Stand{}
+	s.noteProfiles([]map[string]any{
+		{"kind": "TaskType", "metadata": map[string]any{"name": "ops.insight.v1"}, "spec": map[string]any{"retry": map[string]any{"max_attempts": 1}}},
+		{"kind": "TaskType", "metadata": map[string]any{"name": "ops.investigate.v1"}, "spec": map[string]any{"retry": map[string]any{"max_attempts": 3}}},
+		{"kind": "TaskType", "metadata": map[string]any{"name": "check.http.v1"}, "spec": map[string]any{}},
+	})
+	if s.attempts["ops.insight.v1"] != 1 || s.attempts["ops.investigate.v1"] != 3 || s.attempts["check.http.v1"] != 2 {
+		t.Errorf("attempt limits %v", s.attempts)
+	}
+}

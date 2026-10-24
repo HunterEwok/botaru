@@ -1866,6 +1866,9 @@ MGR-11, MGR-13, MGR-14, MGR-15, MGR-22, MGR-32, MGR-37, MGR-39).
 
 - A worker or task id is taken in any letter case, as the incident view shows it, and an applied hold answers with its
   hold id for a later release.
+- The tool's description names the target kinds of each operation it offers (`controlTargetKinds`), says that a
+  monitored host or service is a resource and not a worker, and that each refusal counts toward the safeguard: in the
+  cloud load test the seat drained a database host three times and the safeguard stopped it for the rest of the run.
 - The tool offers only the operations whose `control.apply:<op>` the tenant's group `farm-manager-ops` holds, and each
   call rechecks it.
 - A seat operation names its live incident, the operation must be in the class's `responses.ops`, and its target must be

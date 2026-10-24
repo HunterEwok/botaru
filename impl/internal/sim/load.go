@@ -295,6 +295,35 @@ func (d *Director) RunLoad(ctx context.Context, p *LoadProfile, seed int64) Load
 			}
 		}
 	}
+	// R-19 comes by chance, and an hour may bring a tenant none (at 2 an hour about one run in
+	// seven): a tenant with a manager that has had none by analysisFloor gets one then, so that
+	// every run gives the path of improvement (M-10) its chance; the caps still apply.
+	floor := map[string]bool{}
+	for _, w := range p.Works {
+		if w.Code != "R-19" {
+			continue
+		}
+		for _, t := range tenants {
+			if t.Manager && (len(w.Tenants) == 0 || slices.Contains(w.Tenants, t.Name)) {
+				floor[t.Name] = true
+			}
+		}
+	}
+	for tenant := range floor {
+		g.wg.Add(1)
+		go func() {
+			defer g.wg.Done()
+			if !sleepCtx(ctx, analysisFloor) {
+				return
+			}
+			g.mu.Lock()
+			had := g.started["R-19 "+tenant] + g.analysing[tenant]
+			g.mu.Unlock()
+			if had == 0 {
+				g.start(ctx, "R-19", tenant)
+			}
+		}()
+	}
 	start := time.Now()
 	faults := map[string]int{}
 	for _, f := range p.Faults {
@@ -550,6 +579,9 @@ func (g *loadGen) fault(ctx context.Context, tenant, key, what string, breakIt, 
 		return nil
 	})
 }
+
+// analysisFloor is when a tenant with a manager that has had no analysis in a load run gets one.
+const analysisFloor = 10 * time.Minute
 
 // analysis turns the analysis schedule of the tenant on until its first new analysis is in the
 // store, at most 75 seconds (the schedule runs each minute), and off again.
