@@ -2,12 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:botaru:schema:p1-session-load-request:1",
   "title": "P1 session.load: request",
-  "description": "The E4 adapter reads a conversation session by the session handle in the authorization header; the core computes the session key (tenant, role, principal, conversation), the body does not have it (MEM-1, TEN-5). Reading can start after the entry after and return at most limit entries.",
+  "description": "The E4 adapter reads a conversation session by the session handle in the authorization header; the core computes the session key (tenant, role, principal, conversation), the body does not have it (MEM-1, TEN-5). Reading can start after the entry after and return at most limit entries. From v0.3 `last` asks for the latest entries instead, oldest first, without after and limit; entries an attempt appended whose result the core did not accept are left out (MEM-11).",
   "x-botaru-direction": "input",
   "x-botaru-rules": [
     "MEM-1",
     "TEN-5",
-    "SEC-3"
+    "SEC-3",
+    "MEM-11"
   ],
   "type": "object",
   "properties": {
@@ -19,6 +20,13 @@
       "type": "integer",
       "minimum": 1,
       "maximum": 1000
+    },
+    "last": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100,
+      "description": "From v0.3: the latest entries, at most this many, oldest first; not with after or limit (MEM-11).",
+      "x-botaru-version": "v0.3"
     }
   },
   "additionalProperties": false

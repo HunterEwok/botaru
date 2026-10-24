@@ -764,6 +764,15 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		"instruction": joinInstruction(persona, tt.Instruction),
 		"handles":     handles,
 	}
+	// Implementation extension (MAN-3): how the earlier attempts of the task ended, so that a
+	// retry does not spend itself on the same mistake.
+	prev, err := previousAttempts(ctx, tx, id, leaseNo)
+	if err != nil {
+		return nil, err
+	}
+	if len(prev) > 0 {
+		payload["previous_attempts"] = prev
+	}
 	// The language of the answer by the locale order for the recipient of the result; the
 	// model does not choose it (DLV-18).
 	var tr treeRecord
@@ -1335,4 +1344,39 @@ func aboutTenantHold(body []byte) string {
 		return ""
 	}
 	return b.AboutHold
+}
+
+// maxPreviousAttempts bounds the earlier attempts a work item names, and maxPreviousDetail the
+// detail of each.
+const maxPreviousAttempts, maxPreviousDetail = 5, 500
+
+// previousAttempts are the reason codes of the latest earlier attempts of a task, oldest first,
+// without the provider's failures and the attempts returned unspent, which the model could not
+// have avoided, with the check detail of a result the core refused (the paths of the fields that failed the
+// schema, OUT-1). The detail is the core's own text about the model's answer.
+func previousAttempts(ctx context.Context, tx pgx.Tx, task string, leaseNo int) ([]map[string]any, error) {
+	rows, err := tx.Query(ctx, `SELECT reason, coalesce(outcome->'problem'->>'detail', '') FROM (
+		SELECT lease_no, reason, outcome FROM leases WHERE work_id = $1 AND kind = 'attempt' AND lease_no < $2 AND reason IS NOT NULL
+			AND reason NOT LIKE 'provider\_%' AND state NOT IN ('released', 'preempted')
+		ORDER BY lease_no DESC LIMIT $3) p ORDER BY lease_no`, task, leaseNo, maxPreviousAttempts)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []map[string]any
+	for rows.Next() {
+		var reason, detail string
+		if err := rows.Scan(&reason, &detail); err != nil {
+			return nil, err
+		}
+		e := map[string]any{"reason": reason}
+		if detail != "" {
+			if r := []rune(detail); len(r) > maxPreviousDetail {
+				detail = string(r[:maxPreviousDetail])
+			}
+			e["detail"] = detail
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
 }
