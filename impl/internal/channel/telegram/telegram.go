@@ -16,7 +16,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -552,7 +551,7 @@ func (c *Channel) renderDigest(locale, window string, rows []digestRow, hidden i
 	if text != "" {
 		label := c.cfg.Texts.Render(locale, "provenance.model", nil)
 		if sources != nil {
-			label = c.cfg.Texts.Render(locale, "digest.sources", map[string]any{"sources": strings.Join(sources, ", ")})
+			label = c.cfg.Texts.Render(locale, "digest.sources", map[string]any{"sources": c.cutLinks(strings.Join(sources, ", "))})
 		}
 		lines = append(lines, "")
 		if labeled {
@@ -561,27 +560,6 @@ func (c *Channel) renderDigest(locale, window string, rows []digestRow, hidden i
 		lines = append(lines, label, c.cutLinks(text))
 	}
 	return strings.Join(lines, "\n")
-}
-
-var linkRE = regexp.MustCompile(`(?i)\b(?:https?://|www\.)[^\s<>()]+`)
-
-func (c *Channel) cutLinks(s string) string {
-	return linkRE.ReplaceAllStringFunc(s, func(link string) string {
-		u := link
-		if !strings.Contains(strings.ToLower(u), "://") {
-			u = "http://" + u
-		}
-		parsed, err := url.Parse(u)
-		if err == nil {
-			host := strings.ToLower(parsed.Hostname())
-			for _, a := range c.cfg.LinkAllowlist {
-				if host == strings.ToLower(a) {
-					return link
-				}
-			}
-		}
-		return "[link removed]"
-	})
 }
 
 func sleep(ctx context.Context, d time.Duration) {
