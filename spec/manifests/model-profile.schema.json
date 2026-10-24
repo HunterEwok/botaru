@@ -94,6 +94,18 @@
       "maximum": 100000,
       "description": "Output speed (GW-12)."
     },
+    "effort": {
+      "type": "string",
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "description": "The reasoning effort P4 sets in every request of the profile (output_config.effort of the Anthropic binding); the provider's default when absent. Not every model takes it: a model that does not answers the call with an error (GW-19).",
+      "x-botaru-version": "v0.3"
+    },
     "price": {
       "type": "object",
       "additionalProperties": false,
@@ -121,6 +133,49 @@
           "minimum": 0,
           "maximum": 1000000,
           "description": "Amount in euros."
+        },
+        "above": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "input_tokens": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100000000,
+              "description": "The threshold: a call whose input tokens, cache write and read included, are above it is priced by this tier."
+            },
+            "input": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1000000,
+              "description": "Amount in euros."
+            },
+            "output": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1000000,
+              "description": "Amount in euros."
+            },
+            "cache_write": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1000000,
+              "description": "Amount in euros."
+            },
+            "cache_read": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1000000,
+              "description": "Amount in euros."
+            }
+          },
+          "required": [
+            "input_tokens",
+            "input",
+            "output"
+          ],
+          "description": "The price of a call with a long input, for a provider that bills every token of such a call at a higher price. A cache price left out is the base cache price times the ratio of the input prices (BUD-17).",
+          "x-botaru-version": "v0.3"
         },
         "checked": {
           "$ref": "urn:botaru:schema:manifest:1#/$defs/date"

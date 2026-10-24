@@ -761,16 +761,19 @@ func (i *Ingress) Source() string {
 
 // ModelProfile is the spec of a ModelProfile manifest.
 type ModelProfile struct {
-	Provider              string   `json:"provider"`
-	Model                 string   `json:"model"`
-	Family                string   `json:"family"`
-	Rank                  int      `json:"rank"`
-	Pool                  string   `json:"pool"`
-	Fallback              []string `json:"fallback"`
-	FallbackOn            []string `json:"fallback_on"`
-	MaxOutputTokens       int      `json:"max_output_tokens"`
-	TokensPerS            int      `json:"tokens_per_s"`
-	Price                 Price    `json:"price"`
+	Provider        string   `json:"provider"`
+	Model           string   `json:"model"`
+	Family          string   `json:"family"`
+	Rank            int      `json:"rank"`
+	Pool            string   `json:"pool"`
+	Fallback        []string `json:"fallback"`
+	FallbackOn      []string `json:"fallback_on"`
+	MaxOutputTokens int      `json:"max_output_tokens"`
+	TokensPerS      int      `json:"tokens_per_s"`
+	// Effort is the reasoning effort P4 sets in the request (output_config.effort); empty
+	// leaves the provider's default (GW-7).
+	Effort                string `json:"effort"`
+	Price                 Price  `json:"price"`
 	ProviderRetentionDays *struct {
 		Value int `json:"value"`
 	} `json:"provider_retention_days"`
@@ -794,8 +797,59 @@ type Price struct {
 	Output     float64  `json:"output"`
 	CacheWrite *float64 `json:"cache_write"`
 	CacheRead  *float64 `json:"cache_read"`
+	// Above is the price of a call whose input is above a number of tokens, for a provider
+	// that bills a long prompt at a higher price (BUD-9).
+	Above *PriceTier `json:"above"`
 	// Checked is the date a person checked the prices (GW-17).
 	Checked string `json:"checked"`
+}
+
+// PriceTier is the price of a call whose input, cache write and read together, is above
+// InputTokens tokens.
+type PriceTier struct {
+	InputTokens int64    `json:"input_tokens"`
+	Input       float64  `json:"input"`
+	Output      float64  `json:"output"`
+	CacheWrite  *float64 `json:"cache_write"`
+	CacheRead   *float64 `json:"cache_read"`
+}
+
+// Tier is the price of a call with the given input in tokens: the base price, or Above when
+// the input is above its threshold. A cache price that Above leaves out is the base cache
+// price times the ratio of the input prices.
+func (p Price) Tier(inputTokens int64) Price {
+	a := p.Above
+	if a == nil || inputTokens <= a.InputTokens {
+		return p
+	}
+	scale := func(base *float64, own *float64) *float64 {
+		if own != nil || base == nil {
+			return own
+		}
+		x := *base
+		if p.Input > 0 {
+			x = *base * a.Input / p.Input
+		}
+		return &x
+	}
+	// A tier is never cheaper than the base: a cheaper tier, a slip of the manifest, would let
+	// a reserve taken at the tier fall below a charge at the base price.
+	up := func(base, tier *float64) *float64 {
+		if base != nil && (tier == nil || *tier < *base) {
+			return base
+		}
+		return tier
+	}
+	return Price{Input: max(a.Input, p.Input), Output: max(a.Output, p.Output), CacheWrite: up(p.CacheWrite, scale(p.CacheWrite, a.CacheWrite)),
+		CacheRead: up(p.CacheRead, scale(p.CacheRead, a.CacheRead)), Checked: p.Checked}
+}
+
+// InputCeiling is the highest price of an input token: the input or the cache write price.
+func (p Price) InputCeiling() float64 {
+	if p.CacheWrite != nil && *p.CacheWrite > p.Input {
+		return *p.CacheWrite
+	}
+	return p.Input
 }
 
 // DropPointer removes the field or the array element that a JSON pointer names from a

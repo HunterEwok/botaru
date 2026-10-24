@@ -23,7 +23,7 @@ The line under a rule heading:
 | [ART](#art) | Files and artifacts | [docs/capabilities.md](../docs/capabilities.md) | 6 | 5 | 4 | 2 | 0 | 0 |
 | [AUD](#aud) | Audit | [docs/permissions.md](../docs/permissions.md) | 6 | 3 | 6 | 0 | 0 | 0 |
 | [BGR](#bgr) | Bot groups | [docs/coordination.md](../docs/coordination.md) | 2 | 2 | 2 | 0 | 0 | 0 |
-| [BUD](#bud) | Budgets | [docs/models-and-money.md](../docs/models-and-money.md) | 14 | 9 | 13 | 1 | 0 | 0 |
+| [BUD](#bud) | Budgets | [docs/models-and-money.md](../docs/models-and-money.md) | 15 | 9 | 13 | 1 | 1 | 0 |
 | [CAP](#cap) | Dependency admission and refusal | [docs/operations.md](../docs/operations.md) | 5 | 1 | 4 | 1 | 0 | 0 |
 | [CNT](#cnt) | Continuations | [docs/tasks-and-delivery.md](../docs/tasks-and-delivery.md) | 6 | 6 | 6 | 0 | 0 | 0 |
 | [COM](#com) | Commission | [docs/improvements.md](../docs/improvements.md) | 13 | 6 | 9 | 1 | 3 | 0 |
@@ -34,7 +34,7 @@ The line under a rule heading:
 | [EVO](#evo) | Scaffold evolution | [docs/improvements.md](../docs/improvements.md) | 10 | 9 | 0 | 0 | 10 | 0 |
 | [FEN](#fen) | Leases | [docs/tasks-and-delivery.md](../docs/tasks-and-delivery.md) | 7 | 5 | 7 | 0 | 0 | 0 |
 | [GOV](#gov) | Bot governance | [docs/improvements.md](../docs/improvements.md) | 29 | 22 | 9 | 10 | 10 | 0 |
-| [GW](#gw) | Model gateway | [docs/models-and-money.md](../docs/models-and-money.md) | 15 | 14 | 15 | 0 | 0 | 0 |
+| [GW](#gw) | Model gateway | [docs/models-and-money.md](../docs/models-and-money.md) | 17 | 14 | 15 | 0 | 2 | 0 |
 | [HLD](#hld) | Stop | [docs/operations.md](../docs/operations.md) | 7 | 6 | 5 | 1 | 1 | 0 |
 | [IDM](#idm) | Idempotency | [docs/tasks-and-delivery.md](../docs/tasks-and-delivery.md) | 4 | 1 | 4 | 0 | 0 | 0 |
 | [IDN](#idn) | Identity | [docs/bots.md](../docs/bots.md) | 16 | 13 | 13 | 1 | 2 | 0 |
@@ -66,7 +66,7 @@ The line under a rule heading:
 | [TEN](#ten) | Tenants | [docs/architecture.md](../docs/architecture.md) | 8 | 8 | 8 | 0 | 0 | 0 |
 | [TIM](#tim) | Time and clocks | [docs/operations.md](../docs/operations.md) | 4 | 2 | 3 | 1 | 0 | 0 |
 | [TRN](#trn) | Translator | [docs/coordination.md](../docs/coordination.md) | 7 | 5 | 4 | 1 | 2 | 0 |
-| Total | | | 486 | 376 | 377 | 69 | 40 | 0 |
+| Total | | | 489 | 376 | 377 | 69 | 43 | 0 |
 
 Retired numbers (46) are listed in [retired.md](retired.md), deferred rules (43) in [deferred.md](deferred.md).
 
@@ -524,6 +524,15 @@ serves [C6](../docs/goals.md) · since v0.2 · non-waivable · profile core · c
 The principal in a usage line is needed for the daily limit and is kept for 93 days. For a line whose `subject` is a person (`human:`), when 93 days pass the `retention` loop removes `subject`, `task` and `root`, truncates `time` to the day (00:00 UTC) and writes `subject_kind: human`, in whole days; the amounts and the other fields of the line stay for monthly reports, and the line stays in class `metadata` (SEC-14). A "usage per person" series longer than 93 days does not exist, also not through a join with audit, events or task records (DLV-14). Fixture: a usage line older than 93 days carries no `subject`, `task` or `root`, and its `time` is midnight.
 
 Checked by: `blackbox:budget/subject-anonymized-93d`
+
+<a id="BUD-17"></a>
+### BUD-17. A second price tier for a long input
+
+serves [G3](../docs/goals.md) · since v0.3 · waivable · profile core · check: impl · decisions: D-121
+
+A model profile may give a second price tier `price.above` for a provider that bills every token of a call with a long input at a higher price: a call whose input tokens, cache write and read included, are above the tier's `input_tokens` is priced by the tier in all its lines, and the reserve of a call (GW-2) and of a model grant (MGR-17) takes the tier of its own input estimate. A cache price the tier leaves out is the base cache price times the ratio of the tier's input price to the base input price. Each compaction iteration takes the tier of its own input, and a tier price below the base price counts as the base price. A short call is then counted at the base price and a long one at what it costs (BUD-9).
+
+Checked by: `impl:internal/gateway/TestPriceTier`
 
 <a id="cap"></a>
 ## CAP: Dependency admission and refusal
@@ -1719,6 +1728,24 @@ serves [G3](../docs/goals.md) · since v0.1 · waivable · profile core · check
 A person sets the model profile prices (`price` with the date `checked`) and the output speed `tokens_per_s`, with a check date; the core does not fetch prices or exchange rates itself. Lint at `apply` and `farmctl doctor` look at the age of the date: older than 60 days gives a warning in `doctor`, older than 120 days rejects the profile's `apply`, and `doctor` shows an error. Fixture: a profile with a `checked` date 121 days ago fails `apply`.
 
 Checked by: `lint:model/price-age-lint`
+
+<a id="GW-18"></a>
+### GW-18. A cache point on the conversation of a run
+
+serves [G3](../docs/goals.md) · since v0.3 · waivable · profile core · check: impl · decisions: D-121
+
+From the second call of a run on, that is when the request holds more than one message, P4 sets a second cache point of a profile with cache prices on the last block of the last message, unless it is a reasoning block and while the call has fewer than four points, so that the next call of the run, which sends the same messages and its new ones, reads the conversation so far from the cache instead of paying the full input price for it again; the first call of a run gets no such point, since nothing would read it (GW-16, BUD-9). The runtime keeps the text that is the same for every attempt of a role in the system text and the text of one attempt, such as the current time and the path of the skills directory, in the first message.
+
+Checked by: `impl:internal/gateway/TestProviderBody`, `impl:internal/agent/TestSKL2RuntimeSkillFiles`
+
+<a id="GW-19"></a>
+### GW-19. The reasoning effort is the profile's
+
+serves [G3](../docs/goals.md) · since v0.3 · waivable · profile core · check: impl · decisions: D-121
+
+A model profile may set `effort`; P4 then sets it in every request of the profile in place of any value the runtime sent, as it sets the output limit (GW-2, GW-7), and without it the request goes as it came and the provider's default holds. The provider binding names the request field. A model that does not take the field answers with an error, so the person who edits the profile sets `effort` only for a model that takes it.
+
+Checked by: `impl:internal/gateway/TestProviderBody`
 
 <a id="hld"></a>
 ## HLD: Stop

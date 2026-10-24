@@ -10,6 +10,15 @@ Entries are grouped by area; within a group the newest entry comes first.
 
 ### Skeleton & Contracts
 
+- Cheaper calls without a change to any limit (D-121, additions to v0.3; a profile without the new fields keeps the
+  behaviour of 0.3.0): from the second call of a run on P4 sets a second cache point on the last block of the last
+  message, so a run reads what it has already sent at the cache read price (GW-18); the optional `ModelProfile.spec.effort`
+  that P4 sets as the request's reasoning effort (GW-19); the optional second price tier `price.above` for a provider
+  that bills a long input at a higher price (BUD-17). The example profiles of work with many calls per attempt (`base-std`, `analysis-std`,
+  `manager-std`) have cache prices, at 1.25 and 0.1 times the input price, so the prompt cache is on for them; the
+  profiles of one-call work (reviews, seats, translation) stay without, since a cache write that no later call reads
+  costs a quarter more than plain input. The tree budget of `ops.insight.v1` is 0.15 EUR instead of 0.10, since its
+  call reserve counts the input at the cache write price.
 - Safe evolution of the scaffold (D-120, rules EVO-1..EVO-10, additions to v0.3; a tenant without the opt-ins
   `insights.evolution.enabled` and `insights.gate.required` keeps the behaviour of 0.3.0, except that a revert may
   also take out a field the change added): the output coupling graph
@@ -33,6 +42,11 @@ Entries are grouped by area; within a group the newest entry comes first.
 
 ### Reference Implementation (impl/)
 
+- The prompt cache, the effort and the price tiers of D-121 (GW-18, GW-19, BUD-17). The agent names the skills directory
+  in the first message instead of the system text, which held a new path in every attempt and so was never read from the
+  cache across attempts. In a real run the stand of the simulator sets the cache prices of a profile that has them at the
+  provider's ratios to the model's input price, and its fuse counts a cache write at 1.25 and a read at 0.1 times the input price instead of both at the input
+  price.
 - A store outage while the core runs no longer spends the attempts of the running tasks: leaving `not_ready`, the
   core extends the leases that ran out before any loop ticks, as at a start (FEN-5). The reaper, deadline and stall
   loops tick in a goroutine of their own; a row they keep failing on is logged and skipped for a minute instead of
