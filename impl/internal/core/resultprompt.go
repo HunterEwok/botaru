@@ -9,10 +9,11 @@ import (
 	"github.com/HunterEwok/botaru/impl/internal/manifest"
 )
 
-// coreResultSchema is the result schema of a task type that declares none because the core
-// checks the result against its own: the analysis envelope insight-result (INS-1), the
+// coreResultSchema is the result schema of a task type whose result the core checks against
+// its own: the analysis envelope insight-result (INS-1), the
 // review-result of a lens review or the necessity output (COM-13, COM-15), the findings of a
-// reading for the farm manager (MGR-25). It goes into the claim payload like a declared
+// reading for the farm manager (MGR-25), the translation-result of a translator (TRN-3), which
+// stands in for the type's own looser schema. It goes into the claim payload like a declared
 // result_schema, so that the runtime can ask the model for a matching answer; nil for any other
 // type.
 func (c *Core) coreResultSchema(tt manifest.TaskType, record map[string]any) map[string]any {
@@ -31,6 +32,8 @@ func (c *Core) coreResultSchema(tt manifest.TaskType, record map[string]any) map
 		return c.inlineSchema(reviewResultSchema(record))
 	case "inspect":
 		return c.findingsSchema()
+	case "translate":
+		return c.inlineSchema(translationSchema)
 	}
 	return nil
 }
