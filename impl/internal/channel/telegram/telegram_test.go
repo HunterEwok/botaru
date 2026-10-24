@@ -29,6 +29,9 @@ func TestActivity(t *testing.T) {
 	if s := a["sender"].(map[string]any); s["identity"] != "telegram:1001" || s["verified"] != true {
 		t.Fatalf("sender %v", s)
 	}
+	if a := Activity("telegram", parse(t, `{"update_id":7,"message":{"message_id":3,"from":{"id":1001,"is_bot":false},"chat":{"id":1001,"type":"private"},"text":"/hello a\u0000b"}}`)); a["text"] != "/hello ab" {
+		t.Fatalf("U+0000 kept: %q", a["text"])
+	}
 	fwd := Activity("telegram", parse(t, `{"update_id":6,"message":{"message_id":2,"from":{"id":1001,"is_bot":false},"chat":{"id":-100,"type":"supergroup"},"text":"/hello","forward_origin":{}}}`))
 	if fwd["forwarded"] != true || fwd["chat"].(map[string]any)["kind"] != "group" {
 		t.Fatalf("forwarded %v", fwd)

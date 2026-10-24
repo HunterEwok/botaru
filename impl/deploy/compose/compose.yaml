@@ -42,7 +42,7 @@ services:
       # sees the token of another (SEC-2).
       - agent-worker:/var/lib/botaru/workers/agent
       - channel-worker:/var/lib/botaru/workers/channel
-    secrets: [store-dsn, token-key, operator, provider-key-demo]
+    secrets: [store-dsn, token-key, operator, farm-operator, provider-key-demo]
     networks:
       store: {}
       core: {aliases: [core.botaru.example.org]}   # a name under example.org keeps the repository free of real hosts
@@ -89,5 +89,6 @@ secrets:
   store-dsn: {file: ./secrets/store-dsn}
   token-key: {file: ./secrets/token-key}
   operator: {file: ./secrets/operator}
+  farm-operator: {file: ./secrets/farm-operator}
   provider-key-demo: {file: ./secrets/provider-key-demo}
   bot-token: {file: ./secrets/bot-token}

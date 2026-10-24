@@ -141,7 +141,7 @@ func newToolRig(t *testing.T, mode string, killAfter time.Duration) *toolRig {
 		Applied bool `json:"applied"`
 		Errors  any  `json:"errors"`
 	}
-	r.p2call(t, r.opToken, "apply", map[string]any{"commit": strings.Repeat("b", 40), "manifests": ms}, &applied)
+	r.p2call(t, r.farmToken, "apply", map[string]any{"commit": strings.Repeat("b", 40), "manifests": ms}, &applied)
 	if !applied.Applied {
 		t.Fatalf("apply refused: %v", applied.Errors)
 	}

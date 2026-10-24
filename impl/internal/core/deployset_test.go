@@ -30,8 +30,8 @@ func TestDeployApplySet(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Each apply command of the guide, with its continuation lines.
-	cmd := regexp.MustCompile(`(?m)^\$[FX] apply (?:[^\n]*\\\n)*[^\n]*`)
+	// Each apply command of the guide (with the farm credential, $A), with its continuation lines.
+	cmd := regexp.MustCompile(`(?m)^\$A apply (?:[^\n]*\\\n)*[^\n]*`)
 	file := regexp.MustCompile(`examples/\S+\.yaml`)
 	applies := cmd.FindAllString(string(raw), -1)
 	if len(applies) < 2 {

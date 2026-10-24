@@ -57,7 +57,7 @@ func TestBackfillApplyIdempotent(t *testing.T) {
 	ctx := context.Background()
 	b := newBench(t)
 	commit := "1111111111111111111111111111111111111111"
-	res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: commit, Manifests: helloManifests(t)})
+	res, err := b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: commit, Manifests: helloManifests(t)})
 	if err != nil || !res.Applied {
 		t.Fatalf("apply again: %+v %v", res, err)
 	}
@@ -72,7 +72,7 @@ func TestBackfillApplyIdempotent(t *testing.T) {
 	}
 	ms := helloManifests(t)
 	specMap(ms, "TaskType", "hello.greet.v1")["title"] = "Greeting, changed"
-	res, err = b.c.Apply(ctx, b.op, ApplyRequest{Commit: commit, Manifests: ms, DryRun: true})
+	res, err = b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: commit, Manifests: ms, DryRun: true})
 	if err != nil || len(res.Errors) > 0 {
 		t.Fatalf("dry run: %+v %v", res, err)
 	}
@@ -86,18 +86,18 @@ func TestBackfillApplyIdempotent(t *testing.T) {
 	extra := map[string]any{"apiVersion": "botaru/v1alpha1", "kind": "Group",
 		"metadata": map[string]any{"name": "fx-extra", "tenant": "demo"},
 		"spec":     map[string]any{"caps": []any{"task:hello.greet.v1"}, "data": []any{"summary"}}}
-	res, err = b.c.Apply(ctx, b.op, ApplyRequest{Commit: commit, Manifests: append(helloManifests(t), extra)})
+	res, err = b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: commit, Manifests: append(helloManifests(t), extra)})
 	if err != nil || !res.Applied || changeOps(res)["Group/fx-extra"] != "create" {
 		t.Fatalf("apply with a second group: %+v %v", res, err)
 	}
-	res, err = b.c.Apply(ctx, b.op, ApplyRequest{Commit: commit, Manifests: helloManifests(t)})
+	res, err = b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: commit, Manifests: helloManifests(t)})
 	if err != nil || !res.Applied {
 		t.Fatalf("apply without the group: %+v %v", res, err)
 	}
 	if changeOps(res)["Group/fx-extra"] != "orphaned" || storedHash(t, b, "Group", "demo", "fx-extra") == "" {
 		t.Fatalf("MAN-2: a group missing from git was not kept as orphaned: %+v", res.Changes)
 	}
-	res, err = b.c.Apply(ctx, b.op, ApplyRequest{Commit: commit, Manifests: helloManifests(t), Delete: []ApplyDelete{{Kind: "Group", Tenant: "demo", Name: "fx-extra"}}})
+	res, err = b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: commit, Manifests: helloManifests(t), Delete: []ApplyDelete{{Kind: "Group", Tenant: "demo", Name: "fx-extra"}}})
 	if err != nil || !res.Applied || changeOps(res)["Group/fx-extra"] != "delete" || storedHash(t, b, "Group", "demo", "fx-extra") != "" {
 		t.Fatalf("MAN-2: the explicit delete: %+v %v", res, err)
 	}
@@ -118,7 +118,7 @@ func TestBackfillApplyAtomic(t *testing.T) {
 	specMap(ms, "Role", "hello")["views"] = []any{"status.tasks"}
 	specMap(ms, "TaskType", "hello.greet.v1")["title"] = "Greeting, changed"
 	specMap(ms, "Group", "hello")["caps"] = []any{"task:hello.greet.v1", "action.approve:*"}
-	res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "2222222222222222222222222222222222222222", Manifests: ms})
+	res, err := b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: "2222222222222222222222222222222222222222", Manifests: ms})
 	if err != nil {
 		t.Fatal(err)
 	}

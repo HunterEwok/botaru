@@ -28,7 +28,7 @@ func TestBackfillPrivacyNoticeVersion(t *testing.T) {
 		}
 	}
 	b := newBench(t)
-	if res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "1300000000000000000000000000000000000003", Manifests: edit(3)("", helloManifests(t))}); err != nil || !res.Applied {
+	if res, err := b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: "1300000000000000000000000000000000000003", Manifests: edit(3)("", helloManifests(t))}); err != nil || !res.Applied {
 		t.Fatalf("apply %+v %v", res, err)
 	}
 	// A driver that reports the messenger's own bot marking.
@@ -75,7 +75,7 @@ func TestBackfillPrivacyNoticeVersion(t *testing.T) {
 	if got := notices(); got["privacy_notice:3"] != 1 || len(got) != 1 {
 		t.Fatalf("SEC-13: a contact without a new version %v", got)
 	}
-	if res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "1300000000000000000000000000000000000013", Manifests: edit(4)("", helloManifests(t))}); err != nil || !res.Applied {
+	if res, err := b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: "1300000000000000000000000000000000000013", Manifests: edit(4)("", helloManifests(t))}); err != nil || !res.Applied {
 		t.Fatalf("apply %+v %v", res, err)
 	}
 	b.hello(t, "3")

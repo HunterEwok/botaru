@@ -242,7 +242,7 @@ func TestDeployStartAndDoctor(t *testing.T) {
 	// The shipped compose description with the secrets of compose core.yaml starts.
 	c = lintCore(t)
 	c.cfg.DeployFile = filepath.Join(c.spec.Root, "impl/deploy/compose/deploy.yaml")
-	c.cfg.CoreSecrets = []string{"operator", "store-dsn", "token-key"}
+	c.cfg.CoreSecrets = []string{"farm-operator", "operator", "store-dsn", "token-key"}
 	c.cfg.ProviderKeySecrets = map[string][]string{"provider-key-demo": {"demo"}}
 	if err := c.loadDeploy(); err != nil {
 		t.Fatalf("compose: %v", err)

@@ -69,7 +69,7 @@ func TestEvalReportGate(t *testing.T) {
 	}
 	apply := func(set []map[string]any, dry bool) *ApplyResult {
 		t.Helper()
-		res, err := c.Apply(ctx, op, ApplyRequest{Commit: strings.Repeat("9", 40), Manifests: set, DryRun: dry})
+		res, err := c.Apply(ctx, farmOf(op), ApplyRequest{Commit: strings.Repeat("9", 40), Manifests: set, DryRun: dry})
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -80,14 +80,14 @@ func TestApplyPrivilegeRaiseAfterDelete(t *testing.T) {
 			rest = append(rest, m)
 		}
 	}
-	_, err = b.c.Apply(ctx, b.op, ApplyRequest{Commit: "3333333333333333333333333333333333333333", Manifests: rest,
+	_, err = b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: "3333333333333333333333333333333333333333", Manifests: rest,
 		Delete: []ApplyDelete{{Kind: "Group", Tenant: "demo", Name: "hello"}}})
 	var p *Problem
 	if !errors.As(err, &p) || p.Reason != "forbidden" {
 		t.Fatalf("delete of a group with members: %v", err)
 	}
 	// A plan reports the refusal too.
-	_, err = b.c.Apply(ctx, b.op, ApplyRequest{Commit: "3333333333333333333333333333333333333333", Manifests: rest, DryRun: true,
+	_, err = b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: "3333333333333333333333333333333333333333", Manifests: rest, DryRun: true,
 		Delete: []ApplyDelete{{Kind: "Group", Tenant: "demo", Name: "hello"}}})
 	if !errors.As(err, &p) || p.Reason != "forbidden" {
 		t.Fatalf("dry run of the delete of a group with members: %v", err)
@@ -105,7 +105,7 @@ func TestApplyPrivilegeRaiseAfterDelete(t *testing.T) {
 			m["spec"].(map[string]any)["data"] = []any{"summary", "raw_logs"}
 		}
 	}
-	res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "4444444444444444444444444444444444444444", Manifests: ms})
+	res, err := b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: "4444444444444444444444444444444444444444", Manifests: ms})
 	if err != nil || res.Applied || !hasCode(res, "privileged_group") {
 		t.Fatalf("a privileged group of the old members: %+v %v", res, err)
 	}
@@ -113,7 +113,7 @@ func TestApplyPrivilegeRaiseAfterDelete(t *testing.T) {
 	if _, err := b.c.Grant(ctx, b.op, GrantRequest{Op: "ungrant", Subject: b.alice, Group: "hello"}); err != nil {
 		t.Fatal(err)
 	}
-	if res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "4444444444444444444444444444444444444444", Manifests: ms}); err != nil || !res.Applied {
+	if res, err := b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: "4444444444444444444444444444444444444444", Manifests: ms}); err != nil || !res.Applied {
 		t.Fatalf("a new privileged group without members: %+v %v", res, err)
 	}
 }

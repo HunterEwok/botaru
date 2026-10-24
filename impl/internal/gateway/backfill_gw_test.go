@@ -114,7 +114,7 @@ func newP4Bench(t *testing.T, edit func(ms []map[string]any), answer func(w http
 		edit(ms)
 	}
 	op := core.Operator{Principal: ids.PrincipalID(), Tenant: "demo"}
-	if res, err := c.Apply(ctx, op, core.ApplyRequest{Commit: strings.Repeat("0", 40), Manifests: ms, Personas: personas}); err != nil || !res.Applied {
+	if res, err := c.Apply(ctx, farmOf(op), core.ApplyRequest{Commit: strings.Repeat("0", 40), Manifests: ms, Personas: personas}); err != nil || !res.Applied {
 		t.Fatalf("apply: %+v %v", res, err)
 	}
 	alice := ids.PrincipalID()

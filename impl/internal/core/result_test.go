@@ -34,7 +34,7 @@ func applyResultCheckSet(t *testing.T, b *bench) {
 			map[string]any{"id": "runs-b", "title": "Internal runs", "list": "lab_runs", "format": "id", "values": []any{"r-09"}, "data_class": "internal"},
 		}},
 	})
-	res, err := b.c.Apply(context.Background(), b.op, ApplyRequest{Commit: "6666666666666666666666666666666666666666", Manifests: ms})
+	res, err := b.c.Apply(context.Background(), farmOf(b.op), ApplyRequest{Commit: "6666666666666666666666666666666666666666", Manifests: ms})
 	if err != nil || !res.Applied {
 		t.Fatalf("apply: %+v %v", res, err)
 	}
@@ -288,7 +288,7 @@ func TestResultSchemaFixedAtClaim(t *testing.T) {
 		"type": "object", "additionalProperties": false, "required": []any{"answer"},
 		"properties": map[string]any{"answer": map[string]any{"type": "string", "maxLength": 1}},
 	}
-	if res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "5555555555555555555555555555555555555555", Manifests: ms}); err != nil || !res.Applied {
+	if res, err := b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: "5555555555555555555555555555555555555555", Manifests: ms}); err != nil || !res.Applied {
 		t.Fatalf("apply: %+v %v", res, err)
 	}
 	if _, err := b.c.Complete(ctx, b.agent, header(t, att), CompleteRequest{Result: map[string]any{"answer": "longer than one", "run": "r-01"}}); err != nil {

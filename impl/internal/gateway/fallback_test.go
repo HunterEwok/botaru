@@ -117,7 +117,7 @@ func TestFallbackChecked(t *testing.T) {
 	op := core.Operator{Principal: ids.PrincipalID(), Tenant: "demo"}
 	apply := func(ms []map[string]any) {
 		t.Helper()
-		res, err := c.Apply(ctx, op, core.ApplyRequest{Commit: strings.Repeat("0", 40), Manifests: ms, Personas: personas})
+		res, err := c.Apply(ctx, farmOf(op), core.ApplyRequest{Commit: strings.Repeat("0", 40), Manifests: ms, Personas: personas})
 		if err != nil || !res.Applied {
 			t.Fatalf("apply: %+v %v", res, err)
 		}
@@ -265,4 +265,10 @@ func TestFallbackChecked(t *testing.T) {
 	if !core.SwitchesOn(on, "overloaded") || core.SwitchesOn(on, "rate_limited") {
 		t.Fatal("fallback reasons")
 	}
+}
+
+// farmOf is the operator of farm with the principal of op, which apply takes for global kinds.
+func farmOf(op core.Operator) core.Operator {
+	op.Tenant = "farm"
+	return op
 }

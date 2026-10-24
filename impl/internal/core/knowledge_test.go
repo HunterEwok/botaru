@@ -110,7 +110,7 @@ func (b *kbBench) apply(t *testing.T, req ApplyRequest) *ApplyResult {
 		req.Manifests = b.ms
 	}
 	req.Personas = b.personas
-	res, err := b.c.Apply(context.Background(), b.op, req)
+	res, err := b.c.Apply(context.Background(), farmOf(b.op), req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,7 +218,7 @@ func TestKnowledgeProfileOffRefuses(t *testing.T) {
 	ctx := context.Background()
 	withoutProfile(t, "knowledge")
 	b := newToolBench(t)
-	res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: strings.Repeat("2", 40), DryRun: true,
+	res, err := b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: strings.Repeat("2", 40), DryRun: true,
 		Manifests: []map[string]any{toolCatalogManifest()},
 		Skills:    map[string][]SkillFile{"disk-triage": {{Path: "SKILL.md", Data: []byte("---\nname: disk-triage\ndescription: d\n---\n")}}},
 		Knowledge: []KnowledgeFolder{folder("demo", "runbooks", "a.md", "x")}})
@@ -237,7 +237,7 @@ func TestKnowledgeProfileOffRefuses(t *testing.T) {
 	cat := toolCatalogManifest()
 	s := cat["spec"].(map[string]any)
 	s["resources"] = append(s["resources"].([]any), corpusDecl("runbooks"))
-	res, err = b.c.Apply(ctx, b.op, ApplyRequest{Commit: strings.Repeat("2", 40), DryRun: true, Manifests: []map[string]any{cat}})
+	res, err = b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: strings.Repeat("2", 40), DryRun: true, Manifests: []map[string]any{cat}})
 	if err != nil || len(res.Errors) == 0 || res.Errors[0].Code != "version_unsupported" {
 		t.Fatalf("corpus kind: %+v %v", res, err)
 	}

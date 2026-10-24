@@ -553,7 +553,7 @@ func TestToolhostAfterApply(t *testing.T) {
 			m["spec"].(map[string]any)["tools"].([]any)[0].(map[string]any)["description"] = "Changed."
 		}
 	}
-	if res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "7777777777777777777777777777777777777777", Manifests: ms}); err != nil || !res.Applied {
+	if res, err := b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: "7777777777777777777777777777777777777777", Manifests: ms}); err != nil || !res.Applied {
 		t.Fatalf("apply: %+v %v", res, err)
 	}
 	out := map[string]any{"content": []any{}, "structuredContent": map[string]any{"check": "www-health", "ok": 3, "total": 3}}

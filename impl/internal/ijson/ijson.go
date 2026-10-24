@@ -2,7 +2,8 @@
 
 // Package ijson parses JSON in the strict I-JSON subset (RFC 7493) that the HTTP binding v1
 // requires before any schema check (spec/bindings/http/README.md, spec/hashing.md): a repeated
-// key in an object, invalid UTF-8, a lone surrogate and a number outside ±(2^53 - 1) are errors.
+// key in an object, invalid UTF-8, a lone surrogate, U+0000 in a string (the store cannot hold
+// it) and a number outside ±(2^53 - 1) are errors.
 // Values are returned as map[string]any, []any, string, json.Number, bool and nil, so the schema
 // check, the handler and the hashes see the same value.
 package ijson
@@ -310,6 +311,8 @@ func (p *parser) escape(sb *strings.Builder) error {
 			sb.WriteRune(utf16.DecodeRune(r, r2))
 		case utf16.IsSurrogate(r):
 			return p.errf("lone surrogate")
+		case r == 0:
+			return p.errf("U+0000 in a string")
 		default:
 			sb.WriteRune(r)
 		}

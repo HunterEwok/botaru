@@ -73,7 +73,7 @@ func newExportBench(t *testing.T) (*actionBench, map[string]*ecdh.PrivateKey) {
 		t.Fatal(err)
 	}
 	ms := append(applied, sink("mine", map[string]any{"recipient_ref": b.alice, "key_ref": "EXPORT_ALICE"}))
-	if res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "1111111111111111111111111111111111111111", Manifests: ms, Personas: personas}); err != nil || !res.Applied {
+	if res, err := b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: "1111111111111111111111111111111111111111", Manifests: ms, Personas: personas}); err != nil || !res.Applied {
 		t.Fatalf("apply %+v %v", res, err)
 	}
 	bob := ids.PrincipalID()

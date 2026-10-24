@@ -128,7 +128,7 @@ func TestProposalGate(t *testing.T) {
 	}
 	// A new applied commit makes the gate stale: "Accept" is refused.
 	newBase := "a0000000000000000000000000000000000000f1"
-	if r, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: newBase, Manifests: cloneSet(t, b.applied)}); err != nil || !r.Applied {
+	if r, err := b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: newBase, Manifests: cloneSet(t, b.applied)}); err != nil || !r.Applied {
 		t.Fatalf("apply %+v %v", r, err)
 	}
 	if _, err := b.c.Decide(ctx, b.channel, press("telegram:1001", "direct:1001", card.external), DecideRequest{SubjectKind: "proposal", ID: id, Nonce: nonce, Decision: "accept"}); reasonOf(err) != "forbidden" {

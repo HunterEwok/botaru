@@ -42,8 +42,10 @@ cd /etc/botaru/secrets
 F=/opt/botaru/bin/farmctl
 echo 'postgres:///botaru?host=/var/run/postgresql' > dsn   # the store connection string
 $F new-secret > token.key                                 # the core key of token hashes and lease signatures
-$F new-secret > operator                                  # your farmctl credential
+$F new-secret > operator                                  # your farmctl credential for tenant demo
 cat operator | $F hash-token                              # its SHA-256, for the settings below
+$F new-secret > farm-operator                             # the credential of tenant farm, which apply takes
+cat farm-operator | $F hash-token                         # its SHA-256, for the settings below
 echo '<the bot token from @BotFather>' > bot
 echo '<the Anthropic key>' > anthropic-demo                # only for a real model
 chown botaru: * && chmod 600 *
@@ -87,10 +89,12 @@ operators:
   - token_sha256: <the SHA-256 from step 4>
     principal: human:p_01JB00000000000000000000A1   # your id as the operator
     tenant: demo
-  # Optional: a credential of tenant farm reaches every tenant and the holds of scope farm.
-  # - token_sha256: <the SHA-256 of another token>
-  #   principal: human:p_01JB00000000000000000000A1
-  #   tenant: farm
+  # The credential of tenant farm reaches every tenant and the holds of scope farm. apply takes
+  # it for objects of every tenant (roles, task types, the Tenant object); with the demo one,
+  # apply takes only objects of demo.
+  - token_sha256: <the SHA-256 of farm-operator from step 4>
+    principal: human:p_01JB00000000000000000000A1
+    tenant: farm
 # report_keys_sha256: [<the SHA-256 of the report key>]   # optional: opens only backup.report and spend.reconcile
 providers:
   # The model profile base-std of the example names provider-a. Map it to the mock provider:
@@ -130,15 +134,15 @@ Check the core: `farmctl -token-file /etc/botaru/secrets/operator health` answer
 
 ## 7. Manifests, the person and the workers
 
-Below `F` is `farmctl -token-file /etc/botaru/secrets/operator`.
+Below `F` is `farmctl -token-file /etc/botaru/secrets/operator` and `A` is `farmctl -token-file /etc/botaru/secrets/farm-operator`, the credential `apply` takes for a set with objects of every tenant.
 
 ```sh
 cd /opt/botaru/src
-$F apply -as-test -drop-unsupported examples/hello-bot/role.yaml examples/hello-bot/tasktype.yaml examples/hello-bot/group.yaml \
+$A apply -as-test -drop-unsupported examples/hello-bot/role.yaml examples/hello-bot/tasktype.yaml examples/hello-bot/group.yaml \
   examples/tenants/demo/tenant.yaml examples/tenants/demo/channels.yaml examples/model-profiles/base-std.yaml
 ```
 
-`apply` takes the manifests as one set and records the commit of the checkout; `-as-test` applies the tenant with `kind: test`, as the runner does on a test bench. The example tenant and channel carry fields the core does not offer: the channel `rate` (CAP-3, a deferred rule) and the tenant's `operator_access.debug_journal` and `retention.journals` (the profile `debug`, which the core does not claim), which it refuses with `version_unsupported` (MAN-11); `-drop-unsupported` leaves them out and prints a warning for each. It leaves out only whole optional fields; a later kind or a value that gives a field its meaning (a channel direction, a resource kind, a tier) stops the apply with an error naming the path, and you remove that manifest or value yourself. The example tenant has the farm manager off (`farm_manager: {enabled: false}`), because this set holds no farm charter: with the manager on, `apply` refuses the tenant with `manager_profile_missing` (MGR-20). To turn it on later, add to the set the farm tenant and its charter (`examples/tenants/farm/tenant.yaml`, `examples/tenants/farm/governance.yaml`), the seat model profile the charter names (`examples/model-profiles/manager-std.yaml`, also in the tenant's `models_allowed`) and the seat roles (`examples/roles/farm-manager/`, `examples/roles/farm-manager-reader/`), set `farm_manager.enabled: true` in your copy of the tenant, and apply again. For a real model, copy `examples/model-profiles/base-std.yaml` to your installation folder, set its `model` to an Anthropic model id, and apply your copy in place of the example one, adding `-commit` with the full commit id of the checkout (`git rev-parse HEAD`), because your copy is outside it.
+A farm set up before `apply` took the farm credential has only the demo one: create `farm-operator` as in step 4, add its entry to `operators` (step 5), restart the core, and apply with `$A`; with the demo credential `apply` now answers `forbidden` for a set that holds roles, task types or the Tenant object. `apply` takes the manifests as one set and records the commit of the checkout; `-as-test` applies the tenant with `kind: test`, as the runner does on a test bench. The example tenant and channel carry fields the core does not offer: the channel `rate` (CAP-3, a deferred rule) and the tenant's `operator_access.debug_journal` and `retention.journals` (the profile `debug`, which the core does not claim), which it refuses with `version_unsupported` (MAN-11); `-drop-unsupported` leaves them out and prints a warning for each. It leaves out only whole optional fields; a later kind or a value that gives a field its meaning (a channel direction, a resource kind, a tier) stops the apply with an error naming the path, and you remove that manifest or value yourself. The example tenant has the farm manager off (`farm_manager: {enabled: false}`), because this set holds no farm charter: with the manager on, `apply` refuses the tenant with `manager_profile_missing` (MGR-20). To turn it on later, add to the set the farm tenant and its charter (`examples/tenants/farm/tenant.yaml`, `examples/tenants/farm/governance.yaml`), the seat model profile the charter names (`examples/model-profiles/manager-std.yaml`, also in the tenant's `models_allowed`) and the seat roles (`examples/roles/farm-manager/`, `examples/roles/farm-manager-reader/`), set `farm_manager.enabled: true` in your copy of the tenant, and apply again. For a real model, copy `examples/model-profiles/base-std.yaml` to your installation folder, set its `model` to an Anthropic model id, and apply your copy in place of the example one, adding `-commit` with the full commit id of the checkout (`git rev-parse HEAD`), because your copy is outside it.
 
 Add yourself with your numeric Telegram id (a bot such as @userinfobot shows it) and the group that may call the greeting:
 
@@ -408,6 +412,8 @@ printf 'postgres://botaru:%s@store:5432/botaru?sslmode=disable' "$(cat store-pas
 $F new-secret > token-key
 $F new-secret > operator
 cat operator | docker run --rm -i botaru:local farmctl hash-token    # put it into ../core.yaml
+$F new-secret > farm-operator
+cat farm-operator | docker run --rm -i botaru:local farmctl hash-token    # the farm entry of ../core.yaml
 echo '<the bot token from @BotFather>' > bot-token
 echo '<the Anthropic key, any text for the mock>' > provider-key-demo
 chmod 600 * && sudo chown 10001 * && sudo chown 999 store-password
@@ -419,7 +425,8 @@ Then start the store, the core and the mock provider, apply the manifests and en
 ```sh
 docker compose --profile mock up -d store core mockmodel
 X="docker compose exec core farmctl -token-file /run/secrets/operator"
-$X apply -as-test -drop-unsupported -commit $(git -C /opt/botaru/src rev-parse HEAD) examples/hello-bot/role.yaml examples/hello-bot/tasktype.yaml examples/hello-bot/group.yaml \
+A="docker compose exec core farmctl -token-file /run/secrets/farm-operator"
+$A apply -as-test -drop-unsupported -commit $(git -C /opt/botaru/src rev-parse HEAD) examples/hello-bot/role.yaml examples/hello-bot/tasktype.yaml examples/hello-bot/group.yaml \
   examples/tenants/demo/tenant.yaml examples/tenants/demo/channels.yaml examples/model-profiles/base-std.yaml
 $X principal add -identity telegram:<your id> -locale ru
 $X grant <the principal id> hello

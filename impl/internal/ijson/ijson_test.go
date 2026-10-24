@@ -29,6 +29,8 @@ func TestParseRejects(t *testing.T) {
 	bad := []string{
 		`{"a":1,"a":2}`,       // repeated key
 		`{"a":{"b":1,"b":1}}`, // repeated nested key
+		`"\u0000"`,            // U+0000, which PostgreSQL cannot store
+		`{"a\u0000": 1}`,      // the same in a key
 		`"\ud800"`,            // lone high surrogate
 		`"\udc00"`,            // lone low surrogate
 		`"\ud800\u0041"`,      // high surrogate followed by a non-surrogate

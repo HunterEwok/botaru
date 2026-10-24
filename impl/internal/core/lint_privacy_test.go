@@ -177,7 +177,7 @@ func TestPrivacyChangeNotice(t *testing.T) {
 	}
 	apply := func(commit string, ms []map[string]any) {
 		t.Helper()
-		res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: strings.Repeat(commit, 40), Manifests: ms})
+		res, err := b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: strings.Repeat(commit, 40), Manifests: ms})
 		if err != nil || !res.Applied {
 			t.Fatalf("apply %+v %v", res, err)
 		}
@@ -225,7 +225,7 @@ func TestPrivacyChangeNotice(t *testing.T) {
 		t.Fatalf("SEC-8: an unchanged block gave an event or a notice: %d events, %d notices", n-before, notices())
 	}
 	// SEC-13 at apply: recipients change at the same version is refused.
-	res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: strings.Repeat("4", 40), Manifests: set(7, []any{"messenger", "monitoring"})})
+	res, err := b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: strings.Repeat("4", 40), Manifests: set(7, []any{"messenger", "monitoring"})})
 	if err != nil || res.Applied || !slices.ContainsFunc(res.Errors, func(e ApplyError) bool { return e.Code == "notice_version_not_raised" }) {
 		t.Fatalf("SEC-13: %+v %v", res, err)
 	}

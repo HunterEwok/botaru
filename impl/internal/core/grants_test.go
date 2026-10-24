@@ -197,7 +197,7 @@ func TestModelGrantP2(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	b := managerV02Bench(t, nil, nil)
-	if _, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: strings.Repeat("1", 40), Manifests: []map[string]any{{"apiVersion": "botaru/v1alpha1", "kind": "Group",
+	if _, err := b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: strings.Repeat("1", 40), Manifests: []map[string]any{{"apiVersion": "botaru/v1alpha1", "kind": "Group",
 		"metadata": map[string]any{"name": "grant-managers", "tenant": "demo"}, "spec": map[string]any{"caps": []any{"model_grant.manage"}}}}}); err != nil {
 		t.Fatal(err)
 	}
