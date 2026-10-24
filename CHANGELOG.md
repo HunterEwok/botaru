@@ -33,6 +33,18 @@ Entries are grouped by area; within a group the newest entry comes first.
 
 ### Reference Implementation (impl/)
 
+- Fixes from the integrity review of the core: the agent gives the model the attachments of the task beside the goal,
+  so a follow-up, a continuation and a campaign step see the outcome of the earlier task (CNT-5); the agent writes
+  the answer in the `reply_locale` of the work item (DLV-18); it asks for 16000 output tokens by default, which P4
+  caps by the profile's `max_output_tokens`, tells a model whose answer the output limit cut to answer shorter
+  instead of calling the answer prose, and ends the run on a refusal without a repair turn; a cancel no longer
+  overwrites a task that has already ended (a campaign stop, an erasure or a script cancel racing with complete); the
+  grant of an attempt that the reaper, the stall check, a rejected result, the deadline or a cancel ends is released
+  (MGR-18); migration `0081_hot_loop_indexes` adds the indexes the deadline loop, the queue ceilings and the spend
+  lookups by task need; the main store pool has 16 connections unless the DSN sets `pool_max_conns`. With the
+  larger output limit every call reserves the profile's whole `max_output_tokens` (P4 reserves by the capped limit,
+  GW-2), so a small tree budget or grant cap refuses sooner than before. The data block of an attempt goes to the
+  model inside a tag with a random mark per attempt (INJ-4).
 - Task attachments reach a tool (D-72, TEN-7, flow 12): `enum_from: task.attachments` in a tool schema of an
   attempt now lists the `file_ref` of each attachment of the task, not nothing; the call handout names the
   attachments its arguments name (`files`), and the toolhost reads each with `file.get` under the call lease into a
