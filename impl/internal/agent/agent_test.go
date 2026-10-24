@@ -287,6 +287,7 @@ func TestAgentLastTurn(t *testing.T) {
 		t.Fatalf("%d model calls, want %d", len(f.model), maxTurns)
 	}
 	type req struct {
+		System     []struct{ Text string } `json:"system"`
 		ToolChoice *struct {
 			Type string `json:"type"`
 		} `json:"tool_choice"`
@@ -308,9 +309,20 @@ func TestAgentLastTurn(t *testing.T) {
 	if last.ToolChoice != nil {
 		t.Errorf("the last call's tool choice without tools %+v", last.ToolChoice)
 	}
-	msg := last.Messages[len(last.Messages)-1]
-	if got := msg.Content[len(msg.Content)-1].Text; got != lastTurnNote {
-		t.Errorf("the last call ends with %q", got)
+	// The note is in the system text of the last call only; the messages end with the tool
+	// results, since a text block after them makes the model answer with nothing.
+	if len(before.System) != 1 {
+		t.Errorf("a call before the last has %d system blocks", len(before.System))
+	}
+	if len(last.System) != 2 || last.System[1].Text != lastTurnNote {
+		t.Errorf("the last call's system text %+v", last.System)
+	}
+	for _, m := range last.Messages {
+		for _, c := range m.Content {
+			if c.Text == lastTurnNote {
+				t.Errorf("the note is in a message")
+			}
+		}
 	}
 	if len(f.completes) != 1 || f.completes[0]["result"] == nil {
 		t.Fatalf("completes %v", f.completes)
