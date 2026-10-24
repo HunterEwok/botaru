@@ -7136,6 +7136,26 @@
   fixtures: [blackbox:identity/seal-retention-earlier, sm-fact-09, sm-idn-14]
   doc: docs/bots.md
 
+- id: MEM-11
+  title: The session holds what the farm accepted
+  status: active
+  text: >-
+    From v0.3 the core keeps with each session entry the attempt that appended it. P1
+    `session.load` returns an entry of an attempt while the attempt runs and after the core accepted
+    its result; an entry of an attempt that ended otherwise (a refused result, a failure, a fence, a
+    timeout) is left out, so a later task of the conversation never reads as the bot's answer what
+    the farm refused. Entries written before v0.3 have no attempt and are returned. The request
+    field `last` asks for the latest entries, at most 100 and oldest first, instead of a page from the
+    start; it goes without `after` and `limit`.
+  goal: G1
+  check: [impl]
+  waivable: true
+  version: v0.3
+  profile: governance
+  decisions: [D-122]
+  fixtures: [impl:internal/core/TestSessionLeavesOutFailedAttempts, impl:internal/agent/TestAgentSession]
+  doc: docs/bots.md
+
 - id: MGR-1
   title: One seat, one holder, one epoch
   status: active

@@ -42,6 +42,13 @@ Entries are grouped by area; within a group the newest entry comes first.
 
 ### Reference Implementation (impl/)
 
+- `botaru-agent` uses the session of a chat (MEM-1): it reads the latest exchanges before the first model call and
+  appends the goal and the answer before `complete`, so a person's second message is read with the first. The work
+  item names how the earlier attempts of the task ended (extension field `previous_attempts`, without the provider's
+  failures), and the agent shows it to the model, so a retry does not repeat the same mistake.
+- The core keeps the attempt of each session entry (migration `0083_session_entry_lease`), and `session.load` leaves out
+  what an attempt appended that ended without an accepted result; the request field `last` reads the latest entries in
+  one call (MEM-11, D-122).
 - The prompt cache, the effort and the price tiers of D-121 (GW-18, GW-19, BUD-17). The agent names the skills directory
   in the first message instead of the system text, which held a new path in every attempt and so was never read from the
   cache across attempts. In a real run the stand of the simulator sets the cache prices of a profile that has them at the

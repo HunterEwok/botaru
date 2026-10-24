@@ -44,7 +44,7 @@ The line under a rule heading:
 | [KNW](#knw) | Tenant knowledge | [docs/capabilities.md](../docs/capabilities.md) | 5 | 5 | 0 | 5 | 0 | 0 |
 | [LCY](#lcy) | Tenant lifecycle | [docs/operations.md](../docs/operations.md) | 7 | 3 | 3 | 4 | 0 | 0 |
 | [MAN](#man) | Manifests | [docs/task-language.md](../docs/task-language.md) | 10 | 4 | 10 | 0 | 0 | 0 |
-| [MEM](#mem) | Memory | [docs/bots.md](../docs/bots.md) | 8 | 6 | 7 | 1 | 0 | 0 |
+| [MEM](#mem) | Memory | [docs/bots.md](../docs/bots.md) | 9 | 6 | 7 | 1 | 1 | 0 |
 | [MGR](#mgr) | Farm manager | [docs/farm-manager.md](../docs/farm-manager.md) | 48 | 37 | 32 | 6 | 10 | 0 |
 | [MON](#mon) | External monitoring | [docs/operations.md](../docs/operations.md) | 12 | 10 | 11 | 1 | 0 | 0 |
 | [MSG](#msg) | Messages between bots | [docs/messaging.md](../docs/messaging.md) | 17 | 16 | 16 | 1 | 0 | 0 |
@@ -66,7 +66,7 @@ The line under a rule heading:
 | [TEN](#ten) | Tenants | [docs/architecture.md](../docs/architecture.md) | 8 | 8 | 8 | 0 | 0 | 0 |
 | [TIM](#tim) | Time and clocks | [docs/operations.md](../docs/operations.md) | 4 | 2 | 3 | 1 | 0 | 0 |
 | [TRN](#trn) | Translator | [docs/coordination.md](../docs/coordination.md) | 7 | 5 | 4 | 1 | 2 | 0 |
-| Total | | | 489 | 376 | 377 | 69 | 43 | 0 |
+| Total | | | 490 | 376 | 377 | 69 | 44 | 0 |
 
 Retired numbers (46) are listed in [retired.md](retired.md), deferred rules (43) in [deferred.md](deferred.md).
 
@@ -2516,6 +2516,15 @@ serves [C6](../docs/goals.md) · since v0.2 · waivable · profile governance ·
 From v0.2 a sealed item of a retired identity whose class period (RET-9) ends before `seal_ttl` is deleted by the `retention` loop at its period (RET-10), and a sealed session is deleted at the period of its class even while the seal runs. A fact offer then no longer lists the deleted item, and the successor's re-verification does not read it (MEM-7). The end of the seal still files the `bot_retired` erasure request for what is left (MEM-9).
 
 Checked by: `blackbox:identity/seal-retention-earlier`, `sm-fact-09`, `sm-idn-14`
+
+<a id="MEM-11"></a>
+### MEM-11. The session holds what the farm accepted
+
+serves [G1](../docs/goals.md) · since v0.3 · waivable · profile governance · check: impl · decisions: D-122
+
+From v0.3 the core keeps with each session entry the attempt that appended it. P1 `session.load` returns an entry of an attempt while the attempt runs and after the core accepted its result; an entry of an attempt that ended otherwise (a refused result, a failure, a fence, a timeout) is left out, so a later task of the conversation never reads as the bot's answer what the farm refused. Entries written before v0.3 have no attempt and are returned. The request field `last` asks for the latest entries, at most 100 and oldest first, instead of a page from the start; it goes without `after` and `limit`.
+
+Checked by: `impl:internal/core/TestSessionLeavesOutFailedAttempts`, `impl:internal/agent/TestAgentSession`
 
 <a id="mgr"></a>
 ## MGR: Farm manager

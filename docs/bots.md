@@ -81,7 +81,7 @@ The core computes the space `(tenant, scope, subject)` and the session key; the 
 
 **Facts.** A fact is a verified entry about the farm, such as "`demo.db.backup.v1` on `db1` takes 58 minutes at p95". The model names only a kind, a predicate and a subject from closed registries (`spec/model/fact-kinds.yaml`, `fact-predicates.yaml`); the core collects the evidence, computes the value and the window, and sets the mark (MEM-6). A fact has no free strings, so an injection can at most shift the choice of predicate. A type declares `memory.facts: propose`; at `complete` the core checks up to 3 triples, skips one without `min_samples` evidence (event `fact.rejected`, `fact_insufficient`) and marks facts from untrusted attempts `untrusted_origin: true`. A type with `memory.read: bot` gets the active facts as a closed block, which does not set `untrusted_seen`. A space holds at most 100 facts. See [spec/lifecycles/fact.md](../spec/lifecycles/fact.md).
 
-**Sessions.** A transcript under `(tenant, role, subject, conversation)`; the core keeps the key and the `untrusted_seen` mark, not the content (INJ-13). A runtime that keeps sessions itself declares `session: runtime_internal` in its P1 `hello` and follows RT-1. A session never passes to another bot.
+**Sessions.** A transcript under `(tenant, role, subject, conversation)`; the core keeps the key and the `untrusted_seen` mark, not the content (INJ-13). A runtime that keeps sessions itself declares `session: runtime_internal` in its P1 `hello` and follows RT-1. A session never passes to another bot. From v0.3 `session.load` returns what an attempt appended only while it runs and after the core accepted its result, and `last` reads the latest entries in one call ([MEM-11](../conformance/rules.md#MEM-11)).
 
 ### Retirement and successor
 
@@ -158,3 +158,4 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [MEM-7](../conformance/rules.md#MEM-7) | Facts pass to the successor, rechecked by code | v0.1 | yes |
 | [MEM-9](../conformance/rules.md#MEM-9) | A seal does not extend retention periods | v0.1 | no |
 | [MEM-10](../conformance/rules.md#MEM-10) | The seal does not hold back deletion by period | v0.2 | no |
+| [MEM-11](../conformance/rules.md#MEM-11) | The session holds what the farm accepted | v0.3 | no |
