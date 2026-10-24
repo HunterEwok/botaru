@@ -650,7 +650,7 @@ func TestAgentNamedWait(t *testing.T) {
 
 func TestNamedWait(t *testing.T) {
 	now := time.Date(2026, 10, 24, 12, 0, 0, 0, time.UTC)
-	if namedWait("provider_unavailable", 5) != 5*time.Second || namedWait("provider_rate_limited", 31) != 0 || namedWait("model_error", 5) != 0 || namedWait("provider_rate_limited", 0) != 0 {
+	if namedWait("provider_rate_limited", 5) != 5*time.Second || namedWait("provider_unavailable", 5) != 0 || namedWait("provider_rate_limited", 31) != 0 || namedWait("model_error", 5) != 0 || namedWait("provider_rate_limited", 0) != 0 {
 		t.Error("namedWait")
 	}
 	if !waitFits("", now, 30*time.Second) || waitFits(now.Add(100*time.Second).Format(time.RFC3339), now, 30*time.Second) || !waitFits(now.Add(10*time.Minute).Format(time.RFC3339), now, 30*time.Second) {

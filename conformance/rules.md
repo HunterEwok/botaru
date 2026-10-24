@@ -1752,7 +1752,7 @@ Checked by: `impl:internal/gateway/TestProviderBody`
 
 serves [G3](../docs/goals.md) · since v0.3 · waivable · profile core · check: impl · decisions: D-127
 
-In addition to GW-12: when P4 refuses a model call with `provider_rate_limited` or `provider_unavailable` and names a wait `retry_after_s` of at most 30 seconds, the runtime may wait that long and send the same call again, at most twice in one attempt, and only while after the wait the attempt keeps the margin of its last call before `attempt_until`. Otherwise, and after the second wait, it ends the run with the reason P4 returned, as GW-12 says. The calls and tool calls the attempt already made are not made again, and the model SDK still makes no retries of its own.
+In addition to GW-12: when P4 refuses a model call with `provider_rate_limited` and names a wait `retry_after_s` of at most 30 seconds, the runtime may wait that long and send the same call again, at most twice in one attempt, and only while after the wait 90 seconds stay before `attempt_until`. A `provider_rate_limited` call was refused before the provider took it, or the provider refused it with `429`, so it is not charged; `provider_unavailable` is never waited out here, since its call may have been sent and charged under BUD-11. Otherwise, and after the second wait, it ends the run with the reason P4 returned, as GW-12 says. The calls and tool calls the attempt already made are not made again, and the model SDK still makes no retries of its own.
 
 Checked by: `impl:internal/agent/TestAgentNamedWait`
 

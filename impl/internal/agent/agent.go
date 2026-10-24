@@ -486,6 +486,7 @@ func (a *Agent) run(ctx context.Context, p attemptPayload) (map[string]any, stri
 			waits++
 			a.log.Info("the provider named a wait; the same call goes again after it", "task", p.Task.ID, "reason", reason, "wait_s", after)
 			if sleep(ctx, d); ctx.Err() != nil {
+				err = ctx.Err()
 				break
 			}
 			msg, err = client.Messages.New(ctx, params)
@@ -647,13 +648,13 @@ func p4Problem(err error) (string, int) {
 // it is short; zero when the call does not go again (GW-20).
 func namedWait(reason string, after int) time.Duration {
 	d := time.Duration(after) * time.Second
-	if (reason != "provider_rate_limited" && reason != "provider_unavailable") || d <= 0 || d > maxNamedWait {
+	if reason != "provider_rate_limited" || d <= 0 || d > maxNamedWait {
 		return 0
 	}
 	return d
 }
 
-// waitFits says whether the attempt keeps the margin of its last call after a wait of d.
+// waitFits says whether the attempt keeps lastCallMargin before its deadline after a wait of d.
 func waitFits(until string, now time.Time, d time.Duration) bool {
 	if until == "" {
 		return true
