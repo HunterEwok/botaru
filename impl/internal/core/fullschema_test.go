@@ -135,3 +135,33 @@ func TestObservationsQuerySubjects(t *testing.T) {
 		t.Fatalf("query: %+v %v", r, err)
 	}
 }
+
+// With the evolution on and one dispatcher rule, the analysis sees the guarded fields of that
+// rule with their current values, the ones checkTenantOp takes (PRP-12); with two rules, none.
+func TestInsightContextDispatch(t *testing.T) {
+	rule := map[string]any{"match": map[string]any{"type": "ops.investigate.v1"}, "timeouts": map[string]any{"attempt": "5m"},
+		"retry": map[string]any{"max_attempts": 1}}
+	cat := &Catalog{Tenants: map[string]*TenantView{"demo": {Name: "demo", Raw: map[string]any{"spec": map[string]any{
+		"limits": map[string]any{"max_queued": 50}, "dispatch": map[string]any{"rules": []any{rule}}}}}}}
+	pt, _ := insightContext(cat, "demo", "ops-reader", true)["proposable_targets"].(map[string]any)
+	d, _ := pt["dispatch"].(map[string]any)
+	fields, _ := d["fields"].(map[string]any)
+	f, _ := fields["spec.dispatch.rules[].timeouts.attempt"].(map[string]any)
+	if f["current"] != "5m" || len(fields) != 1 {
+		t.Fatalf("dispatch targets %v", d)
+	}
+	if tg, _ := d["target"].(map[string]any); tg["kind"] != "Tenant" || tg["name"] != "demo" {
+		t.Errorf("target %v", d["target"])
+	}
+	rule["retry"] = map[string]any{"max_attempts": 3}
+	pt, _ = insightContext(cat, "demo", "ops-reader", true)["proposable_targets"].(map[string]any)
+	d, _ = pt["dispatch"].(map[string]any)
+	if fields, _ := d["fields"].(map[string]any); len(fields) != 2 {
+		t.Errorf("an attempt limit of 3 is not offered: %v", d)
+	}
+	cat.Tenants["demo"].Raw["spec"].(map[string]any)["dispatch"] = map[string]any{"rules": []any{rule, rule}}
+	pt, _ = insightContext(cat, "demo", "ops-reader", true)["proposable_targets"].(map[string]any)
+	if _, ok := pt["dispatch"]; ok {
+		t.Error("dispatch targets with two rules")
+	}
+}
