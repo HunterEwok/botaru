@@ -416,7 +416,7 @@ and prints the counts by code. The codes are those of the load test brief:
 | `R-06` | `alice` asks `/geo` about a raster and a layer | `geo-reader` |
 | `R-08` | `bob` asks `/pipeline` why the last run failed | `pipeline-reader` |
 | `R-17` | the data disk fills to 3% free: the incident `disk_full` (capped by `manager_tasks_per_hour`) | a db machine |
-| `R-19` | the analysis schedule of `ops-reader` runs for one turn, one tenant at a time (capped by `analyses_per_hour` and `proposals_per_run`) | `ops-reader` |
+| `R-19` | the analysis schedule of `ops-reader` runs for one turn, one tenant at a time (capped by `analyses_per_hour` and `proposals_per_run`); besides its rate, each tenant with a manager gets one 10 minutes into the run, so that every run can reach M-10 | `ops-reader` |
 
 An analysis turn switches its tenant's schedule `ops-insight` on until the first new analysis is in the store, at
 most 75 seconds, and off again; each switch is a commit of
