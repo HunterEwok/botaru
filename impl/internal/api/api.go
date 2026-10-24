@@ -18,6 +18,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jackc/pgx/v5/pgconn"
+
 	"github.com/HunterEwok/botaru/impl/internal/core"
 	"github.com/HunterEwok/botaru/impl/internal/ijson"
 	"github.com/HunterEwok/botaru/impl/internal/spec"
@@ -155,6 +157,14 @@ func (s *Server) fail(w http.ResponseWriter, err error) {
 		return
 	}
 	if errors.Is(err, context.Canceled) {
+		return
+	}
+	// A value the store refuses (SQLSTATE class 22, a data exception) is refused again on every
+	// retry, so it is the caller's input, not a passing failure (DLV-5).
+	var pg *pgconn.PgError
+	if errors.As(err, &pg) && strings.HasPrefix(pg.Code, "22") {
+		s.log.Warn("the store refused a value", "code", pg.Code, "err", err)
+		Problem(w, &core.Problem{Reason: "input_schema_invalid", Detail: "the store refused a value (SQLSTATE " + pg.Code + ")"})
 		return
 	}
 	// The core neither loses nor starts work when the store fails: the caller retries (OBS-8).

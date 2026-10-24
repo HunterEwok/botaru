@@ -9,7 +9,7 @@ Several farm processes compute the same hash independently of each other: the co
 | What | How |
 |---|---|
 | Canonical form | JSON Canonicalization Scheme, RFC 8785 (JCS): object keys in ascending order of UTF-16 code units, no whitespace, strings and numbers written per RFC 8785, the result in UTF-8 |
-| Input | JSON on the wire is I-JSON (RFC 7493): an object with a repeated key, a string with a lone surrogate or invalid UTF-8, and a number outside `±(2^53 - 1)` are rejected by the binding before the schema check (`spec/bindings/http/README.md`), so such an object is never hashed |
+| Input | JSON on the wire is I-JSON (RFC 7493): an object with a repeated key, a string with a lone surrogate, invalid UTF-8 or U+0000, and a number outside `±(2^53 - 1)` are rejected by the binding before the schema check (`spec/bindings/http/README.md`), so such an object is never hashed |
 | Numbers | core objects hold only integers within `±(2^53 - 1)`: money is an integer: limits in euro cents, call usage in micro-euros `eur_micros` (BUD-1, BUD-9). Objects from outside (tool schemas of plugins, an `inputSchema` with `multipleOf: 0.5`) may hold fractional numbers: they are written in the full number notation of RFC 8785 |
 | Hash | SHA-256 (FIPS 180-4) over the bytes of the canonical form |
 | Hash notation | `sha256:` followed by 64 lowercase hexadecimal characters; the schema uses the building block `urn:botaru:schema:common:1#/$defs/hash` |
