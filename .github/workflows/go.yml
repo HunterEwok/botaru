@@ -5,6 +5,9 @@
 # (GOTOOLCHAIN=auto) from the Go module proxy and verifies it against the checksum database.
 # staticcheck and govulncheck are tool dependencies in impl/go.mod, so their versions are pinned
 # by go.sum and updated by Dependabot. Actions are pinned to a full commit SHA.
+# The tests run in four parallel jobs (the simulator, the core, the conformance runner, the rest)
+# with the module and build caches of actions/cache keyed by impl/go.sum; the job `go`, the
+# required check, passes only when the checks and every test job passed.
 name: go
 
 on:
@@ -21,9 +24,9 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  go:
+  checks:
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: impl
@@ -35,6 +38,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-checks-${{ runner.os }}-${{ hashFiles('impl/go.sum') }}
+          restore-keys: go-checks-${{ runner.os }}-
       - name: toolchain
         run: go version
       - name: gofmt
@@ -48,23 +58,77 @@ jobs:
         run: go vet ./...
       - name: staticcheck
         run: go tool staticcheck ./...
-      - name: test
-        # The store tests start a private PostgreSQL server with initdb of the runner image
-        # (PostgreSQL 16 on ubuntu-24.04); without it they would be skipped, so here they must run.
-        env:
-          BOTARU_TEST_PG_REQUIRED: "1"
-          BOTARU_CONFORM_OUT: ${{ runner.temp }}/conform
-        run: CGO_ENABLED=1 go test -race -timeout 30m ./...
-      - name: rule coverage
-        # The conformance runner (internal/conform) wrote the coverage table of the rules during
-        # the tests: done means every behaviour case of the rule passes on this core.
-        if: always()
-        run: |
-          f="$RUNNER_TEMP/conform/coverage.md"
-          if [ -f "$f" ]; then cat "$f" >> "$GITHUB_STEP_SUMMARY"; else echo "no coverage table: the conformance test did not run"; fi
       - name: build
         run: |
           GOOS=linux GOARCH=amd64 go build ./...
           GOOS=linux GOARCH=arm64 go build ./...
       - name: govulncheck
         run: go tool govulncheck ./...
+
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [sim, core, conform, rest]
+    defaults:
+      run:
+        working-directory: impl
+    env:
+      GOTOOLCHAIN: auto
+      GOFLAGS: -mod=readonly
+      CGO_ENABLED: "0"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-test-${{ matrix.part }}-${{ runner.os }}-${{ hashFiles('impl/go.sum') }}
+          restore-keys: go-test-${{ matrix.part }}-${{ runner.os }}-
+      - name: packages
+        id: pkgs
+        env:
+          PART: ${{ matrix.part }}
+        run: |
+          case "$PART" in
+            sim) pkgs="./internal/sim" ;;
+            core) pkgs="./internal/core" ;;
+            conform) pkgs="./internal/conform" ;;
+            rest) pkgs="$(go list ./... | grep -v -e '/internal/sim$' -e '/internal/core$' -e '/internal/conform$' | tr '\n' ' ')" ;;
+          esac
+          echo "list=$pkgs" >> "$GITHUB_OUTPUT"
+      - name: test
+        # The store tests start a private PostgreSQL server with initdb of the runner image
+        # (PostgreSQL 16 on ubuntu-24.04); without it they would be skipped, so here they must run.
+        env:
+          BOTARU_TEST_PG_REQUIRED: "1"
+          BOTARU_CONFORM_OUT: ${{ runner.temp }}/conform
+          PKGS: ${{ steps.pkgs.outputs.list }}
+        run: CGO_ENABLED=1 go test -race -timeout 30m $PKGS
+      - name: rule coverage
+        # The conformance runner (internal/conform) wrote the coverage table of the rules during
+        # the tests: done means every behaviour case of the rule passes on this core.
+        if: always() && matrix.part == 'conform'
+        run: |
+          f="$RUNNER_TEMP/conform/coverage.md"
+          if [ -f "$f" ]; then cat "$f" >> "$GITHUB_STEP_SUMMARY"; else echo "no coverage table: the conformance test did not run"; fi
+
+  go:
+    # The required check: a skipped or failed job above fails it, so a skip never passes.
+    needs: [checks, test]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: all passed
+        env:
+          CHECKS: ${{ needs.checks.result }}
+          TEST: ${{ needs.test.result }}
+        run: |
+          echo "checks: $CHECKS, test: $TEST"
+          [ "$CHECKS" = success ] && [ "$TEST" = success ]

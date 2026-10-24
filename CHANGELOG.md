@@ -10,6 +10,10 @@ Entries are grouped by area; within a group the newest entry comes first.
 
 ### Skeleton & Contracts
 
+- A short wait the provider names (D-127, addition to v0.3): GW-20 lets the runtime wait out a `retry_after_s` of at
+  most 30 seconds on a `provider_rate_limited` refusal and send the same call again, at most twice per attempt and
+  only while 90 seconds stay before the attempt deadline; GW-12 holds for everything else, `provider_unavailable`
+  included.
 - The end of the improvement loop and the goal numbers (D-123..D-126, additions to v0.3): a change that came out
   worse and nobody reverted keeps its fields locked, shows in `doctor` as `insights.worse_in_force`, and three days
   after the executor's card the people who decide on its category get the "Revert" card once (PRP-27); a
@@ -50,6 +54,12 @@ Entries are grouped by area; within a group the newest entry comes first.
 
 ### Reference Implementation (impl/)
 
+- `botaru-agent` waits out a short wait a rate-limited call names and sends the same call again (GW-20), so after a
+  `429` the model calls and tool calls before it are not made and paid again.
+- CI runs the Go tests in four parallel jobs (the simulator, the core, the conformance runner, the rest) with the
+  module and build caches; the required check `go` passes only when all of them and the checks passed. The README and
+  `docs/quality.md` say what the checks prove today instead of more, and a test keeps the example set free of apply
+  errors but the two known kinds.
 - The improvement loop: an analysis an event starts keeps to `max_event_runs` per day and its insight limits like a
   scheduled one; an alarm repeat stops once people took the incident; `doctor` names a veto lens without an
   executor per role and an analysis that no schedule or route starts (`insights.not_started`).

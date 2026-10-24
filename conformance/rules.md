@@ -34,7 +34,7 @@ The line under a rule heading:
 | [EVO](#evo) | Scaffold evolution | [docs/improvements.md](../docs/improvements.md) | 10 | 9 | 0 | 0 | 10 | 0 |
 | [FEN](#fen) | Leases | [docs/tasks-and-delivery.md](../docs/tasks-and-delivery.md) | 7 | 5 | 7 | 0 | 0 | 0 |
 | [GOV](#gov) | Bot governance | [docs/improvements.md](../docs/improvements.md) | 29 | 22 | 9 | 10 | 10 | 0 |
-| [GW](#gw) | Model gateway | [docs/models-and-money.md](../docs/models-and-money.md) | 17 | 14 | 15 | 0 | 2 | 0 |
+| [GW](#gw) | Model gateway | [docs/models-and-money.md](../docs/models-and-money.md) | 18 | 14 | 15 | 0 | 3 | 0 |
 | [HLD](#hld) | Stop | [docs/operations.md](../docs/operations.md) | 7 | 6 | 5 | 1 | 1 | 0 |
 | [IDM](#idm) | Idempotency | [docs/tasks-and-delivery.md](../docs/tasks-and-delivery.md) | 4 | 1 | 4 | 0 | 0 | 0 |
 | [IDN](#idn) | Identity | [docs/bots.md](../docs/bots.md) | 16 | 13 | 13 | 1 | 2 | 0 |
@@ -66,7 +66,7 @@ The line under a rule heading:
 | [TEN](#ten) | Tenants | [docs/architecture.md](../docs/architecture.md) | 8 | 8 | 8 | 0 | 0 | 0 |
 | [TIM](#tim) | Time and clocks | [docs/operations.md](../docs/operations.md) | 4 | 2 | 3 | 1 | 0 | 0 |
 | [TRN](#trn) | Translator | [docs/coordination.md](../docs/coordination.md) | 7 | 5 | 4 | 1 | 2 | 0 |
-| Total | | | 494 | 376 | 377 | 69 | 48 | 0 |
+| Total | | | 495 | 376 | 377 | 69 | 49 | 0 |
 
 Retired numbers (46) are listed in [retired.md](retired.md), deferred rules (43) in [deferred.md](deferred.md).
 
@@ -1746,6 +1746,15 @@ serves [G3](../docs/goals.md) · since v0.3 · waivable · profile core · check
 A model profile may set `effort`; P4 then sets it in every request of the profile in place of any value the runtime sent, as it sets the output limit (GW-2, GW-7), and without it the request goes as it came and the provider's default holds. The provider binding names the request field. A model that does not take the field answers with an error, so the person who edits the profile sets `effort` only for a model that takes it.
 
 Checked by: `impl:internal/gateway/TestProviderBody`
+
+<a id="GW-20"></a>
+### GW-20. The runtime waits out a short wait the provider names
+
+serves [G3](../docs/goals.md) · since v0.3 · waivable · profile core · check: impl · decisions: D-127
+
+In addition to GW-12: when P4 refuses a model call with `provider_rate_limited` and names a wait `retry_after_s` of at most 30 seconds, the runtime may wait that long and send the same call again, at most twice in one attempt, and only while after the wait 90 seconds stay before `attempt_until`. A `provider_rate_limited` call was refused before the provider took it, or the provider refused it with `429`, so it is not charged; `provider_unavailable` is never waited out here, since its call may have been sent and charged under BUD-11. Otherwise, and after the second wait, it ends the run with the reason P4 returned, as GW-12 says. The calls and tool calls the attempt already made are not made again, and the model SDK still makes no retries of its own.
+
+Checked by: `impl:internal/agent/TestAgentNamedWait`
 
 <a id="hld"></a>
 ## HLD: Stop
