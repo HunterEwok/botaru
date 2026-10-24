@@ -5,6 +5,7 @@ package sim
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -372,8 +373,9 @@ func (s *Stand) silenceReplica(ctx context.Context, tenant, want string, run *Fa
 // leaseHolder is the running replica that holds the newest attempt lease of the tenant (a
 // silent one keeps its lease until it expires), or the lease of the task asked for, with its
 // task; "" when none does. With shared it takes only a replica whose role runs another replica
-// in the tenant: only then can the attempt move on within two lease terms (M-5), while a role
-// with one replica waits for the restart.
+// in the tenant and a task with another attempt: only then can the attempt move on within two
+// lease terms (M-5), while a role with one replica waits for the restart and a task on its last
+// attempt simply fails.
 func (s *Stand) leaseHolder(ctx context.Context, tenant, want string, shared bool) (string, string, error) {
 	running := map[string]bool{}
 	replicas := map[string]int{}
@@ -381,16 +383,25 @@ func (s *Stand) leaseHolder(ctx context.Context, tenant, want string, shared boo
 		running[n] = true
 		replicas[roleOf(n)]++
 	}
-	rows, err := s.Bench.Store().Pool.Query(ctx, `SELECT worker_id, work_id FROM leases WHERE tenant = $1 AND kind = 'attempt' AND state = 'active'
-		AND ($2 = '' OR work_id = $2) ORDER BY created_at DESC`, tenant, want)
+	s.mu.Lock()
+	limit := maps.Clone(s.attempts)
+	s.mu.Unlock()
+	rows, err := s.Bench.Store().Pool.Query(ctx, `SELECT l.worker_id, l.work_id, coalesce(t.type, ''), coalesce(t.attempts_spent, 0) FROM leases l LEFT JOIN tasks t ON t.id = l.work_id
+		WHERE l.tenant = $1 AND l.kind = 'attempt' AND l.state = 'active' AND ($2 = '' OR l.work_id = $2) ORDER BY l.created_at DESC`, tenant, want)
 	if err != nil {
 		return "", "", err
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var id, t string
-		if err := rows.Scan(&id, &t); err != nil {
+		var id, t, typ string
+		var spent int
+		if err := rows.Scan(&id, &t, &typ, &spent); err != nil {
 			return "", "", err
+		}
+		// A task on its last attempt cannot move on to another (an unknown type has the
+		// core's two).
+		if n := cmp.Or(limit[typ], 2); shared && spent+1 >= n {
+			continue
 		}
 		if n := s.Bench.WorkerName(id); running[n] && (!shared || replicas[roleOf(n)] > 1) {
 			return n, t, nil

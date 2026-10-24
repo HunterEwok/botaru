@@ -408,7 +408,14 @@ func TestCardLimitPerDay(t *testing.T) {
 		AND m.decide_by - m.created_at <= $2::interval`, first, memoryCardTTL).Scan(&early); err != nil || early != 0 {
 		t.Fatalf("waiting records with the old deadline %d %v", early, err)
 	}
-	b.advance(t, 24*3600)
+	// The next day of the tenant's Berlin calendar, which is 25 hours long when the clocks go
+	// back (TIM-2).
+	berlin, err := time.LoadLocation("Europe/Berlin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := b.now(t).In(berlin)
+	b.advance(t, int(time.Date(now.Year(), now.Month(), now.Day()+1, 1, 0, 0, 0, berlin).Sub(now).Seconds()))
 	if got := b.drain(t); len(got) != 2 {
 		t.Fatalf("cards the next day %+v", got)
 	}
