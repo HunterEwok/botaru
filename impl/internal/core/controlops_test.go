@@ -348,3 +348,41 @@ func TestControlOpsPerson(t *testing.T) {
 		t.Fatalf("pin_task: %v", err)
 	}
 }
+
+// The control tool names the target kinds of each operation it offers, and they are the ones the
+// operation takes: a drain of a monitored host is refused and counts toward the safeguard, so a
+// model must know a host is no worker (MGR-9, MGR-14).
+func TestControlToolTargets(t *testing.T) {
+	t.Parallel()
+	for _, o := range controlOpsServed {
+		if len(controlTargetKinds[o]) == 0 {
+			t.Fatalf("no target kinds for %s", o)
+		}
+	}
+	b := newControlBench(t)
+	l, err := b.c.P3ToolsList(context.Background(), b.handle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	desc := ""
+	for _, x := range l.Tools {
+		if m := x.(map[string]any); m["name"] == controlToolName {
+			desc, _ = m["description"].(string)
+		}
+	}
+	for _, want := range []string{"drain takes worker", "quarantine takes worker", "hold takes worker, bot, role, tasktype, resource", "release takes hold"} {
+		if !strings.Contains(desc, want) {
+			t.Fatalf("the description %q has no %q", desc, want)
+		}
+	}
+	if strings.Contains(desc, "cancel") {
+		t.Fatalf("the description %q names an operation the tenant did not consent to", desc)
+	}
+	if code := b.call(t, "drain", "resource", "db1"); code != "input_schema_invalid" {
+		t.Fatalf("a drain of a resource: %s", code)
+	}
+	var denials int
+	if err := b.c.st.Pool.QueryRow(context.Background(), `SELECT denials FROM seats WHERE id = $1`, managerSeatID).Scan(&denials); err != nil || denials != 1 {
+		t.Fatalf("the refused drain counted %d %v", denials, err)
+	}
+}
