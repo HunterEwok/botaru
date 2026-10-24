@@ -60,7 +60,8 @@ func (c *Core) proposeScriptTool(cat *Catalog, g *toolsGrant) *catalogTool {
 	desc.WriteString("Hand in a script draft botaru.script/v1: {script: \"v1\", steps: [...]}. Step kinds: task (type, goal, params), " +
 		"fanout (type and goal, or action and args, with items {resources} or {selector}), action (action, args), confirm (who). " +
 		"A goal is {template: <name>} or {assignment: true}; a parameter is a literal or {ref: \"<step>.<field>\"}; conditions use " +
-		"eq, ne and in over earlier steps. You get the run number or the refused step with its reason; the person decides. Types:")
+		"eq, ne and in over earlier steps. Every step has an id, unique in the script (a lowercase letter, then lowercase letters, digits or -, such as check-run), " +
+		"and its kind. You get the run number or the refused step with its reason, at most 3 drafts per attempt; the person decides. Types:")
 	for _, t := range types {
 		tt := cat.TaskTypes[t]
 		summary := tt.SummaryForManagers
@@ -75,9 +76,7 @@ func (c *Core) proposeScriptTool(cat *Catalog, g *toolsGrant) *catalogTool {
 		if len(names) > 0 {
 			fmt.Fprintf(&desc, " Goal templates: %s.", strings.Join(names, ", "))
 		}
-		if props, _ := tt.ParamsSchema["properties"].(map[string]any); len(props) > 0 {
-			fmt.Fprintf(&desc, " Params: %s.", strings.Join(sortedKeys(props), ", "))
-		}
+		desc.WriteString(fieldsPart("Params", tt.ParamsSchema))
 	}
 	desc.WriteString("\nActions:")
 	for _, a := range actions {
@@ -87,9 +86,7 @@ func (c *Core) proposeScriptTool(cat *Catalog, g *toolsGrant) *catalogTool {
 			title = act.Description
 		}
 		fmt.Fprintf(&desc, "\n- %s: %s", a, strings.TrimSpace(title))
-		if props, _ := act.Args["properties"].(map[string]any); len(props) > 0 {
-			fmt.Fprintf(&desc, " Args: %s.", strings.Join(sortedKeys(props), ", "))
-		}
+		desc.WriteString(fieldsPart("Args", act.Args))
 	}
 	if sel := catalogSelectors(cat, g.Tenant); len(sel) > 0 {
 		fmt.Fprintf(&desc, "\nSelectors: %s.", strings.Join(sel, ", "))
@@ -100,6 +97,46 @@ func (c *Core) proposeScriptTool(cat *Catalog, g *toolsGrant) *catalogTool {
 	schema := map[string]any{"type": "object", "additionalProperties": false, "required": []any{"script"},
 		"properties": map[string]any{"script": map[string]any{"type": "object"}}}
 	return &catalogTool{Name: proposeScriptName, Builtin: true, Tool: toolspec.Tool{Description: desc.String()}, Schema: schema}
+}
+
+// fieldSchemaMax is how many bytes of one field's schema the description shows.
+const fieldSchemaMax = 300
+
+// fieldsPart is the sentence of a step's params or args: its fields, or none, so a draft does
+// not invent a field the closed schema refuses.
+func fieldsPart(label string, schema map[string]any) string {
+	if props, _ := schema["properties"].(map[string]any); len(props) > 0 {
+		return " " + label + ": " + fieldsLine(schema) + "."
+	}
+	return " " + label + ": none."
+}
+
+// fieldsLine is the properties of a closed schema with their schemas, the required ones
+// marked, so a draft can fill them in: older_than_days (required) {"maximum":30,...}.
+func fieldsLine(schema map[string]any) string {
+	props, _ := schema["properties"].(map[string]any)
+	required := map[string]bool{}
+	for _, r := range mlist(schema, "required") {
+		if n, ok := r.(string); ok {
+			required[n] = true
+		}
+	}
+	var parts []string
+	for _, k := range sortedKeys(props) {
+		part := k
+		if required[k] {
+			part += " (required)"
+		}
+		if raw, err := json.Marshal(props[k]); err == nil {
+			// A long enum or description is cut, so the description stays short.
+			if len(raw) > fieldSchemaMax {
+				raw = append(raw[:fieldSchemaMax], "..."...)
+			}
+			part += " " + string(raw)
+		}
+		parts = append(parts, part)
+	}
+	return strings.Join(parts, ", ")
 }
 
 func sortedKeys(m map[string]any) []string {
