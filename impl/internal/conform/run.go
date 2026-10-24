@@ -1267,7 +1267,7 @@ func (x *exec) apply(ctx context.Context, ms []map[string]any, dryRun bool) (*ou
 }
 
 func (x *exec) applyBody(ctx context.Context, body map[string]any) (*outcome, error) {
-	status, resp, err := x.post(ctx, x.ep.P2+"/v1/p2/apply", x.ep.Operators["demo"], body)
+	status, resp, err := x.post(ctx, x.ep.P2+"/v1/p2/apply", x.ep.Operators["farm"], body)
 	if err != nil {
 		return nil, err
 	}

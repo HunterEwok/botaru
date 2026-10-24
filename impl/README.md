@@ -97,7 +97,8 @@ The gate is on for a tenant with `insights.gate.required: true`; the review rule
 - `proposal revert` refuses a checkout with uncommitted changes or without a branch, writes the previous values and
   takes out the fields the change added, commits the reverse edit with
   `Botaru-Revert: <id> <reason>`, moves the branch only by a fast-forward and runs `apply` of the set; `-no-apply`
-  stops after the commit. Push the branch afterwards.
+  stops after the commit. The `apply` of a whole set takes an operator of `farm`: with a tenant's credential,
+  run with `-no-apply` and have the farm operator apply the commit. Push the branch afterwards.
 
 ## Key implementation decisions
 

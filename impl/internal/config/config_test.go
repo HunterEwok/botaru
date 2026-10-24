@@ -21,7 +21,7 @@ func TestProviderKeySecrets(t *testing.T) {
 	if got := c.ProviderKeySecrets()["provider-key-demo"]; !slices.Equal(got, []string{"demo"}) {
 		t.Fatalf("provider key secrets %v", c.ProviderKeySecrets())
 	}
-	if got := c.CoreOwnSecrets(); !slices.Equal(got, []string{"operator", "store-dsn", "token-key"}) {
+	if got := c.CoreOwnSecrets(); !slices.Equal(got, []string{"farm-operator", "operator", "store-dsn", "token-key"}) {
 		t.Fatalf("core secrets %v", got)
 	}
 }

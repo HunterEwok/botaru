@@ -89,7 +89,7 @@ func TestTenantLifecycle(t *testing.T) {
 		t.Fatal("offboarding events")
 	}
 	ms, _ := helloSet(t)
-	res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "8888888888888888888888888888888888888888", Manifests: ms})
+	res, err := b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: "8888888888888888888888888888888888888888", Manifests: ms})
 	if err != nil || res.Applied || !hasCode(res, "gone") {
 		t.Fatalf("apply of a deleted tenant: %+v %v", res, err)
 	}

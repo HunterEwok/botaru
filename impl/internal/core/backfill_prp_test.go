@@ -154,7 +154,7 @@ func TestBackfillTrialRevertCard(t *testing.T) {
 	ctx := context.Background()
 	b := newCommissionBench(t, true, presentEdit)
 	id, _ := acceptLimits(t, b)
-	if res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "a000000000000000000000000000000000000002", Message: "Botaru-Proposal: " + id, Manifests: withLimit(t, b, 7)}); err != nil || !res.Applied {
+	if res, err := b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: "a000000000000000000000000000000000000002", Message: "Botaru-Proposal: " + id, Manifests: withLimit(t, b, 7)}); err != nil || !res.Applied {
 		t.Fatalf("apply %+v %v", res, err)
 	}
 	tenantHash := storedHash(t, b, "Tenant", "demo", "demo")

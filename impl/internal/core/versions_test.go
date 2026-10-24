@@ -57,7 +57,7 @@ func TestApplyLaterVersion(t *testing.T) {
 	}
 	all := append(slices.Clone(ms), extra...)
 	n := len(ms)
-	res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "4444444444444444444444444444444444444444", Manifests: all})
+	res, err := b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: "4444444444444444444444444444444444444444", Manifests: all})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +95,7 @@ func TestApplyLaterVersion(t *testing.T) {
 	ms, _ = helloSet(t)
 	ms[at["TaskType"]]["spec"].(map[string]any)["title"] = "Greeting, changed"
 	extra[0]["spec"] = map[string]any{"driver": "disk", "base": "/srv/botaru/hook", "ceiling": "summary"}
-	res, err = b.c.Apply(ctx, b.op, ApplyRequest{Commit: "5555555555555555555555555555555555555555", Manifests: append(ms, extra[0])})
+	res, err = b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: "5555555555555555555555555555555555555555", Manifests: append(ms, extra[0])})
 	if err != nil || !res.Applied {
 		t.Fatalf("apply: %+v %v", res, err)
 	}
@@ -114,7 +114,7 @@ func TestApplyLintsStore(t *testing.T) {
 	b := newBench(t)
 	cat := map[string]any{"apiVersion": "botaru/v1alpha1", "kind": "Catalog", "metadata": map[string]any{"name": "demo", "tenant": "demo"},
 		"spec": map[string]any{"hosts": []any{map[string]any{"id": "web1"}}}}
-	if res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "6666666666666666666666666666666666666666", Manifests: []map[string]any{cat}}); err != nil || !res.Applied {
+	if res, err := b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: "6666666666666666666666666666666666666666", Manifests: []map[string]any{cat}}); err != nil || !res.Applied {
 		t.Fatalf("catalog: %+v %v", res, err)
 	}
 	root, err := spec.FindRoot("")
@@ -131,15 +131,15 @@ func TestApplyLintsStore(t *testing.T) {
 		return v
 	}
 	// The catalog of the store is visible: a machine of it is a known egress.
-	if res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "7777777777777777777777777777777777777777", Manifests: []map[string]any{plugin("web1")}}); err != nil || !res.Applied {
+	if res, err := b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: "7777777777777777777777777777777777777777", Manifests: []map[string]any{plugin("web1")}}); err != nil || !res.Applied {
 		t.Fatalf("a plugin to a machine of the stored catalog: %+v %v", res, err)
 	}
-	res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "7777777777777777777777777777777777777777", Manifests: []map[string]any{plugin("db9")}})
+	res, err := b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: "7777777777777777777777777777777777777777", Manifests: []map[string]any{plugin("db9")}})
 	if err != nil || res.Applied || len(res.Errors) != 1 || res.Errors[0].Code != "egress_unknown" {
 		t.Fatalf("a plugin to an unknown machine: %+v %v", res, err)
 	}
 	// Deleting the catalog in the same apply removes its machines from the check.
-	res, err = b.c.Apply(ctx, b.op, ApplyRequest{Commit: "7777777777777777777777777777777777777777", Manifests: []map[string]any{plugin("web1")},
+	res, err = b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: "7777777777777777777777777777777777777777", Manifests: []map[string]any{plugin("web1")},
 		Delete: []ApplyDelete{{Kind: "Catalog", Tenant: "demo", Name: "demo"}}})
 	if err != nil || res.Applied || len(res.Errors) != 1 || res.Errors[0].Code != "egress_unknown" {
 		t.Fatalf("a plugin to a machine of a deleted catalog: %+v %v", res, err)

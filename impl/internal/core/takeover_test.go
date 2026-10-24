@@ -19,7 +19,7 @@ import (
 func (b *bench) grantManagers(t *testing.T) string {
 	t.Helper()
 	ctx := context.Background()
-	if _, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: strings.Repeat("1", 40), Manifests: []map[string]any{{"apiVersion": "botaru/v1alpha1", "kind": "Group",
+	if _, err := b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: strings.Repeat("1", 40), Manifests: []map[string]any{{"apiVersion": "botaru/v1alpha1", "kind": "Group",
 		"metadata": map[string]any{"name": "grant-managers", "tenant": "demo"}, "spec": map[string]any{"caps": []any{"model_grant.manage"}}}}}); err != nil {
 		t.Fatal(err)
 	}

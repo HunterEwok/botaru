@@ -21,7 +21,7 @@ func TestBackfillChannelNoOperatorOps(t *testing.T) {
 	var applied struct {
 		Applied bool `json:"applied"`
 	}
-	r.p2call(t, r.opToken, "apply", map[string]any{"commit": strings.Repeat("a", 40), "manifests": ms}, &applied)
+	r.p2call(t, r.farmToken, "apply", map[string]any{"commit": strings.Repeat("a", 40), "manifests": ms}, &applied)
 	if !applied.Applied {
 		t.Fatal("apply refused")
 	}

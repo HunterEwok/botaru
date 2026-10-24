@@ -5,6 +5,7 @@ package core
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -73,7 +74,7 @@ func newBenchWith(t *testing.T, edit func(root string, ms []map[string]any) []ma
 	if err != nil {
 		t.Fatal(err)
 	}
-	res, err := c.Apply(ctx, op, ApplyRequest{Commit: "0000000000000000000000000000000000000000", Manifests: ms, Personas: personas})
+	res, err := c.Apply(ctx, farmOf(op), ApplyRequest{Commit: "0000000000000000000000000000000000000000", Manifests: ms, Personas: personas})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -323,7 +324,7 @@ func TestOnFixWaitsForApply(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "1111111111111111111111111111111111111111", Manifests: ms}); err != nil || !res.Applied {
+	if res, err := b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: "1111111111111111111111111111111111111111", Manifests: ms}); err != nil || !res.Applied {
 		t.Fatalf("apply: %+v %v", res, err)
 	}
 	if w := b.claim(t, b.agent, "attempt"); w == nil || w.WorkID != res.Task {
@@ -618,15 +619,96 @@ func TestApplyRefusesPrivilegeRaise(t *testing.T) {
 			m["spec"].(map[string]any)["data"] = []any{"summary", "raw_logs"}
 		}
 	}
-	res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "2222222222222222222222222222222222222222", Manifests: ms})
+	res, err := b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: "2222222222222222222222222222222222222222", Manifests: ms})
 	if err != nil || res.Applied || !hasCode(res, "privileged_group") {
 		t.Fatalf("apply: %+v %v", res, err)
 	}
 	if _, err := b.c.Grant(ctx, b.op, GrantRequest{Op: "ungrant", Subject: b.alice, Group: "hello"}); err != nil {
 		t.Fatal(err)
 	}
-	if res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "2222222222222222222222222222222222222222", Manifests: ms}); err != nil || res.Applied || !hasCode(res, "privileged_group") {
+	if res, err := b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: "2222222222222222222222222222222222222222", Manifests: ms}); err != nil || res.Applied || !hasCode(res, "privileged_group") {
 		t.Fatalf("apply of an empty group: %+v %v", res, err)
+	}
+}
+
+// An operator of a tenant applies only objects of its own tenant; global kinds, the Tenant
+// object, another tenant's objects and deletions take the operator of farm.
+func TestApplyTenantWall(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	b := newBench(t)
+	root, err := spec.FindRoot("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ms, err := testbench.SharedHelloBotManifests(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var own, global, tenant []map[string]any
+	for _, m := range ms {
+		switch m["kind"] {
+		case "Group", "Channel":
+			own = append(own, m)
+		case "Tenant":
+			tenant = append(tenant, m)
+		case "Role", "TaskType":
+			global = append(global, m)
+		}
+	}
+	if len(own) == 0 || len(global) == 0 || len(tenant) == 0 {
+		t.Fatalf("the hello set lacks a kind: %d %d %d", len(own), len(global), len(tenant))
+	}
+	commit := strings.Repeat("3", 40)
+	if res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: commit, Manifests: own, DryRun: true}); err != nil || len(res.Errors) > 0 {
+		t.Fatalf("own objects: %+v %v", res, err)
+	}
+	other := Operator{Principal: b.op.Principal, Tenant: "demo2"}
+	for name, tc := range map[string]struct {
+		op  Operator
+		req ApplyRequest
+	}{
+		"a global kind":         {b.op, ApplyRequest{Commit: commit, Manifests: global}},
+		"the Tenant object":     {b.op, ApplyRequest{Commit: commit, Manifests: tenant}},
+		"another tenant's":      {other, ApplyRequest{Commit: commit, Manifests: own}},
+		"a delete":              {b.op, ApplyRequest{Commit: commit, Manifests: own, Delete: []ApplyDelete{{Kind: "Group", Tenant: "demo", Name: "hello"}}}},
+		"another tenant's text": {b.op, ApplyRequest{Commit: commit, Manifests: own, Knowledge: []KnowledgeFolder{{Tenant: "demo2", Corpus: "x"}}}},
+	} {
+		_, err := b.c.Apply(ctx, tc.op, tc.req)
+		if p, ok := AsProblem(err); !ok || p.Reason != "forbidden" {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	if res, err := b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: commit, Manifests: ms, DryRun: true}); err != nil || len(res.Errors) > 0 {
+		t.Fatalf("farm: %+v %v", res, err)
+	}
+	// A plan changes nothing: the operator of a tenant plans the whole set, as the gate of a
+	// proposal does, and sees only the objects of its tenant and of every tenant.
+	res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: commit, Manifests: ms, DryRun: true})
+	if err != nil || len(res.Errors) > 0 || res.Applied {
+		t.Fatalf("a tenant's plan: %+v %v", res, err)
+	}
+	// A plan still holds no object of another tenant and no delete, whose refusals would tell
+	// about the objects of another tenant.
+	for name, req := range map[string]ApplyRequest{
+		"another tenant's plan": {Commit: commit, Manifests: ms, DryRun: true},
+		"a planned delete":      {Commit: commit, DryRun: true, Delete: []ApplyDelete{{Kind: "Group", Tenant: "demo", Name: "hello"}}},
+	} {
+		_, err := b.c.Apply(ctx, other, req)
+		if p, ok := AsProblem(err); !ok || p.Reason != "forbidden" {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	r := &ApplyResult{Changes: []ApplyChange{{Kind: "Group", Tenant: "demo", Name: "a"}, {Kind: "Tenant", Name: "demo2"}, {Kind: "Role", Name: "r"}},
+		Errors: []ApplyError{{Kind: "Route", Tenant: "demo", Name: "x", Code: "ref_missing"}}}
+	r.only("demo2")
+	if len(r.Changes) != 2 || len(r.Errors) != 1 || r.Errors[0].Code != "other_tenant_findings" {
+		t.Errorf("only: %+v", r)
+	}
+	unknown := map[string]any{"apiVersion": "botaru/v1", "kind": "NoSuchKind", "metadata": map[string]any{"name": "x", "tenant": "demo"}}
+	res, err = b.c.Apply(ctx, b.op, ApplyRequest{Commit: commit, Manifests: []map[string]any{unknown}})
+	if _, forbidden := AsProblem(err); forbidden || err == nil && (res == nil || len(res.Errors) == 0) {
+		t.Errorf("an unknown kind: %+v %v", res, err)
 	}
 }
 
@@ -709,7 +791,7 @@ func TestDeleteTaskTypeWithOpenTasks(t *testing.T) {
 	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE memberships SET until = botaru_now() - interval '1 second' WHERE principal = $1`, b.alice); err != nil {
 		t.Fatal(err)
 	}
-	_, err = b.c.Apply(ctx, b.op, ApplyRequest{Commit: "3333333333333333333333333333333333333333", Delete: []ApplyDelete{{Kind: "TaskType", Name: typ}}})
+	_, err = b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: "3333333333333333333333333333333333333333", Delete: []ApplyDelete{{Kind: "TaskType", Name: typ}}})
 	var p *Problem
 	if !errors.As(err, &p) || p.Reason != "forbidden" {
 		t.Fatalf("delete: %v", err)
@@ -837,4 +919,11 @@ func TestSecretsStoredAsHashes(t *testing.T) {
 			}
 		}
 	}
+}
+
+// farmOf is the operator of farm with the principal of op: apply takes it for objects of every
+// tenant (mayApply).
+func farmOf(op Operator) Operator {
+	op.Tenant = "farm"
+	return op
 }

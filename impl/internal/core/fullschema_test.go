@@ -43,7 +43,7 @@ func TestFullResultSchemaPayload(t *testing.T) {
 			map[string]any{"id": "db1"},
 		}},
 	})
-	if res, err := b.c.Apply(context.Background(), b.op, ApplyRequest{Commit: "7777777777777777777777777777777777777777", Manifests: ms}); err != nil || !res.Applied {
+	if res, err := b.c.Apply(context.Background(), farmOf(b.op), ApplyRequest{Commit: "7777777777777777777777777777777777777777", Manifests: ms}); err != nil || !res.Applied {
 		t.Fatalf("apply: %+v %v", res, err)
 	}
 	b.hello(t, "51")

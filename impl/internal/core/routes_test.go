@@ -203,7 +203,7 @@ func TestRouteLint(t *testing.T) {
 	b := newRouteBench(t)
 	route := map[string]any{"apiVersion": "botaru/v1alpha1", "kind": "Route", "metadata": map[string]any{"name": "bad", "tenant": "demo"},
 		"spec": map[string]any{"on": map[string]any{"message": "report.work.v1"}, "mode": "task", "task": map[string]any{"type": "lead.review.v1"}}}
-	res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "1111111111111111111111111111111111111111", Manifests: []map[string]any{route}, DryRun: true})
+	res, err := b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: "1111111111111111111111111111111111111111", Manifests: []map[string]any{route}, DryRun: true})
 	if err != nil {
 		t.Fatal(err)
 	}

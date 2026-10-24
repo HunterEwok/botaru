@@ -621,7 +621,7 @@ func TestMessageGoneRetention(t *testing.T) {
 	coreSend(t, b, "role:lead")
 	coreSend(t, b, "group:pool")
 	// The bot group goes; the role inbox stays.
-	res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "1111111111111111111111111111111111111111", Delete: []ApplyDelete{{Kind: "BotGroup", Tenant: "demo", Name: "pool"}}})
+	res, err := b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: "1111111111111111111111111111111111111111", Delete: []ApplyDelete{{Kind: "BotGroup", Tenant: "demo", Name: "pool"}}})
 	if err != nil || !res.Applied {
 		t.Fatalf("apply %+v %v", res, err)
 	}

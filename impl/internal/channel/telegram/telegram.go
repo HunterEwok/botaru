@@ -311,6 +311,8 @@ func Activity(channel string, u update) map[string]any {
 	if text == "" {
 		text = m.Caption
 	}
+	// The core refuses U+0000, which its store cannot hold; the rest of the text still counts.
+	text = strings.ReplaceAll(text, "\x00", "")
 	if text != "" {
 		if r := []rune(text); len(r) > 4096 {
 			text = string(r[:4096])

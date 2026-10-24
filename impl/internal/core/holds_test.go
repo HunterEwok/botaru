@@ -32,7 +32,7 @@ func (b *bench) withAdmins(t *testing.T) string {
 		"metadata": map[string]any{"name": "admins", "tenant": "demo"},
 		"spec":     map[string]any{"caps": []any{"admin:people", "hold.release", "hold.set:plugin"}, "data": []any{"summary"}},
 	})
-	res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "1111111111111111111111111111111111111111", Manifests: ms})
+	res, err := b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: "1111111111111111111111111111111111111111", Manifests: ms})
 	if err != nil {
 		t.Fatal(err)
 	}

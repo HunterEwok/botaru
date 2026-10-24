@@ -95,16 +95,120 @@ func (c *Core) manifestKinds() (map[string]kindInfo, error) {
 // Objects of the store that are not in the set stay and are reported as orphaned; they are
 // deleted only by the explicit delete list (MAN-6).
 func (c *Core) Apply(ctx context.Context, op Operator, req ApplyRequest) (*ApplyResult, error) {
+	if err := c.mayApply(op, req); err != nil {
+		return nil, err
+	}
+	if req.DryRun && op.Tenant != "farm" {
+		// A tenant's plan takes its Tenant object as stored: the budgets and ceilings of a
+		// Tenant are checked against the sums of all tenants, and trying values of its own
+		// would tell those sums.
+		var ms []map[string]any
+		for _, m := range req.Manifests {
+			if m["kind"] != "Tenant" {
+				ms = append(ms, m)
+			}
+		}
+		req.Manifests = ms
+	}
 	// The lint reads the store before the transaction; an apply that lands in between makes
 	// this one start again, so that two applies never pass the lint on each other's old state.
 	for try := 0; ; try++ {
 		res, err := c.applyOnce(ctx, op, req)
 		if !errors.Is(err, errStoreChanged) {
+			if res != nil && op.Tenant != "farm" {
+				res.only(op.Tenant)
+			}
 			return res, err
 		}
 		if try == 4 {
 			return nil, fmt.Errorf("%w five times in a row; apply again", err)
 		}
+	}
+}
+
+// mayApply keeps a tenant's operator inside the tenant's wall, as the other P2 operations do:
+// such an operator applies only objects of its own tenant. Objects of every tenant (global
+// kinds, a global model profile), a Tenant object with its budgets and ceilings, skills,
+// deletions and the objects of another tenant take an operator of farm. A plan changes
+// nothing, so it may also hold the objects of every tenant and the tenant's own Tenant object,
+// as the gate of a proposal plans the shared set; it still holds no object of another tenant.
+func (c *Core) mayApply(op Operator, req ApplyRequest) error {
+	if op.Tenant == "farm" {
+		return nil
+	}
+	if len(req.Delete) > 0 {
+		return refuse("forbidden", "a delete in apply takes an operator of farm")
+	}
+	if len(req.Skills) > 0 && !req.DryRun {
+		return refuse("forbidden", "skills are of every tenant; their apply takes an operator of farm")
+	}
+	for _, k := range req.Knowledge {
+		if k.Tenant != op.Tenant {
+			return refuse("forbidden", "knowledge of another tenant takes an operator of farm")
+		}
+	}
+	kinds, err := c.manifestKinds()
+	if err != nil {
+		return err
+	}
+	for i, v := range req.Manifests {
+		d := manifest.FromValue(v, fmt.Sprintf("manifests/%d", i))
+		md, _ := v["metadata"].(map[string]any)
+		tenant, _ := md["tenant"].(string)
+		ki, known := kinds[d.Kind]
+		if !known {
+			// An unknown kind gets its own code from the lint (unknown_kind).
+			continue
+		}
+		own := tenant == op.Tenant && (ki.scope == "tenant" || ki.scope == "either")
+		if req.DryRun && !own {
+			own = d.Kind == "Tenant" && d.Name == op.Tenant || ki.scope == "global" || ki.scope == "either" && tenant == ""
+		}
+		if !own {
+			return refuse("forbidden", "manifests/%d (%s %s) is not an object of tenant %s; its apply takes an operator of farm", i, d.Kind, d.Name, op.Tenant)
+		}
+	}
+	return nil
+}
+
+// only keeps the changes and findings of tenant t and of every tenant, so that an operator of
+// one tenant does not learn the object names of another.
+func (r *ApplyResult) only(t string) {
+	mine := func(kind, tenant, name string) bool {
+		if kind == "Tenant" {
+			return name == t
+		}
+		return tenant == "" || tenant == t
+	}
+	changes := r.Changes[:0]
+	for _, c := range r.Changes {
+		if mine(c.Kind, c.Tenant, c.Name) {
+			changes = append(changes, c)
+		}
+	}
+	r.Changes = changes
+	keep := func(es []ApplyError) []ApplyError {
+		out := es[:0]
+		for _, e := range es {
+			if mine(e.Kind, e.Tenant, e.Name) {
+				if e.Tenant == "" && e.Kind != "Tenant" {
+					// The detail of a finding on an object of every tenant can name the tenant
+					// that found it, such as the tenant of a role without eval reports.
+					e.Detail = ""
+				}
+				out = append(out, e)
+			}
+		}
+		return out
+	}
+	n := len(r.Errors)
+	r.Errors = keep(r.Errors)
+	if len(r.Errors) < n {
+		// The set still fails: a plan never reads clean because its findings were not shown.
+		r.Errors = append(r.Errors, ApplyError{Code: "other_tenant_findings", Detail: "the set has findings outside this tenant"})
+	}
+	if r.Warnings != nil {
+		r.Warnings = keep(r.Warnings)
 	}
 }
 

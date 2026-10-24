@@ -10,11 +10,14 @@ p2_listen: 127.0.0.1:8402        # farmctl inside the core container only (IDN-7
 operator: "Example operator"
 farm_hosts: [core1]
 deploy_description: /etc/botaru/deploy.yaml   # linted at start and by doctor (DEP-10)
-farm_secrets: [operator]         # the farmctl operator token next to the core is the farm's own (SEC-6)
+farm_secrets: [operator, farm-operator]   # the farmctl operator tokens next to the core are the farm's own (SEC-6)
 operators:
   - token_sha256: <the SHA-256 of secrets/operator>
     principal: human:p_01JB00000000000000000000A1
     tenant: demo
+  - token_sha256: <the SHA-256 of secrets/farm-operator>   # apply takes it for objects of every tenant
+    principal: human:p_01JB00000000000000000000A1
+    tenant: farm
 providers:
   provider-a:
     binding: anthropic
