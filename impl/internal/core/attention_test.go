@@ -458,6 +458,32 @@ func TestPrefsQuietHours(t *testing.T) {
 	}
 }
 
+// On the night the clocks go back, the end of quiet hours in the repeated hour is its first
+// occurrence, not an hour later (DLV-10).
+func TestNextLocalRepeatedHour(t *testing.T) {
+	t.Parallel()
+	berlin, err := time.LoadLocation("Europe/Berlin")
+	if err != nil {
+		t.Skip(err)
+	}
+	for _, c := range []struct {
+		now  time.Time
+		m    int
+		want time.Time
+	}{
+		// 01:13 CEST: 02:13 comes first as CEST, at 00:13 UTC.
+		{time.Date(2026, 10, 24, 23, 13, 0, 0, time.UTC), 2*60 + 13, time.Date(2026, 10, 25, 0, 13, 0, 0, time.UTC)},
+		// 02:30 CEST: the next 02:13 is the repeated one, CET.
+		{time.Date(2026, 10, 25, 0, 30, 0, 0, time.UTC), 2*60 + 13, time.Date(2026, 10, 25, 1, 13, 0, 0, time.UTC)},
+		// An ordinary day: 09:00 CET tomorrow.
+		{time.Date(2026, 10, 26, 10, 0, 0, 0, time.UTC), 9 * 60, time.Date(2026, 10, 27, 8, 0, 0, 0, time.UTC)},
+	} {
+		if got := nextLocal(c.now, berlin, c.m); !got.Equal(c.want) {
+			t.Errorf("nextLocal(%v, %d) = %v, want %v", c.now, c.m, got.UTC(), c.want)
+		}
+	}
+}
+
 // The language of a delivery and the reply_locale of an attempt follow the order of DLV-18:
 // the recipient's own locale with a catalog, then the tenant's, then en.
 func TestLocaleOrder(t *testing.T) {

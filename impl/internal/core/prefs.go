@@ -56,12 +56,21 @@ func (c *Core) deferrableKinds() []string {
 	return out
 }
 
-// nextLocal is the first local time at minute m of the day at or after now.
+// nextLocal is the first local time at minute m of the day at or after now. On the night the
+// clocks go back a minute of the repeated hour happens twice, and time.Date may pick either;
+// the earlier one at or after now is the one that comes first.
 func nextLocal(now time.Time, loc *time.Location, m int) time.Time {
 	l := now.In(loc)
-	t := time.Date(l.Year(), l.Month(), l.Day(), m/60, m%60, 0, 0, loc)
+	at := func(day int) time.Time {
+		t := time.Date(l.Year(), l.Month(), day, m/60, m%60, 0, 0, loc)
+		if e := t.Add(-time.Hour); !e.Before(now) && e.In(loc).Hour() == t.Hour() && e.In(loc).Minute() == t.Minute() {
+			return e
+		}
+		return t
+	}
+	t := at(l.Day())
 	if t.Before(now) {
-		t = time.Date(l.Year(), l.Month(), l.Day()+1, m/60, m%60, 0, 0, loc)
+		t = at(l.Day() + 1)
 	}
 	return t
 }

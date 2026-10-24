@@ -266,7 +266,7 @@ func Start(ctx context.Context, cfg Config) (_ *Stand, err error) {
 	}
 	s.closeLater(stopFront)
 	model := evals.ModelConfig{Real: true, BaseURL: fu, Key: key, KeyFor: func(t string) string { return key + tenantKeyMark + t }}
-	skills, err := skillFolders(cfg.Root)
+	skills, err := evals.SkillFolders(cfg.Root)
 	if err != nil {
 		return nil, err
 	}
