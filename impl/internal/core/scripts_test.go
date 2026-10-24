@@ -153,6 +153,25 @@ func TestScriptAcceptance(t *testing.T) {
 	if names := toolNames(t, b.bench, h); !containsString(names, proposeScriptName) {
 		t.Fatalf("catalog %v", names)
 	}
+	// The description says what a step needs: its id, and each field with its schema.
+	l, err := b.c.P3ToolsList(context.Background(), h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, x := range l.Tools {
+		if m := x.(map[string]any); m["name"] == proposeScriptName {
+			if d, _ := m["description"].(string); !strings.Contains(d, "Every step has an id") || !strings.Contains(d, "at most 3 drafts") {
+				t.Fatalf("description %q", d)
+			}
+		}
+	}
+	if got := fieldsLine(map[string]any{"required": []any{"days"}, "properties": map[string]any{
+		"days": map[string]any{"type": "integer", "minimum": 3}, "note": map[string]any{"type": "string"}}}); got != `days (required) {"minimum":3,"type":"integer"}, note {"type":"string"}` {
+		t.Fatalf("fields %s", got)
+	}
+	if got := fieldsPart("Params", map[string]any{"type": "object", "additionalProperties": false, "properties": map[string]any{}}); got != " Params: none." {
+		t.Fatalf("no fields %q", got)
+	}
 	if r := proposeScriptCall(t, b.bench, h, map[string]any{"id": "pause", "kind": "wait", "for": "5m"}); r.State != "rejected" || r.reason() != "script_invalid" || r.Problems[0].Step != 1 {
 		t.Fatalf("a v0.2 step: %+v", r)
 	}
