@@ -19,7 +19,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/HunterEwok/botaru/impl/internal/p1client"
 	"github.com/HunterEwok/botaru/impl/internal/texts"
@@ -379,11 +378,30 @@ func (c *Channel) send(ctx context.Context, chatID int64, text string) (int64, e
 	return c.sendWith(ctx, chatID, text, nil)
 }
 
+// cutText cuts a text to the Telegram length, 4096 UTF-16 units, with an ellipsis at the end.
 func cutText(text string) string {
-	if r := []rune(text); len(r) > 4096 {
-		return string(r[:4095]) + "\u2026"
+	if units(text) <= 4096 {
+		return text
+	}
+	n := 0
+	for i, r := range text {
+		if n += units(string(r)); n > 4095 {
+			return text[:i] + "\u2026"
+		}
 	}
 	return text
+}
+
+// units counts the UTF-16 units of s, as Telegram measures a text.
+func units(s string) int {
+	n := 0
+	for _, r := range s {
+		n++
+		if r > 0xffff {
+			n++
+		}
+	}
+	return n
 }
 
 // outText is the text of a message with model text in it, a result, a digest or a card (whose
@@ -393,7 +411,7 @@ func cutText(text string) string {
 func (c *Channel) outText(text string) string {
 	for {
 		out := c.cutLinks(cutText(text))
-		if utf8.RuneCountInString(out) <= 4096 {
+		if units(out) <= 4096 {
 			return out
 		}
 		text = out

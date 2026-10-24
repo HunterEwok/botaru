@@ -146,6 +146,14 @@ func TestOutText(t *testing.T) {
 	if got := c.outText(long); len(opens(c, got)) > 0 || utf8.RuneCountInString(got) > 4096 {
 		t.Fatalf("the cut text opens %q", opens(c, got))
 	}
+	if got := c.outText(strings.Repeat("\U0001F600", 3000)); units(got) > 4096 {
+		t.Fatalf("%d UTF-16 units", units(got))
+	}
+	for _, in := range []string{"g\u0130thub.docs.example.org", "d\u0130cs.example.org/a"} {
+		if c := New(Config{LinkAllowlist: []string{"g\u0130thub.docs.example.org", "docs.example.org", "dics.example.org"}}); c.outText(in) == in {
+			t.Errorf("%q kept", in)
+		}
+	}
 	for _, in := range []string{"#news@evilchannel", "$ABC@evilchannel", "x\u0085@evil.example.com", "a\u0085b@-x.example.com"} {
 		if got := c.outText(in); len(opens(c, got)) > 0 || strings.Contains(got, "@") {
 			t.Errorf("%q: %q", in, got)

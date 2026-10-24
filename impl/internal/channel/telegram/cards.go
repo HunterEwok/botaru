@@ -264,7 +264,8 @@ func (c *Channel) press(ctx context.Context, q *callbackQuery) error {
 				}
 				lines = append(lines, c.cfg.Texts.Render("", "card.details.row", map[string]any{"field": k, "value": fmt.Sprint(v)}))
 			}
-			if _, err := c.send(ctx, q.Message.Chat.ID, strings.Join(lines, "\n")); err != nil {
+			// The fields carry the arguments a model proposed (INJ-11).
+			if _, err := c.send(ctx, q.Message.Chat.ID, c.outText(strings.Join(lines, "\n"))); err != nil {
 				c.log.Warn("sending card details failed", "err", err)
 			}
 			return nil

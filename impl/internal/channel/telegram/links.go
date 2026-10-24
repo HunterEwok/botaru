@@ -126,7 +126,7 @@ func (c *Channel) verdict(l link) int {
 		return cut
 	}
 	for _, a := range c.cfg.LinkAllowlist {
-		if l.host == strings.ToLower(a) {
+		if strings.EqualFold(l.host, a) && isASCII(l.host) {
 			return keep
 		}
 	}
@@ -159,6 +159,15 @@ func findMentions(s string) [][2]int {
 
 // isSeparator is Telegram's separator class: a C1 control is not one there, but cleanText turns
 // the controls into spaces.
+func isASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= 0x80 {
+			return false
+		}
+	}
+	return true
+}
+
 func isSeparator(r rune) bool { return unicode.In(r, unicode.Z) }
 
 func isURLRune(r rune) bool {
@@ -360,7 +369,14 @@ func checkLink(s string, l *link, domain string, pathFrom, end int) (int, bool) 
 			ipv4 = false
 		}
 	}
-	l.host = strings.ToLower(domain)
+	// Only ASCII letters fold: Go folds U+0130 to i, a browser does not, so a look-alike host
+	// must not match the allowlist.
+	l.host = strings.Map(func(r rune) rune {
+		if r >= 'A' && r <= 'Z' {
+			return r + 'a' - 'A'
+		}
+		return r
+	}, domain)
 	if ipv4 {
 		l.ipv4 = true
 		return n, true
