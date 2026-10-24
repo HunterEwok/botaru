@@ -163,7 +163,8 @@ func (s *Server) fail(w http.ResponseWriter, err error) {
 	// retry, so it is the caller's input, not a passing failure (DLV-5).
 	var pg *pgconn.PgError
 	if errors.As(err, &pg) && strings.HasPrefix(pg.Code, "22") {
-		s.log.Warn("the store refused a value", "code", pg.Code, "err", err)
+		// The message of the store can quote the value, so the log keeps only the code.
+		s.log.Warn("the store refused a value", "code", pg.Code)
 		Problem(w, &core.Problem{Reason: "input_schema_invalid", Detail: "the store refused a value (SQLSTATE " + pg.Code + ")"})
 		return
 	}

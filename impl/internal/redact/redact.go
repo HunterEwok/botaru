@@ -21,7 +21,10 @@ const (
 )
 
 // secretNames are the names whose value is a secret.
-const secretNames = `(?:password|passwd|pwd|pass|passphrase|secret|client_secret|secret_key|secret_access_key|token|access_token|refresh_token|auth_token|session_token|api[_\-]?key|apikey|private_key|credentials?)`
+const secretNames = `(?:password|passwd|passphrase|secret|client_secret|secret_key|secret_access_key|token|access_token|refresh_token|auth_token|session_token|api[_\-]?key|apikey|private_key)`
+
+// shortNames are secret names too common as parts of other words to take a prefix.
+const shortNames = `(?:pwd|pass)`
 
 var (
 	ipv4 = regexp.MustCompile(`\b(?:25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])(?:\.(?:25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])){3}\b`)
@@ -35,12 +38,14 @@ var (
 	authHeader = regexp.MustCompile(`(?i)\b((?:proxy-)?authorization)\s*:\s*[^\r\n]*`)
 	cookie     = regexp.MustCompile(`(?i)\b(set-cookie|cookie)\s*:\s*[^\r\n]*`)
 	// A secret name, alone or as the last part of a longer name (DB_PASSWORD, db.password,
-	// x-api-key), then = or : and the value: a quoted string whole, or a bare word.
-	keyValue = regexp.MustCompile(`(?i)(^|[^A-Za-z0-9])((?:[A-Za-z0-9]+[_.\-])*` + secretNames + `)(["']?\s*[=:]\s*)("(?:[^"\\\n]|\\.)*"|'[^'\n]*'|[^\s"'&,;]+)`)
+	// x-api-key), then =, :, => or := and the value: a quoted string whole (to the end of the
+	// line when the closing quote is missing, as in a cut log line), or a bare word.
+	keyValue = regexp.MustCompile(`(?i)(^|[^A-Za-z0-9_])((?:[A-Za-z0-9]+[_.\-])*` + secretNames + `|` + shortNames + `)(["']?\s*(?:=>|:=|[=:])\s*)("(?:[^"\\\n]|\\.)*"?|'[^'\n]*'?|[^\s"'&,;]+)`)
 	// An object key that names a secret, for Value.
-	secretKey = regexp.MustCompile(`(?i)^(?:[A-Za-z0-9]+[_.\-])*` + secretNames + `$`)
-	// A bearer token without its header, as in a command line or a log line.
-	bearer   = regexp.MustCompile(`(?i)\b(bearer)\s+[A-Za-z0-9._~+/\-]{16,}=*`)
+	secretKey = regexp.MustCompile(`(?i)^(?:(?:[A-Za-z0-9]+[_.\-])*` + secretNames + `|` + shortNames + `)$`)
+	// A bearer token without its header, as in a command line or a log line: 16 characters or
+	// more with a digit or a sign in them, so that "bearer" before a long word stays.
+	bearer   = regexp.MustCompile(`(?i)\b(bearer)[ \t]+([A-Za-z0-9._~+/\-]{16,}=*)`)
 	urlCreds = regexp.MustCompile(`(?i)\b([a-z][a-z0-9+.\-]*://)[^\s/:@]+:[^\s/@]+@`)
 	// Known token forms: Anthropic keys, this farm's own tokens and handles, cloud and chat
 	// tokens, bot tokens and JSON Web Tokens.
@@ -83,7 +88,13 @@ func Secrets(s string) string {
 	s = cookie.ReplaceAllString(s, "$1: [secret]")
 	s = urlCreds.ReplaceAllString(s, "$1[secret]@")
 	s = keyValue.ReplaceAllStringFunc(s, maskValue)
-	s = bearer.ReplaceAllString(s, "$1 [secret]")
+	s = bearer.ReplaceAllStringFunc(s, func(m string) string {
+		g := bearer.FindStringSubmatch(m)
+		if !strings.ContainsAny(g[2], "0123456789._~+/-=") {
+			return m
+		}
+		return g[1] + " [secret]"
+	})
 	s = tokens.ReplaceAllString(s, "[secret]")
 	return s
 }
@@ -92,11 +103,14 @@ func Secrets(s string) string {
 func maskValue(m string) string {
 	g := keyValue.FindStringSubmatch(m)
 	v := g[4]
-	q := ""
+	open, closed := "", ""
 	if v[0] == '"' || v[0] == '\'' {
-		q = v[:1]
+		open = v[:1]
+		if len(v) > 1 && v[len(v)-1] == v[0] {
+			closed = open
+		}
 	}
-	return g[1] + g[2] + g[3] + q + "[secret]" + q
+	return g[1] + g[2] + g[3] + open + "[secret]" + closed
 }
 
 // HasSecret says whether s still holds something Secrets would mask.

@@ -95,14 +95,21 @@ func (c *Core) manifestKinds() (map[string]kindInfo, error) {
 // Objects of the store that are not in the set stay and are reported as orphaned; they are
 // deleted only by the explicit delete list (MAN-6).
 func (c *Core) Apply(ctx context.Context, op Operator, req ApplyRequest) (*ApplyResult, error) {
-	if err := c.mayApply(op, req); err != nil {
-		return nil, err
+	// A plan changes nothing, so a tenant's operator plans any set, as the gate of a proposal
+	// does over the shared objects; it sees only the findings of its tenant and of every tenant.
+	if !req.DryRun {
+		if err := c.mayApply(op, req); err != nil {
+			return nil, err
+		}
 	}
 	// The lint reads the store before the transaction; an apply that lands in between makes
 	// this one start again, so that two applies never pass the lint on each other's old state.
 	for try := 0; ; try++ {
 		res, err := c.applyOnce(ctx, op, req)
 		if !errors.Is(err, errStoreChanged) {
+			if res != nil && op.Tenant != "farm" {
+				res.only(op.Tenant)
+			}
 			return res, err
 		}
 		if try == 4 {
@@ -138,11 +145,47 @@ func (c *Core) mayApply(op Operator, req ApplyRequest) error {
 		d := manifest.FromValue(v, fmt.Sprintf("manifests/%d", i))
 		md, _ := v["metadata"].(map[string]any)
 		tenant, _ := md["tenant"].(string)
-		if scope := kinds[d.Kind].scope; scope != "tenant" && (scope != "either" || tenant == "") || tenant != op.Tenant {
+		ki, known := kinds[d.Kind]
+		if !known {
+			// An unknown kind gets its own code from the lint (unknown_kind).
+			continue
+		}
+		if scope := ki.scope; scope != "tenant" && (scope != "either" || tenant == "") || tenant != op.Tenant {
 			return refuse("forbidden", "manifests/%d (%s %s) is not an object of tenant %s; its apply takes an operator of farm", i, d.Kind, d.Name, op.Tenant)
 		}
 	}
 	return nil
+}
+
+// only keeps the changes and findings of tenant t and of every tenant, so that an operator of
+// one tenant does not learn the object names of another.
+func (r *ApplyResult) only(t string) {
+	mine := func(kind, tenant, name string) bool {
+		if kind == "Tenant" {
+			return name == t
+		}
+		return tenant == "" || tenant == t
+	}
+	changes := r.Changes[:0]
+	for _, c := range r.Changes {
+		if mine(c.Kind, c.Tenant, c.Name) {
+			changes = append(changes, c)
+		}
+	}
+	r.Changes = changes
+	keep := func(es []ApplyError) []ApplyError {
+		out := es[:0]
+		for _, e := range es {
+			if mine(e.Kind, e.Tenant, e.Name) {
+				out = append(out, e)
+			}
+		}
+		return out
+	}
+	r.Errors = keep(r.Errors)
+	if r.Warnings != nil {
+		r.Warnings = keep(r.Warnings)
+	}
 }
 
 // errStoreChanged: another apply changed the store after this one read it for the lint.

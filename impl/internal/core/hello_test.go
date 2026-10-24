@@ -682,6 +682,26 @@ func TestApplyTenantWall(t *testing.T) {
 	if res, err := b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: commit, Manifests: ms, DryRun: true}); err != nil || len(res.Errors) > 0 {
 		t.Fatalf("farm: %+v %v", res, err)
 	}
+	// A plan changes nothing: the operator of a tenant plans the whole set, as the gate of a
+	// proposal does, and sees only the objects of its tenant and of every tenant.
+	res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: commit, Manifests: ms, DryRun: true})
+	if err != nil || len(res.Errors) > 0 || res.Applied {
+		t.Fatalf("a tenant's plan: %+v %v", res, err)
+	}
+	res, err = b.c.Apply(ctx, other, ApplyRequest{Commit: commit, Manifests: ms, DryRun: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ch := range res.Changes {
+		if ch.Tenant == "demo" || ch.Kind == "Tenant" && ch.Name != "demo2" {
+			t.Errorf("the plan of demo2 shows %+v", ch)
+		}
+	}
+	unknown := map[string]any{"apiVersion": "botaru/v1", "kind": "NoSuchKind", "metadata": map[string]any{"name": "x", "tenant": "demo"}}
+	res, err = b.c.Apply(ctx, b.op, ApplyRequest{Commit: commit, Manifests: []map[string]any{unknown}})
+	if _, forbidden := AsProblem(err); forbidden || err == nil && (res == nil || len(res.Errors) == 0) {
+		t.Errorf("an unknown kind: %+v %v", res, err)
+	}
 }
 
 // TestAINoticeDeadWithholds: model text that waited for a dead ai_notice ends withheld.

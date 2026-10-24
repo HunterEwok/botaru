@@ -36,6 +36,13 @@ func TestText(t *testing.T) {
 		{"a Bearer token is needed", "a Bearer token is needed"},
 		{"bypass=1 compass: north", "bypass=1 compass: north"},
 		{"password=a,token=b", "password=[secret],token=[secret]"},
+		{"password: \"abc def\nnext", "password: \"[secret]\nnext"},
+		{"'password' => 'hunter2'", "'password' => '[secret]'"},
+		{`password := "hunter2"`, `password := "[secret]"`},
+		{"the flag bearer responsibilities are many", "the flag bearer responsibilities are many"},
+		{"standard bearer\nInternationalization1", "standard bearer\nInternationalization1"},
+		{"first_pass=abc compass=x", "first_pass=abc compass=x"},
+		{"pwd=abc", "pwd=[secret]"},
 	} {
 		if got := Text(c.in, all); got != c.want {
 			t.Errorf("Text(%q) = %q, want %q", c.in, got, c.want)
