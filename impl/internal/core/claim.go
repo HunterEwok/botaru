@@ -639,6 +639,20 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 	if _, err := tx.Exec(ctx, `UPDATE tasks SET state = 'working', lease_no = $2, run_at = NULL, reason = NULL, updated_at = $3 WHERE id = $1`, id, leaseNo, now); err != nil {
 		return nil, err
 	}
+	// The attempt deadline of the type, or of the tenant's dispatch rule, is fixed at claim
+	// and never later than the task deadline; the stall loop ends the attempt when it passes
+	// (FEN-3, DSP-3).
+	var attemptUntil *time.Time
+	var disp manifest.TenantDispatch
+	if tv != nil {
+		disp = tv.Spec.Dispatch
+	}
+	if d, _ := attemptLimits(tt, disp, typ, rec); d > 0 {
+		if err := tx.QueryRow(ctx, `UPDATE leases SET attempt_until = least($3::timestamptz, (SELECT deadline_at FROM tasks WHERE id = $1))
+			WHERE work_id = $1 AND lease_no = $2 RETURNING attempt_until`, id, leaseNo, now.Add(d)).Scan(&attemptUntil); err != nil {
+			return nil, err
+		}
+	}
 	// The task record names the identity of its current attempt, or none; only the core writes
 	// it (IDN-8).
 	if acting.Bot != "" {
@@ -761,6 +775,11 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		return nil, err
 	}
 	payload["reply_locale"] = rl
+	// Implementation extension (MAN-3): the attempt deadline, so that the runtime makes its
+	// last model call in time instead of being cut off by the core.
+	if attemptUntil != nil {
+		payload["attempt_until"] = attemptUntil.UTC().Format(time.RFC3339)
+	}
 	// Implementation extension (MAN-3): the result schema, so that the runtime can ask the
 	// model for a matching answer. The instruction itself stays the trusted text from git.
 	// Beside it, full_result_schema is the schema complete checks the result against (OUT-1):

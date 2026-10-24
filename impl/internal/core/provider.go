@@ -281,6 +281,35 @@ func ruleMatches(r manifest.DispatchRule, typ, fairness string) bool {
 	return r.Match.Source == "" || strings.HasPrefix(fairness, r.Match.Source+":")
 }
 
+// attemptLimits are the attempt deadline (0: none) and the number of attempts of a task in its
+// tenant: the type's values, which the first dispatch rule that matches the task may change
+// (DSP-3). The apply lint keeps a rule's deadline within twice the type's and the task deadline,
+// and its attempts below the type's; the attempts here are lowered only, never raised.
+func attemptLimits(tt manifest.TaskType, d manifest.TenantDispatch, typ string, rec []byte) (time.Duration, int) {
+	attempt, _ := parseDuration(tt.Timeouts.Attempt)
+	maxAttempts := tt.Retry.MaxAttempts
+	if maxAttempts == 0 {
+		maxAttempts = 2
+	}
+	var r struct {
+		Fairness string `json:"fairness_key"`
+	}
+	_ = json.Unmarshal(rec, &r)
+	for _, rule := range d.Rules {
+		if !ruleMatches(rule, typ, r.Fairness) {
+			continue
+		}
+		if a, ok := parseDuration(rule.Timeouts.Attempt); ok {
+			attempt = a
+		}
+		if n := rule.Retry.MaxAttempts; n >= 1 && n < maxAttempts {
+			maxAttempts = n
+		}
+		break
+	}
+	return attempt, maxAttempts
+}
+
 // runningCeilingReached says whether a rule that matches the task already has max_running of
 // its tasks in working (DSP-7).
 func runningCeilingReached(ctx context.Context, tx pgx.Tx, tenant string, d manifest.TenantDispatch, typ string, rec []byte) (bool, error) {

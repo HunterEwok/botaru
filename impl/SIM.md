@@ -274,10 +274,9 @@ and the result schema in the system prompt). It plays a plain operator:
   and input, the `evolution` block included, and proposes what it finds; for it the evolution mode replaces the
   instruction of `ops.insight.v1` in the farm git with a load check (read the attempts, durations and outcomes of the
   investigations, and when the attempts last about as long as the deadline and tasks need more than one, hand in the
-  longer deadline as a manifest change), applied as a commit and restored when the mode ends. This build of the
-  core does not enforce attempt deadlines yet (it reads the start, lease, stall and task deadlines of a type), so the
-  change goes through the commission, the gate, the card, the apply and the revert, but its trial cannot move the
-  metric; the scenario reverts it itself;
+  longer deadline as a manifest change), applied as a commit and restored when the mode ends. The core applies the
+  rule's attempt deadline from the next claim on (DSP-3), so the change goes through the commission, the gate, the
+  card, the apply and the revert and acts on the attempts in between; the scenario reverts it itself;
 - a commission review passes the proposal with a score of 3 and a forecast that agrees with it;
 - the farm manager answers an incident with what it found and the operation it proposes.
 

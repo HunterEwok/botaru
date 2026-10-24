@@ -271,6 +271,14 @@ type DispatchRule struct {
 		Source     string `json:"source"`
 	} `json:"match"`
 	MaxRunning int `json:"max_running"`
+	// Timeouts and Retry set the attempt deadline and lower the number of attempts of the
+	// matched types in the tenant (DSP-3); the apply lint keeps them within the type's bounds.
+	Timeouts struct {
+		Attempt string `json:"attempt"`
+	} `json:"timeouts"`
+	Retry struct {
+		MaxAttempts int `json:"max_attempts"`
+	} `json:"retry"`
 }
 
 // TenantDispatcher holds the dispatcher settings the core reads (DSP-3, DSP-8).

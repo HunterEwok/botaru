@@ -33,6 +33,11 @@ Entries are grouped by area; within a group the newest entry comes first.
 
 ### Reference Implementation (impl/)
 
+- The attempt deadline is applied (FEN-3, DSP-3): `timeouts.attempt` of a task type and of the first tenant dispatch
+  rule that matches the task is fixed at claim (migration `0082_attempt_deadline`, `leases.attempt_until`, never
+  later than the task deadline) and handed to the runtime as `attempt_until`; the stall loop ends an attempt past it
+  with `attempt_timeout`, which spends it. A dispatch rule's `retry.max_attempts` lowers the attempts of its types.
+  Before, the parser dropped both fields of a rule, so an accepted improvement of them changed nothing.
 - Fixes from the integrity review of the core: the agent gives the model the attachments of the task beside the goal,
   so a follow-up, a continuation and a campaign step see the outcome of the earlier task (CNT-5); the agent writes
   the answer in the `reply_locale` of the work item (DLV-18); it asks for 16000 output tokens by default, which P4
