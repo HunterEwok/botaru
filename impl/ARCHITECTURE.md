@@ -736,6 +736,28 @@ press answers `card.answer.held`. A pause starts with the hold, or with the appr
 moves by the union of the hold intervals since then, with at most 7 days of pause in total; after that the approval
 expires. A `bot_group` hold matches the bot groups of the worker of the asking attempt as they stand now.
 
+### Links in Telegram
+
+The Telegram driver cuts the links of a message with model text in it (a result, a digest, a card, whose arguments a
+model proposed) by the rules Telegram itself uses to mark links in a sent text (INJ-11), so what a client can open is
+what the driver sees; a code text alone goes as the catalog has it. The text is cut to the Telegram length first, so
+a cut word cannot become a link after the check. The driver cleans the text as Telegram does (drops `\r`, U+2028 to
+U+202E and three combining lines, turns other control characters but `\n`, the C1 ones as well, into spaces) and
+sends the cleaned text. A host is found around each dot with its port, path, user part before an `@` and scheme (read back over
+letters, so `xhttps://` is still `https://`); it is a link on any top-level domain with a scheme or a user part, on a
+domain of the IANA root zone, Telegram's own list (`ton`, `onion`) or any `xn--` one without, and as an IPv4 address.
+A mention (`@name`) is found as well, also after a word character, as in `#tag@channel`. Any word with `://` and the schemes a client opens without it (`tg:`, `mailto:`,
+`tel:`, `javascript:` and others) count whatever their host.
+
+- An `http(s)` link or a bare host of `link_allowlist` stays.
+- A link with another scheme or with a user part (an address, or a host hidden behind one) becomes `[link removed]`.
+- Every other link and mention is defanged: its dots become U+2024 and its `@` U+FF20, so `deploy.sh`, `192.0.2.5`
+  or `obj.info()` read the same and open nothing.
+
+Links that overlap go as one. A pass can join what is left into a new link, so passes repeat until the text no longer
+changes. One top-level domain is missing from the list as a word of the project's forbidden list; a bare host on it
+keeps its link.
+
 ### Cards in Telegram
 
 A card is a message with an inline keyboard whose `callback_data` is a short code, the subject and the nonce; "Approve",

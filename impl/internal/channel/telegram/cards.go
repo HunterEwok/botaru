@@ -16,7 +16,8 @@ import (
 )
 
 // card is the card schema as far as this driver draws it (APR-3): every line comes from a code
-// text of the catalog and a field of the record; there is no model text on a card.
+// text of the catalog and a field of the record. The arguments of an action are a model's
+// proposal, so outText cuts their links as in any text (INJ-11).
 type card struct {
 	Card             string         `json:"card"`
 	SubjectKind      string         `json:"subject_kind"`
@@ -263,7 +264,8 @@ func (c *Channel) press(ctx context.Context, q *callbackQuery) error {
 				}
 				lines = append(lines, c.cfg.Texts.Render("", "card.details.row", map[string]any{"field": k, "value": fmt.Sprint(v)}))
 			}
-			if _, err := c.send(ctx, q.Message.Chat.ID, strings.Join(lines, "\n")); err != nil {
+			// The fields carry the arguments a model proposed (INJ-11).
+			if _, err := c.send(ctx, q.Message.Chat.ID, c.outText(strings.Join(lines, "\n"))); err != nil {
 				c.log.Warn("sending card details failed", "err", err)
 			}
 			return nil

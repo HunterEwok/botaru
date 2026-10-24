@@ -16,7 +16,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -379,11 +378,44 @@ func (c *Channel) send(ctx context.Context, chatID int64, text string) (int64, e
 	return c.sendWith(ctx, chatID, text, nil)
 }
 
+// cutText cuts a text to the Telegram length, 4096 UTF-16 units, with an ellipsis at the end.
 func cutText(text string) string {
-	if r := []rune(text); len(r) > 4096 {
-		return string(r[:4095]) + "…"
+	if units(text) <= 4096 {
+		return text
+	}
+	n := 0
+	for i, r := range text {
+		if n += units(string(r)); n > 4095 {
+			return text[:i] + "\u2026"
+		}
 	}
 	return text
+}
+
+// units counts the UTF-16 units of s, as Telegram measures a text.
+func units(s string) int {
+	n := 0
+	for _, r := range s {
+		n++
+		if r > 0xffff {
+			n++
+		}
+	}
+	return n
+}
+
+// outText is the text of a message with model text in it, a result, a digest or a card (whose
+// arguments a model proposed): cut to the Telegram length and without links outside the
+// allowlist (INJ-11). The cut comes first, so a cut word cannot turn into a link after the
+// check. Code texts alone go as the catalog has them.
+func (c *Channel) outText(text string) string {
+	for {
+		out := c.cutLinks(cutText(text))
+		if units(out) <= 4096 {
+			return out
+		}
+		text = out
+	}
 }
 
 // sendWith sends a message, with the inline keyboard of a card when markup is set.
@@ -503,13 +535,14 @@ func (c *Channel) fail(ctx context.Context, lease, reason string, retryable bool
 }
 
 // render builds the message text. Model text (form result) gets the visible provenance line
-// and loses links outside the tenant's list (INJ-11); code texts come from the catalog.
+// and, with digests and cards, loses links outside the tenant's list (outText); code texts come
+// from the catalog.
 func (c *Channel) render(p deliveryPayload) (string, bool) {
 	b := p.Delivery.Body
 	switch b.Form {
 	case "result":
 		label := c.cfg.Texts.Render(p.Locale, "provenance.model", nil)
-		return label + "\n" + c.cutLinks(b.Text), true
+		return c.outText(label + "\n" + b.Text), true
 	case "text_code":
 		if b.TextKey == "" {
 			return "", false
@@ -519,7 +552,7 @@ func (c *Channel) render(p deliveryPayload) (string, bool) {
 		if b.Card == nil {
 			return "", false
 		}
-		return c.renderCard(p.Locale, b.Card), true
+		return c.outText(c.renderCard(p.Locale, b.Card)), true
 	case "digest":
 		return c.renderDigest(p.Locale, b.Window, b.Rows, b.Hidden, b.Text, b.Sources, b.Labeled), true
 	}
@@ -558,30 +591,9 @@ func (c *Channel) renderDigest(locale, window string, rows []digestRow, hidden i
 		if labeled {
 			lines = append(lines, c.cfg.Texts.Render(locale, "digest.labeled", nil))
 		}
-		lines = append(lines, label, c.cutLinks(text))
+		lines = append(lines, label, text)
 	}
-	return strings.Join(lines, "\n")
-}
-
-var linkRE = regexp.MustCompile(`(?i)\b(?:https?://|www\.)[^\s<>()]+`)
-
-func (c *Channel) cutLinks(s string) string {
-	return linkRE.ReplaceAllStringFunc(s, func(link string) string {
-		u := link
-		if !strings.Contains(strings.ToLower(u), "://") {
-			u = "http://" + u
-		}
-		parsed, err := url.Parse(u)
-		if err == nil {
-			host := strings.ToLower(parsed.Hostname())
-			for _, a := range c.cfg.LinkAllowlist {
-				if host == strings.ToLower(a) {
-					return link
-				}
-			}
-		}
-		return "[link removed]"
-	})
+	return c.outText(strings.Join(lines, "\n"))
 }
 
 func sleep(ctx context.Context, d time.Duration) {
