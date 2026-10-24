@@ -33,6 +33,11 @@ Entries are grouped by area; within a group the newest entry comes first.
 
 ### Reference Implementation (impl/)
 
+- A store outage while the core runs no longer spends the attempts of the running tasks: leaving `not_ready`, the
+  core extends the leases that ran out before any loop ticks, as at a start (FEN-5). The reaper, deadline and stall
+  loops tick in a goroutine of their own; a row they keep failing on is logged and skipped for a minute instead of
+  stopping every lease and deadline behind it, and the loop leaves its tick unmarked while the row is skipped, so
+  health reports it. The observe loop no longer rewrites closed rollups whose value did not change.
 - The attempt deadline is applied (FEN-3, DSP-3): `timeouts.attempt` of a task type and of the first tenant dispatch
   rule that matches the task is fixed at claim (migration `0082_attempt_deadline`, `leases.attempt_until`, never
   later than the task deadline) and handed to the runtime as `attempt_until`; the stall loop ends an attempt past it

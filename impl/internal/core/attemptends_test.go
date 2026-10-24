@@ -90,3 +90,88 @@ func TestReaperReleasesGrant(t *testing.T) {
 		t.Fatalf("lease %s grant %s", lease, grant)
 	}
 }
+
+// A store outage while the core runs does not spend the attempts of the running tasks: on the
+// way out of not_ready the leases that ran out are extended before the reaper runs (FEN-5).
+func TestStoreOutageKeepsAttempts(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	b := newBench(t)
+	task := b.hello(t, "1")
+	att := b.claim(t, b.agent, "attempt")
+	if att == nil || att.WorkID != task {
+		t.Fatalf("attempt %+v", att)
+	}
+	// The outage: the lease ran out while the store did not answer.
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE leases SET lease_until = now() - interval '2 minutes' WHERE work_id = $1 AND state = 'active'`, task); err != nil {
+		t.Fatal(err)
+	}
+	b.c.storeDown.Store(true)
+	// The fast loops wait while the store is down.
+	if err := b.c.tickFast(ctx); err != nil {
+		t.Fatal(err)
+	}
+	// The way out extends the leases, then runs every loop, the reaper included, and is ready.
+	b.c.leaveStoreDown(ctx)
+	if b.c.storeDown.Load() {
+		t.Fatal("the store answers and the loops ticked, yet the core stays not_ready")
+	}
+	var lease, reason string
+	var spent int
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT l.state, coalesce(l.reason, ''), t.attempts_spent FROM leases l JOIN tasks t ON t.id = l.work_id
+		WHERE l.work_id = $1 AND l.lease_no = $2`, task, att.LeaseNo).Scan(&lease, &reason, &spent); err != nil {
+		t.Fatal(err)
+	}
+	if lease != "active" || reason != "core_unavailable" || spent != 0 {
+		t.Fatalf("lease %s(%s), spent %d", lease, reason, spent)
+	}
+}
+
+// A drain loop skips a row it failed on for skipFor, and only that loop does.
+func TestSkipList(t *testing.T) {
+	var s skipList
+	now := time.Now()
+	s.add("reaper", "t1", now.Add(time.Minute))
+	if ids := s.ids("reaper", now); len(ids) != 1 || ids[0] != "t1" {
+		t.Fatalf("reaper skips %v", ids)
+	}
+	if ids := s.ids("deadline", now); len(ids) != 0 {
+		t.Fatalf("deadline skips %v", ids)
+	}
+	if ids := s.ids("reaper", now.Add(2*time.Minute)); len(ids) != 0 {
+		t.Fatalf("after the skip time %v", ids)
+	}
+}
+
+// A row the reaper keeps failing on while the store answers is skipped: the other leases are
+// still reaped, and the loop leaves its tick unmarked while the row stays skipped (OBS-9).
+func TestReaperSkipsPoisonRow(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	b := newBench(t)
+	bad := b.hello(t, "1")
+	if att := b.claim(t, b.agent, "attempt"); att == nil || att.WorkID != bad {
+		t.Fatalf("attempt %+v", att)
+	}
+	good := b.hello(t, "2")
+	w2 := b.enroll(t, EnrollRequest{Tenant: "demo", Role: "hello", Kind: "agent"})
+	if att := b.claim(t, w2, "attempt"); att == nil || att.WorkID != good {
+		t.Fatalf("second attempt %+v", att)
+	}
+	// The bad lease ran out first, so the reaper meets it first.
+	b.exec(t, `UPDATE leases SET lease_until = now() - interval '3 minutes' WHERE work_id = $1 AND state = 'active'`, bad)
+	b.exec(t, `UPDATE leases SET lease_until = now() - interval '2 minutes' WHERE work_id = $1 AND state = 'active'`, good)
+	b.exec(t, `CREATE FUNCTION poison_lease() RETURNS trigger LANGUAGE plpgsql AS $$
+		BEGIN IF NEW.work_id = '`+bad+`' THEN RAISE EXCEPTION 'poison row'; END IF; RETURN NEW; END $$`)
+	b.exec(t, `CREATE TRIGGER poison_lease BEFORE UPDATE ON leases FOR EACH ROW EXECUTE FUNCTION poison_lease()`)
+	if err := b.c.reap(ctx); err == nil {
+		t.Fatal("a pass that skipped a row marks its tick")
+	}
+	var state string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT state FROM leases WHERE work_id = $1 ORDER BY lease_no DESC LIMIT 1`, good).Scan(&state); err != nil || state == "active" {
+		t.Fatalf("the lease behind the poison row is %s %v", state, err)
+	}
+	if err := b.c.reap(ctx); err == nil {
+		t.Fatal("the next pass marks its tick while the row stays skipped")
+	}
+}

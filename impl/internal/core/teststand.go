@@ -204,6 +204,10 @@ func (c *Core) TestStoreFault(ctx context.Context, req StoreFaultRequest) (*Test
 		c.bench.lowSpace.Store(0)
 		c.measureCapacity()
 		if c.storeDown.Load() {
+			// As Run leaves the mode: the leases of the outage are extended first (FEN-5).
+			if err := c.endLeasesOfDowntime(ctx); err != nil {
+				return nil, err
+			}
 			if err := c.Tick(ctx); err != nil {
 				return nil, err
 			}

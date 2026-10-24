@@ -157,6 +157,20 @@ only the core determines (`core_unavailable`, `lease_expired`, `worker_drain`, `
 `deadline_exceeded`, `attempts_exhausted`, `runs_exhausted`), so a holder cannot requeue a delivery forever or pass
 `retry.max_runs`.
 
+The downtime extension runs at a start, before the ports serve, and again every time the running core leaves
+`not_ready` after the store stopped answering: the way out holds the fast loops, extends the leases, then runs a pass of
+every loop in `loopOrder` and only then clears `not_ready`, so the reaper never ends a lease that ran out during the
+outage as `lease_expired` (FEN-5) and every loop has ticked again (OBS-8). A pass of the other loops that began before
+the outage never clears `not_ready` itself.
+
+Run ticks the loops once a second in two goroutines: `reaper`, `deadline` and `stall` in one, the others in
+`loopOrder` in the other, so a slow pass of an analytic loop does not hold up leases and deadlines (`Tick` and
+`loop.tick` of a test bench still run all of them in `loopOrder`). When one row keeps failing in `reaper`, `deadline`
+or `stall` while the store answers, the loop logs the error, skips that row for a minute and goes on with the rows
+behind it; the loop marks no tick while a row stays on its skip list, so `alarm.health.loop_tick` reports it (OBS-4,
+OBS-9). A lost connection, a serialization failure or a deadlock is the store's, not the row's: it ends the pass
+without a skip.
+
 ### Core keys
 
 The keys of the core's own tasks start with `system:` like every core key (IDM-2). The farm manager's tasks use
