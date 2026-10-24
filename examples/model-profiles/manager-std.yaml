@@ -13,7 +13,7 @@ spec:
   max_output_tokens: 8000
   forced_schema: true
   tokens_per_s: 60
-  price: {input: 4.00, output: 16.00, checked: 2026-10-01}
+  price: {input: 4.00, output: 16.00, cache_write: 5.00, cache_read: 0.40, checked: 2026-10-01}
   provider_retention_days: {value: 30, checked: 2026-10-01}
   requires_retention: false
   provider_training: {value: false, checked: 2026-10-01}

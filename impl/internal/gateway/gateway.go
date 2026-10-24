@@ -17,6 +17,7 @@ import (
 	"math"
 	"net"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -401,6 +402,13 @@ func (g *Gateway) providerBody(req map[string]any, grant *core.ModelGrant) (map[
 			return nil, 0, &core.Problem{Reason: "input_schema_invalid", Detail: "thinking.budget_tokens is not below max_tokens"}
 		}
 	}
+	// Effort: the profile's, as the output limit is the profile's (GW-7).
+	if p.Effort != "" {
+		// A copy: the request body serves every fallback call, so it is never changed in place.
+		oc := shallow(out["output_config"])
+		oc["effort"] = p.Effort
+		out["output_config"] = oc
+	}
 	// Region: only P4 sets it, from the tenant's subprocessor record (GW-14).
 	switch region := grant.Subprocessor.Region; region {
 	case "us", "global":
@@ -410,26 +418,65 @@ func (g *Gateway) providerBody(req map[string]any, grant *core.ModelGrant) (map[
 			return nil, 0, &core.Problem{Reason: "provider_config", Detail: "the subprocessor region is not in the binding's table"}
 		}
 	}
-	// Cache: a paid cache only; P4 sets the point on the last system block (GW-16, BUD-9).
+	// Cache: a paid cache only; P4 sets the point on the last system block and, from the
+	// second call of a run on, on the last block of the last message, so the next call reads
+	// the conversation so far from the cache (GW-16, BUD-9).
 	points := countCache(out)
 	cached := p.Price.CacheWrite != nil && p.Price.CacheRead != nil
 	if !cached && points > 0 {
 		return nil, 0, &core.Problem{Reason: "input_schema_invalid", Detail: "the profile has no cache prices"}
 	}
 	if cached {
+		// The points go on copies of the blocks they change: the request body serves every
+		// fallback call, whose profile may have no cache prices.
 		if sys := systemBlocks(out["system"]); len(sys) > 0 {
-			last := sys[len(sys)-1].(map[string]any)
-			if _, has := last["cache_control"]; !has {
-				last["cache_control"] = map[string]any{"type": "ephemeral"}
-				points++
+			if last, ok := sys[len(sys)-1].(map[string]any); ok {
+				if _, has := last["cache_control"]; !has {
+					sys = slices.Clone(sys)
+					last = shallow(last)
+					last["cache_control"] = map[string]any{"type": "ephemeral"}
+					sys[len(sys)-1] = last
+					points++
+				}
 			}
 			out["system"] = sys
+		}
+		if msgs, _ := out["messages"].([]any); len(msgs) > 1 && points < 4 {
+			if m, ok := msgs[len(msgs)-1].(map[string]any); ok {
+				blocks := contentBlocks(m["content"])
+				if n := len(blocks); n > 0 {
+					if last, ok := blocks[n-1].(map[string]any); ok && cacheable(last) {
+						if _, has := last["cache_control"]; !has {
+							blocks = slices.Clone(blocks)
+							last = shallow(last)
+							last["cache_control"] = map[string]any{"type": "ephemeral"}
+							blocks[n-1] = last
+							m = shallow(m)
+							m["content"] = blocks
+							msgs = slices.Clone(msgs)
+							msgs[len(msgs)-1] = m
+							out["messages"] = msgs
+							points++
+						}
+					}
+				}
+			}
 		}
 		if points > 4 {
 			return nil, 0, &core.Problem{Reason: "input_schema_invalid", Detail: "more than four cache points"}
 		}
 	}
 	return out, maxTokens, nil
+}
+
+// shallow is a one-level copy of a JSON object; anything else gives an empty object.
+func shallow(v any) map[string]any {
+	m, _ := v.(map[string]any)
+	out := make(map[string]any, len(m))
+	for k, x := range m {
+		out[k] = x
+	}
+	return out
 }
 
 func systemBlocks(v any) []any {
@@ -443,6 +490,29 @@ func systemBlocks(v any) []any {
 		return s
 	}
 	return nil
+}
+
+// contentBlocks is the content of a message as blocks: a string becomes one text block.
+func contentBlocks(v any) []any {
+	switch c := v.(type) {
+	case string:
+		if c == "" {
+			return nil
+		}
+		return []any{map[string]any{"type": "text", "text": c}}
+	case []any:
+		return c
+	}
+	return nil
+}
+
+// cacheable says whether a message block may carry a cache point: reasoning blocks may not.
+func cacheable(b map[string]any) bool {
+	switch b["type"] {
+	case "thinking", "redacted_thinking":
+		return false
+	}
+	return true
 }
 
 func countCache(v any) int {
@@ -548,36 +618,40 @@ type Usage struct {
 }
 
 // Cost is the price of a call in micro-euros: tokens times the profile price per million
-// tokens, summed over the lines, a fraction of a micro-euro rounded up (BUD-9).
+// tokens, summed over the lines, a fraction of a micro-euro rounded up (BUD-9). Each compaction
+// iteration is a request of its own and takes the price tier of its own input (BUD-17).
 func Cost(price manifest.Price, u Usage) (int64, *core.Tokens) {
-	t := &core.Tokens{Input: u.InputTokens, Output: u.OutputTokens, CacheWrite: u.CacheCreationInputTokens, CacheRead: u.CacheReadInputTokens}
+	lines := []core.Tokens{{Input: u.InputTokens, Output: u.OutputTokens, CacheWrite: u.CacheCreationInputTokens, CacheRead: u.CacheReadInputTokens}}
 	if len(u.Iterations) > 0 {
-		t = &core.Tokens{}
+		lines = lines[:0]
 		for _, it := range u.Iterations {
-			t.Input += it.InputTokens
-			t.Output += it.OutputTokens
-			t.CacheWrite += it.CacheCreationInputTokens
-			t.CacheRead += it.CacheReadInputTokens
+			lines = append(lines, core.Tokens{Input: it.InputTokens, Output: it.OutputTokens, CacheWrite: it.CacheCreationInputTokens, CacheRead: it.CacheReadInputTokens})
 		}
 	}
-	sum := float64(t.Input)*price.Input + float64(t.Output)*price.Output
-	if price.CacheWrite != nil {
-		sum += float64(t.CacheWrite) * *price.CacheWrite
-	}
-	if price.CacheRead != nil {
-		sum += float64(t.CacheRead) * *price.CacheRead
+	t := &core.Tokens{}
+	var sum float64
+	for _, l := range lines {
+		t.Input += l.Input
+		t.Output += l.Output
+		t.CacheWrite += l.CacheWrite
+		t.CacheRead += l.CacheRead
+		pr := price.Tier(l.Input + l.CacheWrite + l.CacheRead)
+		sum += float64(l.Input)*pr.Input + float64(l.Output)*pr.Output
+		if pr.CacheWrite != nil {
+			sum += float64(l.CacheWrite) * *pr.CacheWrite
+		}
+		if pr.CacheRead != nil {
+			sum += float64(l.CacheRead) * *pr.CacheRead
+		}
 	}
 	return int64(math.Ceil(sum - 1e-9)), t
 }
 
 // Reserve is the worst case of a call: the input estimated from above by the request bytes
-// plus 1024 tokens, at the higher of the input and cache write prices, and the output limit at
-// the output price (GW-2).
+// plus 1024 tokens, at the higher of the input and cache write prices of the price tier of that
+// input, and the output limit at the tier's output price (GW-2).
 func Reserve(p manifest.ModelProfile, bodyBytes, maxTokens int) int64 {
-	in := p.Price.Input
-	if p.Price.CacheWrite != nil && *p.Price.CacheWrite > in {
-		in = *p.Price.CacheWrite
-	}
-	sum := float64(bodyBytes+1024)*in + float64(maxTokens)*p.Price.Output
+	tier := p.Price.Tier(int64(bodyBytes + 1024))
+	sum := float64(bodyBytes+1024)*tier.InputCeiling() + float64(maxTokens)*tier.Output
 	return int64(math.Ceil(sum))
 }
