@@ -48,8 +48,8 @@ var FarmFaults = []FarmFault{
 	{"F-2", false, "the next plugin process the toolhosts start is killed (SIGKILL) while its tool call is in flight",
 		"that tool call fails and the bot sees a tool error; the attempt goes on or is retried; the next call starts a new process"},
 	{"F-3", false, fmt.Sprintf("the provider answers 500, 529 or 429 to the next %d model calls and then to %.0f%% of them for %s", providerErrFirst, providerErrShare*100, providerFaultFor),
-		"the gateway maps 500 and 529 to provider_unavailable and 429 to provider_rate_limited; the agent ends the attempt at the failed call " +
-			"without spending it, the task waits for the provider (provider_quota) and starts the attempt over from its first call; " +
+		"the gateway maps 500 and 529 to provider_unavailable and 429 to provider_rate_limited; after a 429 the agent waits the time P4 names, " +
+			"at most twice, and sends the same call again (GW-20), then ends the attempt at the failed call without spending it, the task waits for the provider (provider_quota) and starts the attempt over from its first call; " +
 			"an attempt in which the model had answered before the failure counts a run, so a task of several calls may end " +
 			"runs_exhausted (retry.max_runs) while the fault lasts; work after the fault completes"},
 	{"F-4", false, "the provider waits " + providerDelay.String() + " before every model call for " + providerFaultFor.String(),
