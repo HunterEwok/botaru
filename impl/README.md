@@ -210,8 +210,9 @@ Core, ports and people:
 - The line "improvement cycle disabled" in the `apply` lint (INS-6): `doctor` and the digest show it.
 - A task type's own `timeouts.heartbeat`: workers get one heartbeat interval at hello (20 s by default), whatever
   the type sets.
-- Sessions in `botaru-agent`: the core issues the session handle, but the agent neither loads nor appends the session
-  (MEM-1), and after a provider failure the next attempt starts again from the first model call.
+- Resuming a run in `botaru-agent`: after a provider failure the next run starts again from the first model call,
+  since the runtime does not retry a P4 error (GW-12) and keeps nothing of a run outside the core (RT-1). The
+  session of a chat holds only the goal and the answer of each task, not the turns of a run.
 
 Monitoring:
 

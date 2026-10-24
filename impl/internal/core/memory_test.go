@@ -723,3 +723,49 @@ func TestPersonMemoryVersionSource(t *testing.T) {
 		t.Fatalf("MEM-2: spec/VERSION %s and the core claim %s differ", raw, spec.Version)
 	}
 }
+
+// MEM-11: session.load leaves out what an attempt appended that ended without an accepted
+// result, keeps what an attempt appended while it runs and once its result was accepted, and
+// last gives the latest entries, oldest first.
+func TestSessionLeavesOutFailedAttempts(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	b, _ := newMemoryBench(t)
+	b.hello(t, "1")
+	att := b.claim(t, b.agent, "attempt")
+	sh := att.Payload["handles"].(map[string]any)["session"].(string)
+	if _, err := b.c.SessionAppend(ctx, sh, SessionAppendRequest{Entries: []SessionEntry{{UUID: "00000000-0000-4000-8000-00000000000a", Content: "refused"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if r, err := b.c.SessionLoad(ctx, sh, SessionLoadRequest{Last: 10}); err != nil || len(r.Entries) != 1 {
+		t.Fatalf("the running attempt does not see its entry: %+v %v", r, err)
+	}
+	if _, err := b.c.Fail(ctx, b.agent, header(t, att), FailRequest{Reason: "runtime_error", Retryable: true}); err != nil {
+		t.Fatal(err)
+	}
+	b.advance(t, 600)
+	att2 := b.claim(t, b.agent, "attempt")
+	sh2 := att2.Payload["handles"].(map[string]any)["session"].(string)
+	if r, err := b.c.SessionLoad(ctx, sh2, SessionLoadRequest{Last: 10}); err != nil || len(r.Entries) != 0 {
+		t.Fatalf("MEM-11: the entry of a failed attempt is loaded: %+v %v", r, err)
+	}
+	var uuids []string
+	for i := range 3 {
+		uuids = append(uuids, fmt.Sprintf("00000000-0000-4000-8000-00000000001%d", i))
+	}
+	for _, u := range uuids {
+		if _, err := b.c.SessionAppend(ctx, sh2, SessionAppendRequest{Entries: []SessionEntry{{UUID: u, Content: u}}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := b.c.SessionLoad(ctx, sh2, SessionLoadRequest{Last: 2, Limit: 5}); err == nil {
+		t.Fatal("MEM-11: last with limit passed")
+	}
+	b.finish(t, att2)
+	b.hello(t, "2")
+	att3 := b.claim(t, b.agent, "attempt")
+	r, err := b.c.SessionLoad(ctx, att3.Payload["handles"].(map[string]any)["session"].(string), SessionLoadRequest{Last: 2})
+	if err != nil || len(r.Entries) != 2 || r.Entries[0].UUID != uuids[1] || r.Entries[1].UUID != uuids[2] {
+		t.Fatalf("MEM-11: last %+v %v", r, err)
+	}
+}

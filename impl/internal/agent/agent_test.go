@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/HunterEwok/botaru/impl/internal/p1client"
+	"github.com/HunterEwok/botaru/impl/internal/spec"
 	"github.com/anthropics/anthropic-sdk-go"
 )
 
@@ -164,6 +165,8 @@ type fakeCore struct {
 	fails     []map[string]any
 	completes []map[string]any
 	claimed   bool
+	session   bool     // the attempt has a session handle and an earlier attempt
+	appends   []string // the bearer and body of each session.append, and "complete" in turn
 }
 
 func (f *fakeCore) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -182,17 +185,43 @@ func (f *fakeCore) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if f.tools {
 			handles["tools"] = "th_x"
 		}
-		payload, _ := json.Marshal(map[string]any{
+		pl := map[string]any{
 			"task":        map[string]any{"id": "t1", "type": "ops.investigate.v1", "body": map[string]any{"goal": "Why is the site down?"}},
 			"instruction": "Find the cause.", "handles": handles, "reply_locale": "et",
 			"result_schema":      map[string]any{"type": "object"},
 			"full_result_schema": investigateSchema,
-		})
+		}
+		if f.session {
+			handles["session"] = "bh_s"
+			pl["previous_attempts"] = []any{map[string]any{"reason": "output_schema_invalid", "detail": "/verdict: value must be one of"}}
+		}
+		payload, _ := json.Marshal(pl)
 		_ = json.NewEncoder(w).Encode(map[string]any{"work": map[string]any{"work_id": "t1", "kind": "attempt", "lease_no": 1, "tenant": "demo",
 			"token": map[string]any{"l": 1}, "payload": json.RawMessage(payload)}})
+	case "/v1/p1/session.load":
+		// The real P1 server checks the body against the request schema first.
+		if err := p1Valid("p1-session-load-request", body); err != nil {
+			http.Error(w, `{"error":{"reason":"input_schema_invalid"}}`, http.StatusBadRequest)
+			f.appends = append(f.appends, "invalid load: "+err.Error())
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"entries": []any{
+			map[string]any{"uuid": "00000000-0000-0000-0000-000000000001", "content": map[string]any{"role": "user", "text": "Is web1 up?", "task": "t0"}},
+			map[string]any{"uuid": "00000000-0000-0000-0000-000000000002", "content": map[string]any{"role": "assistant", "text": "first answer", "task": "t0"}},
+			map[string]any{"uuid": "00000000-0000-0000-0000-000000000003", "content": map[string]any{"role": "assistant", "text": "web1 is up", "task": "t0"}},
+			map[string]any{"uuid": "00000000-0000-0000-0000-000000000004", "content": "an entry of another runtime"},
+		}, "untrusted_seen": false})
+	case "/v1/p1/session.append":
+		if err := p1Valid("p1-session-append-request", body); err != nil {
+			http.Error(w, `{"error":{"reason":"input_schema_invalid"}}`, http.StatusBadRequest)
+			return
+		}
+		f.appends = append(f.appends, r.Header.Get("Authorization")+" "+string(body))
+		_, _ = w.Write([]byte(`{"appended":2,"existing":0}`))
 	case "/v1/p1/heartbeat":
 		_, _ = w.Write([]byte(`{}`))
 	case "/v1/p1/complete":
+		f.appends = append(f.appends, "complete")
 		var req map[string]any
 		_ = json.Unmarshal(body, &req)
 		f.completes = append(f.completes, req)
@@ -509,4 +538,71 @@ func TestNearDeadline(t *testing.T) {
 	if nearDeadline("2026-10-24T12:01:00Z", now.Add(-time.Minute), now) || !nearDeadline("2026-10-24T12:00:10Z", now.Add(-110*time.Second), now) {
 		t.Error("nearDeadline of a short attempt")
 	}
+}
+
+// The agent reads the chat's session before the first call and appends the goal and the answer
+// before complete; the model sees the conversation, with the last answer of a task only, and
+// how the earlier attempt ended, inside the data block (MEM-1).
+func TestAgentSession(t *testing.T) {
+	f := &fakeCore{session: true, answers: []string{`{"answer":"nginx is down","verdict":"cause_found"}`}}
+	srv := httptest.NewServer(f)
+	defer srv.Close()
+	a := New(Config{Core: &p1client.Client{BaseURL: srv.URL, Token: "w"}})
+	if worked, err := a.Once(context.Background(), 0); err != nil || !worked {
+		t.Fatalf("once: %v %v", worked, err)
+	}
+	if len(f.model) != 1 || len(f.completes) != 1 {
+		t.Fatalf("%d model calls, %d completes", len(f.model), len(f.completes))
+	}
+	first := string(f.model[0])
+	for _, want := range []string{`Is web1 up?`, `web1 is up`, `output_schema_invalid`, `/verdict`} {
+		if !strings.Contains(first, want) {
+			t.Errorf("the first call does not hold %q", want)
+		}
+	}
+	if strings.Contains(first, "first answer") || strings.Contains(first, "another runtime") {
+		t.Error("an older answer of the same task or a foreign entry reached the model")
+	}
+	if len(f.appends) != 2 || f.appends[1] != "complete" || !strings.HasPrefix(f.appends[0], "Bearer bh_s ") {
+		t.Fatalf("appends %q", f.appends)
+	}
+	var req struct {
+		Entries []struct {
+			UUID    string            `json:"uuid"`
+			Content conversationEntry `json:"content"`
+		} `json:"entries"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimPrefix(f.appends[0], "Bearer bh_s ")), &req); err != nil || len(req.Entries) != 2 {
+		t.Fatalf("append %v %+v", err, req)
+	}
+	if req.Entries[0].Content.Text != "Why is the site down?" || !strings.Contains(req.Entries[1].Content.Text, "nginx is down") ||
+		req.Entries[0].UUID != entryUUID("t1", "goal") || len(req.Entries[1].UUID) != 36 {
+		t.Fatalf("entries %+v", req.Entries)
+	}
+}
+
+var (
+	specOnce sync.Once
+	specSet  *spec.Spec
+	specErr  error
+)
+
+// p1Valid checks a P1 request body against its schema in the spec, as the P1 server does.
+func p1Valid(schema string, body []byte) error {
+	specOnce.Do(func() {
+		root, err := spec.FindRoot("")
+		if err != nil {
+			specErr = err
+			return
+		}
+		specSet, specErr = spec.Load(root)
+	})
+	if specErr != nil {
+		return specErr
+	}
+	var v any
+	if err := json.Unmarshal(body, &v); err != nil {
+		return err
+	}
+	return specSet.Validate(schema, v)
 }

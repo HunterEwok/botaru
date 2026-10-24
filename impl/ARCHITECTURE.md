@@ -79,6 +79,15 @@ schema filtered by the task's mark.
   not take null, and checks the answer locally with the same validator and ECMAScript patterns as the core: a failing
   answer gets one more turn that quotes the paths and reasons, so the attempt is not spent on a format the model can
   fix; what the second answer holds goes to `complete`, where the core decides.
+- The extension field `payload.previous_attempts` names how the latest five earlier attempts of the task ended: the
+  reason code, and for a result refused at `complete` the core's check detail. A provider failure and an attempt
+  returned unspent are left out, since the model could not have avoided them. `botaru-agent` puts the list into the
+  data block of the first message.
+- An attempt of a task from a chat has a session handle (MEM-1). `botaru-agent` loads the latest 60 entries in one
+  call (`last`, MEM-11) before the first model call and gives the model the latest 20 of them in the data block, oldest
+  first, with only the last answer of each task; before `complete` it appends two entries, the goal (keyed by the task)
+  and the answer text (keyed by the task and the lease), each cut at 2000 characters. A session that does not load or append leaves the attempt as it is. The
+  entries live in the core's store, so `forget` and erasure reach them as before.
 - Results refused at complete (`output_schema_invalid`, OUT-1) are stored on the lease like an accepted outcome, so a
   repeat of the same complete gets the same refusal (IDM-3), and any other call under the lease is fenced. A lease taken
   before the attempt record existed has none; its `enum_from` values are resolved at complete.
@@ -1076,6 +1085,9 @@ stores, not the runtime's (D-93) (MEM-1..MEM-3, INJ-13).
 - At claim a task with a conversation gets a `session` handle for the session `(tenant, role, conversation)`, whose
   subjects grow with each person who wrote there. P1 `session.load` and `session.append` take the handle as the bearer,
   so the model sets neither the space nor the key.
+- Each entry keeps the attempt that appended it (migration `0083_session_entry_lease`). `session.load` leaves out the
+  entries of an attempt that ended without an accepted result, so an answer the core refused never reads as the bot's
+  answer in a later task (MEM-11); `last` returns the latest entries, oldest first.
 - An attempt that saw untrusted text marks the session, and a marked session marks the next task of the conversation.
 - Person memory (MEM-2): while the personal assistant is deferred (DSP-10, `spec.Offered`), `apply` refuses a role with
   `memory: person` with the reason `person_memory_deferred` of `spec/model/reasons.yaml`, and the skeleton lint refuses

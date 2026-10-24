@@ -167,6 +167,8 @@ type SessionEntry struct {
 type SessionLoadRequest struct {
 	After string `json:"after,omitempty"`
 	Limit int    `json:"limit,omitempty"`
+	// Last asks for the latest entries instead of a page from the start (MEM-11).
+	Last int `json:"last,omitempty"`
 }
 
 // SessionLoadResult is p1-session-load-response.
@@ -192,8 +194,22 @@ func (c *Core) SessionLoad(ctx context.Context, handle string, req SessionLoadRe
 		}
 		return nil, err
 	}
-	rows, err := c.st.Pool.Query(ctx, `SELECT uuid, summary, content FROM session_entries WHERE session = $1
-		AND seq > coalesce((SELECT seq FROM session_entries WHERE session = $1 AND uuid = $2), 0) ORDER BY seq LIMIT $3`, h.Ref, req.After, limit)
+	if req.Last > 0 && (req.After != "" || req.Limit > 0) {
+		return nil, refuse("input_schema_invalid", "last goes without after and limit")
+	}
+	// An entry an attempt appended counts once its result was accepted, or while the attempt
+	// runs; what an attempt appended whose result the core refused, or that ended without one,
+	// is left out (MEM-11).
+	const counted = `(e.lease_no IS NULL OR EXISTS (SELECT 1 FROM leases l WHERE l.work_id = e.task AND l.lease_no = e.lease_no
+		AND (l.state = 'active' OR l.state = 'closed' AND coalesce(l.reason, '') = '' AND l.outcome->>'op' = 'complete')))`
+	q := `SELECT uuid, summary, content FROM session_entries e WHERE session = $1 AND ` + counted + `
+		AND seq > coalesce((SELECT seq FROM session_entries WHERE session = $1 AND uuid = $2), 0) ORDER BY seq LIMIT $3`
+	if req.Last > 0 {
+		limit = min(req.Last, sessionLoadMax)
+		q = `SELECT uuid, summary, content FROM (SELECT uuid, summary, content, seq FROM session_entries e WHERE session = $1 AND ` + counted + `
+			AND $2 = '' ORDER BY seq DESC LIMIT $3) x ORDER BY seq`
+	}
+	rows, err := c.st.Pool.Query(ctx, q, h.Ref, req.After, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -254,8 +270,8 @@ func (c *Core) SessionAppend(ctx context.Context, handle string, req SessionAppe
 			if err != nil {
 				return err
 			}
-			tag, err := tx.Exec(ctx, `INSERT INTO session_entries (session, uuid, summary, content, created_at) VALUES ($1, $2, $3, $4, $5)
-				ON CONFLICT DO NOTHING`, h.Ref, e.UUID, e.Summary, raw, now)
+			tag, err := tx.Exec(ctx, `INSERT INTO session_entries (session, uuid, summary, content, created_at, task, lease_no) VALUES ($1, $2, $3, $4, $5, $6, $7)
+				ON CONFLICT DO NOTHING`, h.Ref, e.UUID, e.Summary, raw, now, h.Task, h.LeaseNo)
 			if err != nil {
 				return err
 			}

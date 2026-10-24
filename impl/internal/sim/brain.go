@@ -410,7 +410,7 @@ func (b *Brain) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	n := b.calls.Add(1)
 	system := text(req.System)
-	goal := text(req.Messages[0].Content)
+	goal := withoutConversation(text(req.Messages[0].Content))
 	// What the bot has done and seen so far.
 	var seen strings.Builder
 	called := map[string]int{}
@@ -464,6 +464,30 @@ func (b *Brain) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"usage": map[string]any{"input_tokens": len(raw)/4 + 1, "output_tokens": len(out)/4 + 1}}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// withoutConversation cuts the earlier messages of the chat out of the data block of a first
+// message: the mock plans from this task's goal, and a question asked earlier in the chat would
+// steer it to another plan.
+func withoutConversation(goal string) string {
+	const key = `"conversation":`
+	i := strings.Index(goal, key)
+	if i < 0 {
+		return goal
+	}
+	dec := json.NewDecoder(strings.NewReader(goal[i+len(key):]))
+	var v json.RawMessage
+	if dec.Decode(&v) != nil {
+		return goal
+	}
+	end := i + len(key) + int(dec.InputOffset())
+	switch {
+	case end < len(goal) && goal[end] == ',':
+		end++
+	case i > 0 && goal[i-1] == ',':
+		i--
+	}
+	return goal[:i] + goal[end:]
 }
 
 // nextUnless is next, or nil when the call may not use a tool.

@@ -550,8 +550,7 @@ func followUpMemory(ctx context.Context, d *Director, sc string) error {
 		"state %s %s, type %s, continues %q of %q", state, reason, typ, continues, first)
 	nextSession, nextEntries := session(key)
 	d.check(sc, "same_session", firstSession != "" && nextSession == firstSession, "the session of the first task %q, of the second %q", firstSession, nextSession)
-	d.checkGap(sc, "session_entries", "botaru-agent neither loads nor appends the session (P1 session.load and session.append are unused)",
-		firstEntries > 0 && nextEntries > firstEntries, "%d entries after the first task, %d after the second", firstEntries, nextEntries)
+	d.check(sc, "session_entries", firstEntries > 0 && nextEntries > firstEntries, "%d entries after the first task, %d after the second", firstEntries, nextEntries)
 	return nil
 }
 
