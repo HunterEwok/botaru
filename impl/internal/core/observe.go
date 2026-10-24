@@ -627,7 +627,8 @@ func (c *Core) observeRollups(ctx context.Context, cat *Catalog) error {
 							}
 							if _, err := tx.Exec(ctx, `INSERT INTO obs_rollups (tenant, series, subject, rollup, period_start, value, samples, data_mark, updated_at)
 								VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT (tenant, series, subject, rollup, period_start)
-								DO UPDATE SET value = $6, samples = $7, updated_at = $9`,
+								DO UPDATE SET value = $6, samples = $7, updated_at = $9
+								WHERE obs_rollups.value IS DISTINCT FROM excluded.value OR obs_rollups.samples IS DISTINCT FROM excluded.samples`,
 								tenant, name, subject, id, start, v, vals.n(), s.DataClass, now); err != nil {
 								return err
 							}
