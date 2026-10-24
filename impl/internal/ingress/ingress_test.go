@@ -10,6 +10,7 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/hex"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
@@ -389,5 +390,26 @@ func TestIngressInFlight(t *testing.T) {
 	r.core.entered = nil
 	if rec := r.post("msg_9", r.now, "", body, nil); rec.Code != http.StatusNoContent || len(r.core.files) != 1 {
 		t.Fatalf("repeat %d files %d", rec.Code, len(r.core.files))
+	}
+}
+
+// Past maxNetworks networks with refusals in the minute, new networks share one count, so
+// spreading forged requests over many networks does not escape the listener ceiling.
+func TestIngressManyNetworks(t *testing.T) {
+	r := newRig(t, "signature", func(c *Config) { c.ListenerPerMinute = 1 })
+	forged := func(n int) int {
+		remote := "[" + fmt.Sprintf("2001:db8:%x::1", n) + "]:4000"
+		return r.post("msg_x", r.now, "v1,AAAA", body, map[string]string{"remote": remote}).Code
+	}
+	for n := range maxNetworks {
+		if code := forged(n); code != http.StatusUnauthorized {
+			t.Fatalf("network %d: %d", n, code)
+		}
+	}
+	if code := forged(maxNetworks); code != http.StatusUnauthorized {
+		t.Fatalf("the first network past the map: %d", code)
+	}
+	if code := forged(maxNetworks + 1); code != http.StatusTooManyRequests {
+		t.Fatalf("the second network past the map: %d", code)
 	}
 }

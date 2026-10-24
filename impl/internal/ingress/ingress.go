@@ -477,6 +477,10 @@ func network(remote string) netip.Prefix {
 func (d *Driver) refusedWait(n netip.Prefix, now time.Time) time.Duration {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if _, ok := d.refused[n]; !ok && len(d.refused) >= maxNetworks {
+		// A network the full map does not hold shares the one count of the others.
+		n = netip.Prefix{}
+	}
 	list := recent(d.refused[n], now)
 	if len(list) == 0 {
 		delete(d.refused, n)

@@ -46,6 +46,7 @@ func TestText(t *testing.T) {
 		{"pass=hunter2 smtp.pass=x", "pass=[secret] smtp.pass=[secret]"},
 		{"user: admin\npass: Sup3rS3cret!", "user: admin\npass: [secret]"},
 		{"redis-pass: abc e2e-pass: 5/5", "redis-pass: [secret] e2e-pass: 5/5"},
+		{"pass=1234 x-pass=20240101", "pass=[secret] x-pass=[secret]"},
 		{`{"pass": "hunter2"}`, `{"pass": "[secret]"}`},
 		{"password:\n  hunter2\nnext: 1", "password:\n  [secret]\nnext: 1"},
 		{"DB_PASS=hunter2 MYSQL_PWD=x", "DB_PASS=[secret] MYSQL_PWD=[secret]"},

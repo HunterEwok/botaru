@@ -46,7 +46,8 @@ $F new-secret > operator                                  # your farmctl credent
 cat operator | $F hash-token                              # its SHA-256, for the settings below
 $F new-secret > farm-operator                             # the credential of tenant farm, which apply takes
 cat farm-operator | $F hash-token                         # its SHA-256, for the settings below
-read -rs T && printf '%s\n' "$T" > bot                   # paste the bot token from @BotFather; not in the shell history
+# Run each read line on its own and paste the secret at its prompt; it stays out of the shell history.
+read -rs T && printf '%s\n' "$T" > bot                   # the bot token from @BotFather
 read -rs T && printf '%s\n' "$T" > anthropic-demo        # paste the Anthropic key; only for a real model
 unset T
 chown botaru: * && chmod 600 *
@@ -421,7 +422,8 @@ $F new-secret > operator
 cat operator | docker run --rm -i botaru:local farmctl hash-token    # put it into ../core.yaml
 $F new-secret > farm-operator
 cat farm-operator | docker run --rm -i botaru:local farmctl hash-token    # the farm entry of ../core.yaml
-read -rs T && printf '%s\n' "$T" > bot-token             # paste the bot token from @BotFather
+# Run each read line on its own and paste the secret at its prompt.
+read -rs T && printf '%s\n' "$T" > bot-token             # the bot token from @BotFather
 read -rs T && printf '%s\n' "$T" > provider-key-demo     # paste the Anthropic key, any text for the mock
 unset T
 chmod 600 * && sudo chown 10001 * && sudo chown 999 store-password

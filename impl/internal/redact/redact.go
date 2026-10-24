@@ -112,7 +112,8 @@ func maskValue(m string) string {
 		return m
 	}
 	// "Pass: 12" and "e2e-pass: 5/5" in a test summary are counts, not secrets.
-	if n := strings.ToLower(g[2]); (n == "pass" || strings.HasSuffix(n, "-pass")) && count.MatchString(v) {
+	if n := strings.ToLower(g[2]); (n == "pass" || strings.HasSuffix(n, "-pass")) && count.MatchString(v) &&
+		strings.HasPrefix(strings.TrimLeft(g[3], " \t"), ":") && !strings.HasPrefix(g[3], ":=") {
 		return m
 	}
 	open, closed := "", ""

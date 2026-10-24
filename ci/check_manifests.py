@@ -72,6 +72,13 @@ WEBHOOK_DOC_NETS = [ipaddress.ip_network(n) for n in ('192.0.2.0/24', '198.51.10
 
 
 
+
+def forbidden_program(base):
+    """A forbidden program also under a versioned or suffixed name: python3.12, python2 and
+    vim.basic are python3, python and vim (forbidden-programs.yaml, toolspec.Forbidden)."""
+    head = base.split('.', 1)[0]
+    return any(n in FORBIDDEN_PROGRAMS for n in (base, head, head.rstrip('0123456789-')))
+
 def cron_valid(expr):
     """Five cron fields with values in range: lists, ranges and steps (TIM-3)."""
     fields = expr.split()
@@ -897,7 +904,7 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
                                 f'{tid} {cname}: {argv[0]} prints text written from outside; output_class raw_logs is required (INJ-14)')
                 if not argv[0].startswith('/'):
                     f.error('cmd_argv_path', where, f'{tid} {cname}: program path is not absolute (INJ-14)')
-                if os.path.basename(argv[0]) in FORBIDDEN_PROGRAMS:
+                if forbidden_program(os.path.basename(argv[0])):
                     f.error('cmd_forbidden_program', where, f'{tid} {cname}: {argv[0]} is in forbidden-programs.yaml (INJ-14)')
                 for i, a in enumerate(argv):
                     if '{' in a or '}' in a:
