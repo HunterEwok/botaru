@@ -394,19 +394,28 @@ func translatorScript(ctx context.Context, d *Director, sc string) error {
 		e := d.S.Bench.Store().Pool.QueryRow(ctx, `SELECT state FROM script_runs WHERE id = $1`, run).Scan(&runState)
 		return e == nil && slices.Contains([]string{"completed", "failed", "canceled", "rejected"}, runState), nil
 	})
-	steps := map[string]string{}
-	rows, e := d.S.Bench.Store().Pool.Query(ctx, `SELECT id, state FROM script_steps WHERE run = $1`, run)
+	steps, kinds := map[string]string{}, map[string]int{}
+	rows, e := d.S.Bench.Store().Pool.Query(ctx, `SELECT id, kind, state FROM script_steps WHERE run = $1`, run)
 	if e == nil {
 		for rows.Next() {
-			var id, st string
-			if rows.Scan(&id, &st) == nil {
+			var id, kind, st string
+			if rows.Scan(&id, &kind, &st) == nil {
 				steps[id] = st
+				kinds[kind]++
 			}
 		}
 		rows.Close()
 	}
-	d.check(sc, "script_ran", err == nil && runState == "completed" && steps["check"] == "ok" && steps["clean"] == "ok",
-		"run %s %s, steps %v", run, runState, steps)
+	// Every step ok: a task step that reads and a cleanup step (an action, or a fanout of it).
+	// The mock names them check and clean; a real model names them itself.
+	allOK := kinds["task"] > 0 && kinds["action"]+kinds["fanout"] > 0
+	for _, st := range steps {
+		allOK = allOK && st == "ok"
+	}
+	if !d.S.cfg.Real {
+		allOK = allOK && steps["check"] == "ok" && steps["clean"] == "ok"
+	}
+	d.check(sc, "script_ran", err == nil && runState == "completed" && allOK, "run %s %s, steps %v", run, runState, steps)
 	return nil
 }
 
@@ -507,7 +516,7 @@ func followUpMemory(ctx context.Context, d *Director, sc string) error {
 			ORDER BY l.lease_no DESC LIMIT 1`, home, key).Scan(&id, &n)
 		return id, n
 	}
-	key, err := d.S.Say("alice", "alice-dm", "How are the sensors today?")
+	key, err := d.S.Say("alice", "alice-dm", "How is the sensor doing today?")
 	if err != nil {
 		return err
 	}

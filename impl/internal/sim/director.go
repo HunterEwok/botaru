@@ -424,22 +424,29 @@ func (d *Director) ownCard(ctx context.Context, c Card) string {
 	q := ""
 	switch {
 	case strings.HasPrefix(c.Subject, "cmp_"):
-		q = `SELECT state, coalesce(pause_reason, '') FROM campaigns WHERE id = $1`
+		q = `SELECT state, coalesce(pause_reason, ''), coalesce(record->>'script_run', ''), coalesce(record->'template'->>'action', '') FROM campaigns WHERE id = $1`
 	case strings.HasPrefix(c.Subject, "scr_"):
-		q = `SELECT state, '' FROM script_runs WHERE id = $1`
+		q = `SELECT state, '', '', '' FROM script_runs WHERE id = $1`
 	default:
 		return ""
 	}
-	if d.Approve == "random" || !d.allowed(c.Subject) {
+	if d.Approve == "random" {
 		return ""
 	}
-	var state, pause string
-	if d.S.Bench.Store().Pool.QueryRow(ctx, q, c.Subject).Scan(&state, &pause) != nil {
+	var state, pause, run, action string
+	if d.S.Bench.Store().Pool.QueryRow(ctx, q, c.Subject).Scan(&state, &pause, &run, &action) != nil {
+		return ""
+	}
+	// A campaign that a fanout step of the scenario's own run started is the scenario's too,
+	// its gate included, when the policy approves its action; it still has a card of its own for
+	// whoever approves the action.
+	fromRun := run != "" && d.allowed(run) && (action == "" || slices.Contains(safeActions, action))
+	if !d.allowed(c.Subject) && !fromRun {
 		return ""
 	}
 	// A campaign's Continue only at its manual gate, and only once the scenario has seen the
 	// gate (allow of <id>:gate): a pause of a hold is not the policy's to lift.
-	if strings.HasPrefix(c.Subject, "cmp_") && state == "paused" && (pause != "gate" || !d.allowed(c.Subject+":gate")) {
+	if strings.HasPrefix(c.Subject, "cmp_") && state == "paused" && (pause != "gate" || !fromRun && !d.allowed(c.Subject+":gate")) {
 		return ""
 	}
 	return fmt.Sprintf("%d:%s", c.No, state)

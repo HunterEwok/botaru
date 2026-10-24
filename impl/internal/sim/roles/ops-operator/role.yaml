@@ -9,6 +9,8 @@ spec:
   worker_kind: agent
   claims: [ops.rollout.v1]
   may_enqueue: [ops.health.v1]
+  # The numbers that confirm the cleanup: the free space of the data volumes.
+  tools: [monitor/item_history]
   actions_may_request: [cleanup_pipeline_tmp]
   campaigns: {propose: action}
   models: {base: base-std}

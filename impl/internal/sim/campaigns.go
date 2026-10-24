@@ -118,8 +118,8 @@ func campaignRead(ctx context.Context, d *Director, sc string) error {
 	return nil
 }
 
-// campaignActionCanary plays an action campaign (R-12): bob asks the operator to clean the
-// pipeline temporary files on the database machines; the campaign of cleanup_pipeline_tmp waits
+// campaignActionCanary plays an action campaign (R-12): the data volumes of the database
+// machines fill and bob asks the operator to clean the pipeline temporary files there; the campaign of cleanup_pipeline_tmp waits
 // for its card, the policy approves it for this scenario, the core runs the canary on the first
 // machine and waits at the manual gate, the policy presses Continue, and the item of a machine
 // without the pipeline plugin fails (DLV-16: no executor), which stops the campaign at its
@@ -128,7 +128,25 @@ func campaignActionCanary(ctx context.Context, d *Director, sc string) error {
 	t := campaignTenant(d.S.Farm())
 	bob, dm := d.S.PersonIn(t.Name, "bob"), d.S.PersonIn(t.Name, "bob-dm")
 	dbs := hostsOf(t, KindDB)
-	key, err := d.S.Say(bob, dm, "/rollout Clean up the pipeline temporary files older than 7 days on the database machines.")
+	// The action is proposed when the volume runs out of space and the code's numbers confirm
+	// it (its description): the data volumes fill, still above the alarm, and come back after.
+	if err := d.world("the pipeline temporary files fill /data of the database machines to 18% free (the director's fault, above the alarm)", func(w *World) {
+		for _, db := range dbs {
+			if disk := w.Hosts[db].Disks["/data"]; disk != nil {
+				disk.Fill(0.18)
+			}
+		}
+	}); err != nil {
+		return err
+	}
+	defer func() {
+		_ = d.world("the operators clean up what is left on the database machines", func(w *World) {
+			for _, db := range dbs {
+				healDisk(w, db, "")
+			}
+		})
+	}()
+	key, err := d.S.Say(bob, dm, "/rollout The data volumes of the database machines are filling up: clean up the pipeline temporary files older than 7 days there.")
 	if err != nil {
 		return err
 	}

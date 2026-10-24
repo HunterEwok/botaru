@@ -183,7 +183,7 @@ func TestEditManifests(t *testing.T) {
 }
 
 // TestWidenBudgets: a real model's call fits the budgets after the edit: the tree budget of a
-// claimed type holds two reserves of the role's profile, the review line rises with the review
+// claimed type holds three reserves of the role's profile, the review line rises with the review
 // types, the tenant windows with the most risen type, the manager line holds the seat's worst
 // day and three of its trees; nothing is lowered.
 func TestWidenBudgets(t *testing.T) {
@@ -197,30 +197,35 @@ func TestWidenBudgets(t *testing.T) {
 		{"kind": "Governance", "metadata": md("farm"), "spec": map[string]any{"farm_manager": map[string]any{"model_profile": "mgr"}}},
 		{"kind": "Tenant", "metadata": md("demo"), "spec": map[string]any{"budgets": map[string]any{"hour_eur": 3.0, "day_eur": 15.0, "month_eur": 300.0,
 			"lines": map[string]any{"review": map[string]any{"month_eur": 50.0}, "manager": map[string]any{"day_eur": 2.0, "month_eur": 30.0}}}}},
-		{"kind": "Role", "metadata": md("seat"), "spec": map[string]any{"claims": []any{"manager.x"}, "models": map[string]any{"base": "mgr"}}},
+		{"kind": "Role", "metadata": md("seat"), "spec": map[string]any{"claims": []any{"manager.x", "manager.postmortem.v1"}, "models": map[string]any{"base": "mgr"}}},
+		{"kind": "TaskType", "metadata": md("manager.postmortem.v1"), "spec": map[string]any{"purpose": "manage", "tree_budget_eur": 0.4}},
 		{"kind": "TaskType", "metadata": md("manager.x"), "spec": map[string]any{"purpose": "manage", "tree_budget_eur": 0.4}},
 	}
 	editManifests(ms, Config{Real: true, RankModels: map[int]string{3: "opus", 4: "fable"},
 		Prices: map[string][2]float64{"opus": {4, 20}, "fable": {10, 50}}})
 	// One reserve of rev: 2000 * 20 + 60000 * 4 = 0.28 EUR.
-	if got := mapOf(ms[3]["spec"])["tree_budget_eur"]; got != 0.56 {
-		t.Errorf("review tree budget %v, want 0.56", got)
+	if got := mapOf(ms[3]["spec"])["tree_budget_eur"]; got != 0.84 {
+		t.Errorf("review tree budget %v, want 0.84", got)
 	}
 	if got := mapOf(ms[4]["spec"])["tree_budget_eur"]; got != 5.0 {
 		t.Errorf("an unclaimed type changed: %v", got)
 	}
 	lines := mapOf(mapOf(mapOf(ms[6]["spec"])["budgets"])["lines"])
-	if got := mapOf(lines["review"])["month_eur"]; got != 350.0 {
-		t.Errorf("review line %v, want 350", got)
+	if got := mapOf(lines["review"])["month_eur"]; got != 525.0 {
+		t.Errorf("review line %v, want 525", got)
 	}
-	// The windows rise as much as the review type, the most risen: 0.56 / 0.08 = 7.
-	if b := mapOf(ms[6]["spec"])["budgets"].(map[string]any); b["hour_eur"] != 21.0 || b["day_eur"] != 105.0 || b["month_eur"] != 2100.0 {
+	// The windows rise as much as the review type, the most risen: 0.84 / 0.08 = 10.5.
+	if b := mapOf(mapOf(ms[6]["spec"])["budgets"]); b["hour_eur"] != 31.5 || b["day_eur"] != 157.5 || b["month_eur"] != 3150.0 {
 		t.Errorf("tenant windows %v", b)
 	}
-	// One reserve of mgr: 8000 * 50 + 60000 * 10 = 1.0 EUR, so the seat's tree holds 2.0. The worst
+	// One reserve of mgr: 8000 * 50 + 60000 * 10 = 1.0 EUR, so the seat's tree holds 3.0. The worst
 	// day 1.5 * (0.6 + 1.2 + 0.8) = 3.90 and four reserves (4.0) are below three trees at 70%
-	// (3 * 2.0 / 0.7 = 8.58).
-	if m := mapOf(lines["manager"]); m["day_eur"] != 8.58 || m["month_eur"] != 128.7 {
+	// (3 * 3.0 / 0.7 = 12.86).
+	if m := mapOf(lines["manager"]); m["day_eur"] != 12.86 || m["month_eur"] != 192.9 {
 		t.Errorf("manager line %v", m)
+	}
+	// The analyses' day ceiling holds one analysis tree.
+	if pm := mapOf(mapOf(mapOf(ms[5]["spec"])["farm_manager"])["postmortem_max_eur"]); pm["day"] != 3.0 {
+		t.Errorf("postmortem ceiling %v", pm)
 	}
 }
