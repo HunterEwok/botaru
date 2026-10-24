@@ -370,7 +370,10 @@ func (c *Core) requestAction(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 // initiator and source (APR-2); another person's request is their own approval. The
 // approvals of the tenant are counted under its lock, so two requests at once do not both pass
 // a limit: at most 3 per source task and the tenant's cards per hour; above them the code is
-// service_rate_limited.
+// service_rate_limited. A quarter of the cards of an hour (at least one) is kept for people:
+// requests of bots and scripts stop before it, and those that saw untrusted data stop at a
+// quarter of their own, so injected text cannot spend the cards people need for /run and
+// /service (D-128).
 func (c *Core) openApproval(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, a approvalRow) (string, string, error) {
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(7300108, hashtext($1))`, a.Tenant); err != nil {
 		return "", "", err
@@ -386,9 +389,12 @@ func (c *Core) openApproval(ctx context.Context, tx pgx.Tx, now time.Time, tv *T
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return "", "", err
 	}
-	var perTask, perHour int
-	if err := tx.QueryRow(ctx, `SELECT count(*) FILTER (WHERE $2 <> '' AND source_task = $2), count(*) FILTER (WHERE created_at > $3) FROM approvals WHERE tenant = $1`,
-		a.Tenant, a.SourceTask, now.Add(-time.Hour)).Scan(&perTask, &perHour); err != nil {
+	var perTask, perHour, machineHour, untrustedHour int
+	if err := tx.QueryRow(ctx, `SELECT count(*) FILTER (WHERE $2 <> '' AND source_task = $2), count(*) FILTER (WHERE created_at > $3),
+		count(*) FILTER (WHERE created_at > $3 AND record->'requested_by'->>'kind' IN ('bot', 'script_step')),
+		count(*) FILTER (WHERE created_at > $3 AND record->'requested_by'->>'kind' IN ('bot', 'script_step') AND (record->>'untrusted_seen')::boolean)
+		FROM approvals WHERE tenant = $1`,
+		a.Tenant, a.SourceTask, now.Add(-time.Hour)).Scan(&perTask, &perHour, &machineHour, &untrustedHour); err != nil {
 		return "", "", err
 	}
 	limit := tv.Spec.Attention.CardsPerTenantHour
@@ -398,8 +404,25 @@ func (c *Core) openApproval(ctx context.Context, tx pgx.Tx, now time.Time, tv *T
 	if perTask >= maxActionRequests || perHour >= limit {
 		return "", "service_rate_limited", nil
 	}
+	if machine := a.RequestedBy["kind"] == "bot" || a.RequestedBy["kind"] == "script_step"; machine {
+		machineLimit, untrustedLimit := machineCards(limit)
+		if machineHour >= machineLimit || a.UntrustedSeen && untrustedHour >= untrustedLimit {
+			return "", "service_rate_limited", nil
+		}
+	}
 	id, err := c.insertApproval(ctx, tx, now, a)
 	return id, "pending", err
+}
+
+// machineCards are the cards of an hour that requests of bots and scripts may take, and those of
+// them that saw untrusted data: a quarter of the limit (at least one, when there are two or
+// more) stays for people, and untrusted requests take at most a quarter (at least one).
+func machineCards(limit int) (machine, untrusted int) {
+	reserve := limit / 4
+	if reserve < 1 && limit > 1 {
+		reserve = 1
+	}
+	return limit - reserve, max(1, limit/4)
 }
 
 // approvalScopes are the hold scopes of an approval: the farm, the tenant, the action and,

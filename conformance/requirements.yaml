@@ -132,13 +132,16 @@
     `attention.cards_per_tenant_hour` (default 20): how many action approvals (from
     `request_action`, from INJ-15 and from `/run` with a button) the core creates in this tenant per
     hour; above the limit the request gets `service_rate_limited`, no approval is created, and a
-    call under INJ-15 is not executed.
+    call under INJ-15 is not executed. A quarter of that limit (at least one approval when the limit
+    is 2 or more) is kept for people: requests of bots and of script steps stop before it, and
+    those of them that saw untrusted data stop at a quarter of the limit (at least one), with the
+    same refusal.
   goal: G2
   check: [blackbox]
   waivable: false
   version: v0.1
   profile: core
-  decisions: []
+  decisions: [D-128]
   fixtures: [blackbox:model/action-args-outside-schema, blackbox:model/action-without-right, blackbox:model/fourth-action-request, blackbox:core/fourth-card-rate-limited, blackbox:core/cards-per-tenant-hour]
   doc: docs/permissions.md
 

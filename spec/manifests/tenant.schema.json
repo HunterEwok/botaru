@@ -1135,7 +1135,7 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 10000,
-          "description": "Cards per hour per tenant; 20 by default (APR-2)."
+          "description": "Cards per hour per tenant; 20 by default. A quarter stays for people: bots and scripts take the rest, and those that saw untrusted data a quarter (APR-2)."
         },
         "noncritical_per_day": {
           "type": "integer",

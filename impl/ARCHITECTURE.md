@@ -705,7 +705,9 @@ its initiator may request (`action.request:<action>`); the write tool of an acti
 
 - A request is checked against the action manifest and its arguments (MAN-9), gets the hash of its arguments and returns
   an identical pending approval instead of a new one (APR-2). A task makes at most 3 requests, and a tenant gets at most
-  `attention.cards_per_tenant_hour` new cards an hour (20 by default).
+  `attention.cards_per_tenant_hour` new cards an hour (20 by default). A quarter of them (at least one) stays for
+  people: requests with `requested_by.kind` `bot` or `script_step` stop before it, and those of them with
+  `untrusted_seen` stop at a quarter (`machineCards`, D-128).
 - The cards to the approvers (`action.approve:<action>`, the initiator excluded) are planned once the attempt that asked
   has ended, in the first channel of the tenant where the approver has an identity; the initiator gets a copy without
   buttons. A card is drawn by the channel driver from the approval record at hand-out, with the context line taken from

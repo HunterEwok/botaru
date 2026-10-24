@@ -433,13 +433,11 @@ func TestApprovalLimitsAndHolds(t *testing.T) {
 	_, err := b.c.CardRemind(ctx, b.channel, ob, op)
 	wantReason(t, err, "service_rate_limited")
 
-	// The tenant had 3 of its 4 cards this hour: the next task gets one more, then none.
+	// The tenant had 3 of its 4 cards this hour, all requested by a bot: the fourth is kept for
+	// people, so the next task of a bot gets none (D-128).
 	att2, h2 := b.attemptTools(t, "2", false)
-	if r := b.request(t, h2, map[string]any{"action": "fix_web", "args": map[string]any{"host": "web4"}}); r.Code != "pending" {
-		t.Fatalf("the fourth card of the hour: %+v", r)
-	}
-	if r := b.request(t, h2, map[string]any{"action": "fix_web", "args": map[string]any{"host": "web4", "level": "hard"}}); r.Code != "service_rate_limited" {
-		t.Fatalf("the fifth card of the hour: %+v", r)
+	if r := b.request(t, h2, map[string]any{"action": "fix_web", "args": map[string]any{"host": "web4"}}); r.Code != "service_rate_limited" {
+		t.Fatalf("the card kept for people: %+v", r)
 	}
 	_ = att2
 
@@ -499,5 +497,15 @@ func TestApprovalServiceInitiatorRights(t *testing.T) {
 	}
 	if a = b.approval(t, r.ApprovalID); a.State != "canceled" || a.Reason != "rights_revoked" {
 		t.Fatalf("a service initiator without the right: %s %s", a.State, a.Reason)
+	}
+}
+
+// TestMachineCards: a quarter of the cards of an hour stays for people, and requests that saw
+// untrusted data take at most a quarter (D-128).
+func TestMachineCards(t *testing.T) {
+	for _, c := range []struct{ limit, machine, untrusted int }{{1, 1, 1}, {2, 1, 1}, {4, 3, 1}, {20, 15, 5}, {7, 6, 1}} {
+		if m, u := machineCards(c.limit); m != c.machine || u != c.untrusted {
+			t.Errorf("machineCards(%d) = %d, %d; want %d, %d", c.limit, m, u, c.machine, c.untrusted)
+		}
 	}
 }
