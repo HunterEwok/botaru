@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/HunterEwok/botaru/impl/internal/p1client"
 	"github.com/HunterEwok/botaru/impl/internal/texts"
@@ -380,9 +381,23 @@ func (c *Channel) send(ctx context.Context, chatID int64, text string) (int64, e
 
 func cutText(text string) string {
 	if r := []rune(text); len(r) > 4096 {
-		return string(r[:4095]) + "…"
+		return string(r[:4095]) + "\u2026"
 	}
 	return text
+}
+
+// outText is the text of a message with model text in it, a result, a digest or a card (whose
+// arguments a model proposed): cut to the Telegram length and without links outside the
+// allowlist (INJ-11). The cut comes first, so a cut word cannot turn into a link after the
+// check. Code texts alone go as the catalog has them.
+func (c *Channel) outText(text string) string {
+	for {
+		out := c.cutLinks(cutText(text))
+		if utf8.RuneCountInString(out) <= 4096 {
+			return out
+		}
+		text = out
+	}
 }
 
 // sendWith sends a message, with the inline keyboard of a card when markup is set.
@@ -502,13 +517,14 @@ func (c *Channel) fail(ctx context.Context, lease, reason string, retryable bool
 }
 
 // render builds the message text. Model text (form result) gets the visible provenance line
-// and loses links outside the tenant's list (INJ-11); code texts come from the catalog.
+// and, with digests and cards, loses links outside the tenant's list (outText); code texts come
+// from the catalog.
 func (c *Channel) render(p deliveryPayload) (string, bool) {
 	b := p.Delivery.Body
 	switch b.Form {
 	case "result":
 		label := c.cfg.Texts.Render(p.Locale, "provenance.model", nil)
-		return label + "\n" + c.cutLinks(b.Text), true
+		return c.outText(label + "\n" + b.Text), true
 	case "text_code":
 		if b.TextKey == "" {
 			return "", false
@@ -518,7 +534,7 @@ func (c *Channel) render(p deliveryPayload) (string, bool) {
 		if b.Card == nil {
 			return "", false
 		}
-		return c.renderCard(p.Locale, b.Card), true
+		return c.outText(c.renderCard(p.Locale, b.Card)), true
 	case "digest":
 		return c.renderDigest(p.Locale, b.Window, b.Rows, b.Hidden, b.Text, b.Sources, b.Labeled), true
 	}
@@ -551,15 +567,15 @@ func (c *Channel) renderDigest(locale, window string, rows []digestRow, hidden i
 	if text != "" {
 		label := c.cfg.Texts.Render(locale, "provenance.model", nil)
 		if sources != nil {
-			label = c.cfg.Texts.Render(locale, "digest.sources", map[string]any{"sources": c.cutLinks(strings.Join(sources, ", "))})
+			label = c.cfg.Texts.Render(locale, "digest.sources", map[string]any{"sources": strings.Join(sources, ", ")})
 		}
 		lines = append(lines, "")
 		if labeled {
 			lines = append(lines, c.cfg.Texts.Render(locale, "digest.labeled", nil))
 		}
-		lines = append(lines, label, c.cutLinks(text))
+		lines = append(lines, label, text)
 	}
-	return strings.Join(lines, "\n")
+	return c.outText(strings.Join(lines, "\n"))
 }
 
 func sleep(ctx context.Context, d time.Duration) {

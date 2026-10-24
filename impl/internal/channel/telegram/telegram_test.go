@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/HunterEwok/botaru/impl/internal/spec"
 	"github.com/HunterEwok/botaru/impl/internal/testbench"
@@ -133,6 +134,21 @@ func TestCutLinks(t *testing.T) {
 		"ask @evilsupport": "ask \uff20evilsupport", "obj.info()": "obj\u2024info()", "a\tb\rc": "a bc"} {
 		if got := c.cutLinks(in); got != want {
 			t.Errorf("%q became %q, want %q", in, got, want)
+		}
+	}
+}
+
+// The cut to the Telegram length comes before the link check, so a cut word cannot become a
+// link; a #tag@channel loses its @ as a mention does.
+func TestOutText(t *testing.T) {
+	c := New(Config{LinkAllowlist: []string{"docs.example.org"}})
+	long := strings.Repeat("a", 4095-len("evil.example.com")-1) + " evil.example.comx"
+	if got := c.outText(long); len(opens(c, got)) > 0 || utf8.RuneCountInString(got) > 4096 {
+		t.Fatalf("the cut text opens %q", opens(c, got))
+	}
+	for _, in := range []string{"#news@evilchannel", "$ABC@evilchannel", "x\u0085@evil.example.com", "a\u0085b@-x.example.com"} {
+		if got := c.outText(in); len(opens(c, got)) > 0 || strings.Contains(got, "@") {
+			t.Errorf("%q: %q", in, got)
 		}
 	}
 }

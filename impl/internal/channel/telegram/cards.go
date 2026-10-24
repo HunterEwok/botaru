@@ -16,7 +16,8 @@ import (
 )
 
 // card is the card schema as far as this driver draws it (APR-3): every line comes from a code
-// text of the catalog and a field of the record; there is no model text on a card.
+// text of the catalog and a field of the record. The arguments of an action are a model's
+// proposal, so outText cuts their links as in any text (INJ-11).
 type card struct {
 	Card             string         `json:"card"`
 	SubjectKind      string         `json:"subject_kind"`

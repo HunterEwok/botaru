@@ -330,7 +330,7 @@ func TestHelloBotOverTheWire(t *testing.T) {
 	if len(sent) != 3 {
 		t.Fatalf("sent %d messages: %v", len(sent), sent)
 	}
-	wantPrefix := []string{"This is the bot of tenant demo. Answers are written by an external provider's model; the conversation is stored by operator the test bench operator", "Data is processed by", "[AI answer]\nHello, alice! I am the farm bot @demo_bot."}
+	wantPrefix := []string{"This is the bot of tenant demo. Answers are written by an external provider's model; the conversation is stored by operator the test bench operator", "Data is processed by", "[AI answer]\nHello, alice! I am the farm bot \uff20demo_bot."} // a mention in model text loses its @ (INJ-11)
 	for i, m := range sent {
 		if m["chat_id"] != 1001.0 {
 			t.Errorf("message %d went to chat %v", i, m["chat_id"])

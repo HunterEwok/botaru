@@ -39,14 +39,15 @@ var schemeRE = regexp.MustCompile(`(?i)[^\s<>"\x{ab}\x{bb}]*[a-z0-9]://[^\s<>"\x
 
 // cleanText does what Telegram does to a text before it looks for links: it drops \r, the line
 // and paragraph separators and the bidi marks U+2028 to U+202E and three combining lines, and
-// turns the other control characters but \n into spaces. The driver sends the cleaned text, so
-// a link the cleaning would join is found here.
+// turns the other control characters but \n into spaces, here the C1 ones as well, which
+// Telegram keeps. The driver sends the cleaned text, so a link the cleaning would join is
+// found here.
 func cleanText(s string) string {
 	return strings.Map(func(r rune) rune {
 		switch {
 		case r == '\r', r >= 0x2028 && r <= 0x202e, r == 0x030a, r == 0x0333, r == 0x033f:
 			return -1
-		case r < 0x20 && r != '\n':
+		case r < 0x20 && r != '\n', r >= 0x7f && r <= 0x9f:
 			return ' '
 		}
 		return r
@@ -135,15 +136,12 @@ func (c *Channel) verdict(l link) int {
 	return defang
 }
 
-// findMentions returns the spans of @name that Telegram marks as mentions: 2 to 32 letters,
-// digits or _ after an @ that does not follow a word character.
+// findMentions returns the spans of @name that Telegram can open: 2 to 32 letters, digits or _
+// after an @, also after a word character, which a #tag@channel or $TAG@channel opens.
 func findMentions(s string) [][2]int {
 	var out [][2]int
 	for i := 0; i < len(s); i++ {
 		if s[i] != '@' {
-			continue
-		}
-		if r, _ := utf8.DecodeLastRuneInString(s[:i]); i > 0 && isWordRune(r) {
 			continue
 		}
 		j := i + 1
@@ -159,7 +157,9 @@ func findMentions(s string) [][2]int {
 	return out
 }
 
-func isSeparator(r rune) bool { return unicode.In(r, unicode.Z, unicode.Cc) }
+// isSeparator is Telegram's separator class: a C1 control is not one there, but cleanText turns
+// the controls into spaces.
+func isSeparator(r rune) bool { return unicode.In(r, unicode.Z) }
 
 func isURLRune(r rune) bool {
 	if r >= 0x2000 && r <= 0x206f {
