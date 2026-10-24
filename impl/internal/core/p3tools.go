@@ -479,6 +479,9 @@ type toolRefusal struct {
 	reason string
 }
 
+// maxToolCallsPerAttempt is the most plugin calls one attempt makes (spec/bindings/mcp).
+const maxToolCallsPerAttempt = 100
+
 // P3ToolsCall is tools/call of a plugin tool: the core checks holds, rights, tier, output class
 // and the argument schema in one transaction, computes the target, queues the call and waits
 // for its outcome (P3, TEN-3a, DLV-16).
@@ -741,6 +744,16 @@ func (c *Core) recordToolCall(ctx context.Context, tx pgx.Tx, now time.Time, cat
 	}
 	if !havePlugin || !haveTool || !containsString(roleTools(cat, role), right) || !t.On() {
 		return deny("denied", "forbidden")
+	}
+	// The core caps the plugin calls of one attempt itself: injected text that asks for the
+	// same read again and again, or a runtime without a turn limit, keeps the toolhost busy
+	// otherwise, and most reads cost nothing.
+	var calls int
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM toolcalls WHERE task = $1 AND attempt_lease_no = $2`, g.Task, g.LeaseNo).Scan(&calls); err != nil {
+		return "", nil, err
+	}
+	if calls >= maxToolCallsPerAttempt {
+		return deny("denied", "service_rate_limited")
 	}
 	// Analysis calls only what its catalog offers: insight.tools, tier 1 at most and up to
 	// insight.max_data (INS-2).

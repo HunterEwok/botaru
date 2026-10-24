@@ -138,7 +138,8 @@ func (c *Channel) botCall(ctx context.Context, method string, params any) (json.
 	u := strings.TrimRight(c.cfg.BotAPI, "/") + "/bot" + c.cfg.BotToken + "/" + method
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(body))
 	if err != nil {
-		return nil, err
+		// The error text would carry the address with the bot token.
+		return nil, fmt.Errorf("bot api %s: bad address", method)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := c.cfg.HTTP.Do(req)

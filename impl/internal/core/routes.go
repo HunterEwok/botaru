@@ -335,7 +335,7 @@ func (c *Core) runWake(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 	prefix := "system:wake:" + name + ":"
 	var open bool
 	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM tasks WHERE tenant = $1 AND idempotency_key LIKE $2 AND state IN ('submitted', 'working'))`,
-		tv.Name, prefix+"%").Scan(&open); err != nil || open {
+		tv.Name, likeEscape(prefix)+"%").Scan(&open); err != nil || open {
 		return err
 	}
 	window := wakeWindowMin

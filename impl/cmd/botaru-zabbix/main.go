@@ -10,7 +10,9 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
@@ -51,6 +53,10 @@ func main() {
 	}
 	if *tenant == "" || *api == "" {
 		fail("flags", errors.New("-tenant and -api are required"))
+	}
+	// The API token travels in every call: plain HTTP only to this machine.
+	if u, err := url.Parse(*api); err != nil || u.Scheme != "https" && (u.Scheme != "http" || !config.Loopback(hostPort(u))) {
+		fail("flags", errors.New("-api is an https:// address, or http:// only to this machine"))
 	}
 	if *maintenancePoll < 1 || *maintenancePoll > 300 {
 		fail("flags", errors.New("-maintenance-poll-s is between 1 and 300"))
@@ -129,4 +135,15 @@ func catalogHosts(path, tenant string) (map[string]string, error) {
 		}
 	}
 	return out, nil
+}
+
+// hostPort is the host and port of an address, with the default port of its scheme.
+func hostPort(u *url.URL) string {
+	if u.Port() != "" {
+		return u.Host
+	}
+	if u.Scheme == "https" {
+		return net.JoinHostPort(u.Hostname(), "443")
+	}
+	return net.JoinHostPort(u.Hostname(), "80")
 }

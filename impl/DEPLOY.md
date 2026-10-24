@@ -46,8 +46,9 @@ $F new-secret > operator                                  # your farmctl credent
 cat operator | $F hash-token                              # its SHA-256, for the settings below
 $F new-secret > farm-operator                             # the credential of tenant farm, which apply takes
 cat farm-operator | $F hash-token                         # its SHA-256, for the settings below
-echo '<the bot token from @BotFather>' > bot
-echo '<the Anthropic key>' > anthropic-demo                # only for a real model
+read -rs T && printf '%s\n' "$T" > bot                   # paste the bot token from @BotFather; not in the shell history
+read -rs T && printf '%s\n' "$T" > anthropic-demo        # paste the Anthropic key; only for a real model
+unset T
 chown botaru: * && chmod 600 *
 ```
 
@@ -119,6 +120,12 @@ After=postgresql.service
 User=botaru
 ExecStart=/opt/botaru/bin/botaru-core -config /etc/botaru/core.yaml
 Restart=on-failure
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+ProtectSystem=full
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
 
 [Install]
 WantedBy=multi-user.target
@@ -414,8 +421,9 @@ $F new-secret > operator
 cat operator | docker run --rm -i botaru:local farmctl hash-token    # put it into ../core.yaml
 $F new-secret > farm-operator
 cat farm-operator | docker run --rm -i botaru:local farmctl hash-token    # the farm entry of ../core.yaml
-echo '<the bot token from @BotFather>' > bot-token
-echo '<the Anthropic key, any text for the mock>' > provider-key-demo
+read -rs T && printf '%s\n' "$T" > bot-token             # paste the bot token from @BotFather
+read -rs T && printf '%s\n' "$T" > provider-key-demo     # paste the Anthropic key, any text for the mock
+unset T
 chmod 600 * && sudo chown 10001 * && sudo chown 999 store-password
 cd ..
 ```

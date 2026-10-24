@@ -36,6 +36,16 @@ cases:
           hosts:
             - {id: app2, services: [{name: worker, control: [restart], via: host}]}
     expect: {error: service_unit_missing}
+  - name: one service name on two machines of a tenant
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Catalog
+        metadata: {name: demo2, tenant: demo2}
+        spec:
+          hosts:
+            - {id: app2, services: [{name: worker, unit: worker.service, control: [restart], via: host}]}
+            - {id: app3, services: [{name: worker, unit: worker.service, control: [restart], via: host}]}
+    expect: {error: service_name_duplicate}
   - name: service via monitor with a script outside the node's list
     manifests:
       - apiVersion: botaru/v1alpha1

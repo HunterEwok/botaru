@@ -68,6 +68,10 @@ func (c *Core) checkPress(ctx context.Context, tx pgx.Tx, now time.Time, cat *Ca
 	if w.Kind != "channel" {
 		return nil, refuse("forbidden", "only a channel presses a card")
 	}
+	// A blocked channel, or one without its hello, presses nothing, as it submits nothing.
+	if w.State != "active" && w.State != "draining" {
+		return nil, refuse("blocked", "the channel has no accepted hello")
+	}
 	tv := cat.Tenants[w.Tenant]
 	if tv == nil {
 		return nil, refuse("not_ready", "the tenant is not applied")
@@ -85,7 +89,9 @@ func (c *Core) checkPress(ctx context.Context, tx pgx.Tx, now time.Time, cat *Ca
 	if ch.IdentityAssurance != "strong" {
 		return nil, refuse("forbidden", "a decision needs a channel with strong identity")
 	}
-	if ob.Chat.Kind != "direct" && ch.MembershipAssurance != "enforced" {
+	// Membership counts as the driver reported it at hello, as for a chat binding (DLV-7): the
+	// manifest alone does not make a driver see who joins a group.
+	if ob.Chat.Kind != "direct" && (ch.MembershipAssurance != "enforced" || w.Hello == nil || w.Hello.Driver == nil || w.Hello.Driver.MembershipAssurance != "enforced") {
 		return nil, refuse("forbidden", "a group chat without enforced membership takes no decisions")
 	}
 	principal, err := principalByIdentity(ctx, tx, w.Tenant, ob.Identity)

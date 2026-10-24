@@ -274,3 +274,32 @@ func TestBackfillRevokedChildContinuation(t *testing.T) {
 		t.Fatal("the catalog has no task.canceled.rights_revoked")
 	}
 }
+
+// The core caps the plugin calls of one attempt, whatever the runtime's limit (spec/bindings/mcp).
+func TestToolCallCap(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	b := newToolBenchWith(t, nil, func(ms []map[string]any) []map[string]any {
+		for _, m := range ms {
+			if m["kind"] == "Role" {
+				m["spec"].(map[string]any)["tools"] = []any{"checks/latest", "logs/tail"}
+			}
+		}
+		return ms
+	})
+	_, h := b.attemptTools(t, "1", true)
+	// Refused calls count too: a tool outside the role, a hundred times.
+	for range maxToolCallsPerAttempt {
+		if r, err := b.c.P3ToolsCall(ctx, h, mcp.CallParams{Name: "cmd_run", Arguments: map[string]any{"host": "web1", "command": "disk_usage"}}); err != nil || !r.IsError {
+			t.Fatalf("a call outside the role: %+v %v", r, err)
+		}
+	}
+	r, err := b.c.P3ToolsCall(ctx, h, mcp.CallParams{Name: "logs_tail", Arguments: map[string]any{"source": "nginx-error"}})
+	if err != nil || !r.IsError {
+		t.Fatalf("the call past the cap: %+v %v", r, err)
+	}
+	var reason string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT reason FROM toolcalls WHERE tool = 'logs/tail' ORDER BY created_at DESC LIMIT 1`).Scan(&reason); err != nil || reason != "service_rate_limited" {
+		t.Fatalf("the reason past the cap: %q %v", reason, err)
+	}
+}

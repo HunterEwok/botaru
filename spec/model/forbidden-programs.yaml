@@ -1,11 +1,12 @@
 registry: forbidden-programs
-version: 1
+version: 2
 description: >-
   Executables that can run other programs or read and
   execute arbitrary input. A cmd plugin command with such a program in argv[0]
   does not pass apply (INJ-14). The base name is compared after resolving
   the absolute path and symbolic links, so /usr/bin/bash and /bin/bash
-  are the same. The category field is the program kind: shell (a shell), interpreter
+  are the same, and also without a suffix after its first dot and without trailing
+  version digits, so python3.12, python2 and vim.basic are python3, python and vim. The category field is the program kind: shell (a shell), interpreter
   (a language interpreter), exec_capable (can run a command from its
   arguments, for example find with -exec), launcher (runs a passed command with
   other permissions, environment or time limit), pager (from which one can escape to
@@ -27,6 +28,9 @@ entries:
   - {id: tcsh, since: v0.1, category: shell, rules: [INJ-14]}
   - {id: fish, since: v0.1, category: shell, rules: [INJ-14]}
   - {id: busybox, since: v0.1, category: shell, rules: [INJ-14]}
+  - {id: ash, since: v0.3, category: shell, rules: [INJ-14]}
+  - {id: mksh, since: v0.3, category: shell, rules: [INJ-14]}
+  - {id: rbash, since: v0.3, category: shell, rules: [INJ-14]}
   # Interpreters
   - {id: python, since: v0.1, category: interpreter, rules: [INJ-14]}
   - {id: python3, since: v0.1, category: interpreter, rules: [INJ-14]}
@@ -36,6 +40,10 @@ entries:
   - {id: php, since: v0.1, category: interpreter, rules: [INJ-14]}
   - {id: lua, since: v0.1, category: interpreter, rules: [INJ-14]}
   - {id: tclsh, since: v0.1, category: interpreter, rules: [INJ-14]}
+  - {id: nodejs, since: v0.3, category: interpreter, rules: [INJ-14]}
+  - {id: pwsh, since: v0.3, category: interpreter, rules: [INJ-14]}
+  - {id: deno, since: v0.3, category: interpreter, rules: [INJ-14]}
+  - {id: bun, since: v0.3, category: interpreter, rules: [INJ-14]}
   # Can run a command from arguments or execute a program in their own language
   - {id: find, since: v0.1, category: exec_capable, rules: [INJ-14]}
   - {id: awk, since: v0.1, category: exec_capable, rules: [INJ-14]}

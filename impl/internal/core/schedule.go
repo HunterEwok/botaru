@@ -139,7 +139,7 @@ func (c *Core) runSchedule(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 	if sc.SkipIfWaiting == nil || *sc.SkipIfWaiting {
 		var waiting bool
 		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM tasks WHERE tenant = $1 AND idempotency_key LIKE $2 AND idempotency_key <> $3 AND state = 'submitted')`,
-			tv.Name, keyPrefix+"%", keyPrefix+slot).Scan(&waiting); err != nil {
+			tv.Name, likeEscape(keyPrefix)+"%", keyPrefix+slot).Scan(&waiting); err != nil {
 			return err
 		}
 		if waiting {

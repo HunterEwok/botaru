@@ -212,6 +212,9 @@ func (c *Core) lintManifestsHeld(docs []manifest.Doc, index []int, personas pers
 			}
 		}
 		catalogs[o.tenant] = lists
+		// A service name is unique in the tenant catalog (catalog schema): the tools name a
+		// service without its host, so a second one of the name would run on the first's host.
+		svcNames := map[string]bool{}
 		for j, h := range mlist(o.spec, "hosts") {
 			hm, _ := h.(map[string]any)
 			path := fmt.Sprintf("/hosts/%d", j)
@@ -262,6 +265,10 @@ func (c *Core) lintManifestsHeld(docs []manifest.Doc, index []int, personas pers
 						}
 					}
 				}
+				if svcNames[mstr(sm, "name")] {
+					f.add(o, "service_name_duplicate", sp+"/name")
+				}
+				svcNames[mstr(sm, "name")] = true
 				key := mstr(hm, "id") + "\x00" + mstr(sm, "name")
 				if other, ok := svcOwner[key]; ok && other != o.tenant {
 					f.add(o, "host_two_tenants", sp)

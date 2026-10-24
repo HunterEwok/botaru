@@ -189,7 +189,7 @@ func TestWorseInForce(t *testing.T) {
 	ctx := context.Background()
 	b := newCommissionBench(t, true, presentEdit)
 	id, _ := acceptLimits(t, b)
-	if res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "a000000000000000000000000000000000000002", Message: "Botaru-Proposal: " + id, Manifests: withLimit(t, b, 7)}); err != nil || !res.Applied {
+	if res, err := b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: "a000000000000000000000000000000000000002", Message: "Botaru-Proposal: " + id, Manifests: withLimit(t, b, 7)}); err != nil || !res.Applied {
 		t.Fatalf("apply %+v %v", res, err)
 	}
 	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE proposals SET record = jsonb_set(jsonb_set(record, '{trial,metric,series}', '"gone.series"'),
@@ -271,7 +271,7 @@ func TestWorseInForce(t *testing.T) {
 	}
 	// A person edits the field by hand to another value: the change is no longer in force, and
 	// its follow-up and lock end.
-	if res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "a000000000000000000000000000000000000003", Message: "edit by hand", Manifests: withLimit(t, b, 9)}); err != nil || !res.Applied {
+	if res, err := b.c.Apply(ctx, farmOf(b.op), ApplyRequest{Commit: "a000000000000000000000000000000000000003", Message: "edit by hand", Manifests: withLimit(t, b, 9)}); err != nil || !res.Applied {
 		t.Fatalf("apply %+v %v", res, err)
 	}
 	b.loop(t, "proposal")

@@ -70,7 +70,8 @@ func New(c *core.Core, cfg Config) (*Gateway, error) {
 		}
 	}
 	if cfg.Client == nil {
-		cfg.Client = &http.Client{}
+		// A redirect is not followed: it would send the key and the prompt to another address.
+		cfg.Client = &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	}
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()

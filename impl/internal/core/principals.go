@@ -184,7 +184,7 @@ func (c *Core) setIdentity(ctx context.Context, tx pgx.Tx, tenant, subject, iden
 	// One identity per kind and principal: a new telegram identity replaces the old one.
 	kind := identity[:indexByte(identity, ':')+1]
 	if _, err := tx.Exec(ctx, `DELETE FROM identities WHERE tenant = $1 AND principal = $2 AND identity LIKE $3 AND identity <> $4`,
-		tenant, subject, kind+"%", identity); err != nil {
+		tenant, subject, likeEscape(kind)+"%", identity); err != nil {
 		return err
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO identities (tenant, identity, principal) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`, tenant, identity, subject)

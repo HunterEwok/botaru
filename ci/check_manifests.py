@@ -561,6 +561,7 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
             if r.get('host') and r['host'] not in lists['hosts']:
                 f.error('ref_missing', where, f'resource {r["id"]}: machine {r["host"]} is not in the catalog hosts')
         catalogs[tenant] = lists
+        svc_names = set()  # a service name is unique in the tenant catalog: tools name no host
         for h in cs.get('hosts', []):
             mon = h.get('monitor_host')
             ids = {h['id']} | ({mon, mon.split('.')[0]} if mon else set())
@@ -573,6 +574,9 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
                 host_owner[key] = tenant
             scripts = {s['name'] for s in h.get('monitor_scripts_allowed', [])}
             for svc in h.get('services', []):
+                if svc['name'] in svc_names:
+                    f.error('service_name_duplicate', where, f'service {svc["name"]} is in the catalog twice (MON-8)')
+                svc_names.add(svc['name'])
                 nc = svc.get('no_card', ['restart'])
                 if any(v != 'restart' for v in nc):
                     f.error('service_no_card', where, f'service {svc["name"]}: no_card allows only restart (MON-8)')
