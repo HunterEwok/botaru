@@ -800,9 +800,11 @@ func (c *Core) endAttempt(ctx context.Context, tx pgx.Tx, now time.Time, tenant 
 			return nil, err
 		}
 	}
-	maxAttempts := tt.Retry.MaxAttempts
-	if maxAttempts == 0 {
-		maxAttempts = 2
+	var maxAttempts int
+	if tv := cat.Tenants[tenant]; tv != nil {
+		_, maxAttempts = attemptLimits(tt, tv.Spec.Dispatch, typ, rec)
+	} else {
+		_, maxAttempts = attemptLimits(tt, manifest.TenantDispatch{}, typ, rec)
 	}
 	for _, r := range tt.Retry.NonRetryable {
 		if r == reason {

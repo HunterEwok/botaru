@@ -192,6 +192,12 @@ only these.
   percentage passes.
 - An attempt without new progress for longer than the type's `timeouts.stall_after` ends with `stalled`, spends the
   attempt and raises `alarm.task.stalled`; the next attempt resolves it.
+- Attempt deadline (FEN-3, DSP-3): the claim fixes `leases.attempt_until` from `timeouts.attempt` of the type, or of
+  the first tenant dispatch rule that matches the task, never later than the task deadline, and hands it to the
+  runtime as the extension field `attempt_until`. The stall loop ends a lease past it with `attempt_timeout`, which
+  spends the attempt, unless the task deadline has passed too, which the deadline loop answers; a read tool call of the attempt is abandoned with it, a write runs on under its own lease. The
+  rule's `retry.max_attempts` lowers the type's attempts in `endAttempt`. `botaru-agent` makes its last model call,
+  without tools, when less than 90 s, or a quarter of a shorter attempt, are left.
 
 ### Holds
 

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/HunterEwok/botaru/impl/internal/p1client"
 	"github.com/anthropics/anthropic-sdk-go"
@@ -493,5 +494,19 @@ func TestWithoutThinking(t *testing.T) {
 	}
 	if len(in[1].Content) != 2 {
 		t.Error("the history itself lost a block")
+	}
+}
+
+// The last model call comes before the attempt deadline the core fixed, not only at the turn
+// limit.
+func TestNearDeadline(t *testing.T) {
+	now := time.Date(2026, 10, 24, 12, 0, 0, 0, time.UTC)
+	long := now.Add(-10 * time.Minute)
+	if nearDeadline("", long, now) || nearDeadline("2026-10-24T12:05:00Z", long, now) || !nearDeadline("2026-10-24T12:01:00Z", long, now) || !nearDeadline("2026-10-24T11:59:00Z", long, now) {
+		t.Error("nearDeadline")
+	}
+	// A two-minute attempt keeps its margin at a quarter: 30 seconds, not 90.
+	if nearDeadline("2026-10-24T12:01:00Z", now.Add(-time.Minute), now) || !nearDeadline("2026-10-24T12:00:10Z", now.Add(-110*time.Second), now) {
+		t.Error("nearDeadline of a short attempt")
 	}
 }

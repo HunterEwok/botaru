@@ -108,7 +108,10 @@ type attemptPayload struct {
 	} `json:"task"`
 	Instruction string `json:"instruction"`
 	// ReplyLocale is the language of the answer the core chose for the recipient (DLV-18).
-	ReplyLocale  string         `json:"reply_locale"`
+	ReplyLocale string `json:"reply_locale"`
+	// AttemptUntil is the attempt deadline the core fixed at claim (extension field
+	// attempt_until); the core ends the attempt when it passes.
+	AttemptUntil string         `json:"attempt_until"`
 	Handles      map[string]any `json:"handles"`
 	ResultSchema map[string]any `json:"result_schema"`
 	// FullResultSchema is the schema complete checks the result against: enum_from with the
@@ -291,6 +294,24 @@ func (a *Agent) heartbeats(ctx context.Context, cancel context.CancelFunc, lease
 // maxTurns bounds the model calls of one attempt.
 const maxTurns = 10
 
+// lastCallMargin is how long before the attempt deadline the agent makes its last model call:
+// at most 90 seconds, and a quarter of the attempt for a short one, so a two-minute attempt
+// keeps more than one round of tools.
+const lastCallMargin = 90 * time.Second
+
+// nearDeadline says whether the attempt deadline is so close that the next model call has to be
+// the last one; start is when the attempt began.
+func nearDeadline(until string, start, now time.Time) bool {
+	if until == "" {
+		return false
+	}
+	t, err := time.Parse(time.RFC3339, until)
+	if err != nil {
+		return false
+	}
+	return t.Sub(now) < min(lastCallMargin, t.Sub(start)/4)
+}
+
 // lastTurnNote tells the model that its next answer is the last one of the attempt.
 const lastTurnNote = "This is the last model call of this attempt: no tool runs any more. Answer now with the result from what you have."
 
@@ -320,6 +341,7 @@ func (p attemptPayload) resultSchema() map[string]any {
 // calls the model asks for, through P3 with the attempt's tools handle. It returns the result
 // object, or a reason code from reasons.yaml.
 func (a *Agent) run(ctx context.Context, p attemptPayload) (map[string]any, string, error) {
+	start := time.Now()
 	handle, _ := p.Handles["model"].(string)
 	if handle == "" {
 		return nil, "runtime_error", errors.New("the attempt has no model handle")
@@ -393,6 +415,9 @@ func (a *Agent) run(ctx context.Context, p attemptPayload) (map[string]any, stri
 			firstTools = toolsJSON
 		}
 		toolsChanged := !bytes.Equal(toolsJSON, firstTools)
+		// The last call of the attempt: the turn limit, or the attempt deadline the core fixed
+		// at claim is close. The first call always runs with tools.
+		last := turn+1 == maxTurns || (turn > 0 && nearDeadline(p.AttemptUntil, start, time.Now()))
 		params := anthropic.MessageNewParams{
 			Model:     anthropic.Model("base"), // P4 sets the model of the slot (GW-7)
 			MaxTokens: a.cfg.MaxTokens,
@@ -403,7 +428,7 @@ func (a *Agent) run(ctx context.Context, p attemptPayload) (map[string]any, stri
 		if toolsChanged {
 			params.Messages = withoutThinking(messages)
 		}
-		if turn > 0 && turn+1 == maxTurns {
+		if last {
 			// The last call: the model hears so and gets no tools, so the attempt ends with
 			// its answer instead of a tool call that would never run. The note goes into the
 			// system text, not after the tool results: a text block right after tool results
@@ -429,7 +454,7 @@ func (a *Agent) run(ctx context.Context, p attemptPayload) (map[string]any, stri
 			}
 			return nil, "model_error", err
 		}
-		if cut := cutToolUses(msg); len(cut) > 0 && turn+1 < maxTurns {
+		if cut := cutToolUses(msg); len(cut) > 0 && !last {
 			// The output limit cut a tool call: it does not run, and the model hears so in the
 			// tool_result the API requires after every tool_use.
 			a.log.Info("tool call cut at the output limit", "task", p.Task.ID)
@@ -455,7 +480,7 @@ func (a *Agent) run(ctx context.Context, p attemptPayload) (map[string]any, stri
 				}
 			}
 			res, err := parseResult(text.String(), rschema)
-			if err != nil && !repaired && rschema != nil && turn+1 < maxTurns {
+			if err != nil && !repaired && rschema != nil && !last {
 				// A model that answered in prose gets one more turn to put the answer into
 				// the result object; a second prose answer ends the attempt. A reply with no
 				// blocks stays out of the history: the API refuses an empty assistant message.
@@ -479,7 +504,7 @@ func (a *Agent) run(ctx context.Context, p attemptPayload) (map[string]any, stri
 				return nil, "output_schema_invalid", err
 			}
 			stripNullOptionals(res, rschema)
-			if detail := checkResult(check, res); detail != "" && !schemaRepaired && turn+1 < maxTurns {
+			if detail := checkResult(check, res); detail != "" && !schemaRepaired && !last {
 				// A result the core would refuse (OUT-1) gets one turn to fix the fields the
 				// check names, before complete spends the attempt; what the second answer
 				// holds goes to complete, where the core decides.

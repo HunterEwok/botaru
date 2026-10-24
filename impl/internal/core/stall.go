@@ -71,7 +71,52 @@ func (c *Core) stalls(ctx context.Context) error {
 			return err
 		}
 		if done {
+			if err := c.attemptTimeouts(ctx); err != nil {
+				return err
+			}
 			return c.resolveStalls(ctx)
+		}
+	}
+}
+
+// attemptTimeouts ends the attempts whose deadline, fixed at claim from timeouts.attempt of the
+// type or of the tenant's dispatch rule, has passed: the attempt is spent with attempt_timeout
+// and the task is retried while attempts are left (FEN-1, FEN-3, DSP-3). A read tool call of
+// the attempt is abandoned with its lease; a write runs on under its own lease (APR-7).
+func (c *Core) attemptTimeouts(ctx context.Context) error {
+	for {
+		done := true
+		err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+			var l leaseRow
+			err := tx.QueryRow(ctx, `SELECT work_id, lease_no, kind, tenant, worker_id, epoch, state, lease_until FROM leases
+				WHERE state = 'active' AND kind = 'attempt' AND attempt_until IS NOT NULL AND attempt_until <= $1
+					AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.id = work_id AND t.deadline_at <= $1)
+				ORDER BY attempt_until LIMIT 1 FOR UPDATE SKIP LOCKED`, now).
+				Scan(&l.WorkID, &l.LeaseNo, &l.Kind, &l.Tenant, &l.WorkerID, &l.Epoch, &l.State, &l.Until)
+			if err == pgx.ErrNoRows {
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+			done = false
+			if _, err := tx.Exec(ctx, `UPDATE leases SET state = 'revoked', reason = 'attempt_timeout', closed_at = $3 WHERE work_id = $1 AND lease_no = $2`,
+				l.WorkID, l.LeaseNo, now); err != nil {
+				return err
+			}
+			if _, err := tx.Exec(ctx, `DELETE FROM handles WHERE work_id = $1 AND lease_no = $2`, l.WorkID, l.LeaseNo); err != nil {
+				return err
+			}
+			if err := grantEnded(ctx, tx, now, l.WorkID); err != nil {
+				return err
+			}
+			if _, err := c.endAttempt(ctx, tx, now, l.Tenant, &l, "attempt_timeout", true, true, 0, ""); err != nil {
+				return err
+			}
+			return c.settleMessages(ctx, tx, now, l.WorkID)
+		})
+		if err != nil || done {
+			return err
 		}
 	}
 }
