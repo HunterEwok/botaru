@@ -229,9 +229,12 @@ func (c *Core) redriveTask(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 		return "", res.Rejected, nil
 	}
 	// A redriven route task stays the same step of its route chain: the hop count and the mark
-	// of a tls_token source go to the new root (MSG-16, ING-1).
+	// of a tls_token source go to the new root (MSG-16, ING-1). The same body is the same
+	// someone else's text: untrusted_seen is only ever set, and its source stays (INJ-13).
 	if !res.Existing {
 		if _, err := tx.Exec(ctx, `UPDATE tasks n SET record = n.record || jsonb_strip_nulls(jsonb_build_object('event_hops', o.record->'event_hops', 'event_token', o.record->'event_token'))
+			|| CASE WHEN (o.record->>'untrusted_seen')::boolean AND NOT COALESCE((n.record->>'untrusted_seen')::boolean, false)
+				THEN jsonb_strip_nulls(jsonb_build_object('untrusted_seen', true, 'untrusted_source', o.record->'untrusted_source')) ELSE '{}'::jsonb END
 			FROM tasks o WHERE n.id = $1 AND o.id = $2`, res.TaskID, id); err != nil {
 			return "", nil, err
 		}

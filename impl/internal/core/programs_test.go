@@ -170,8 +170,23 @@ func TestProgramEnqueueGoalTrust(t *testing.T) {
 		}
 		return seen, *source
 	}
-	if seen, source := mark(newPeopleBench(t, nil), "k1"); !seen || source != "goal:service" {
+	b := newPeopleBench(t, nil)
+	if seen, source := mark(b, "k1"); !seen || source != "goal:service" {
 		t.Fatalf("a program's goal of a type without goal_trust: %v %q", seen, source)
+	}
+	// A redrive enqueues the same body again: the new task keeps the flag and its source.
+	var task string
+	if err := b.c.st.Pool.QueryRow(ctx, `UPDATE tasks SET state = 'failed', reason = 'attempts_exhausted' WHERE idempotency_key = 'k1' RETURNING id`).Scan(&task); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.Redrive(ctx, b.op, RedriveRequest{Op: "task.redrive", ID: task}); err != nil {
+		t.Fatal(err)
+	}
+	var seen bool
+	var source string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT (record->>'untrusted_seen')::boolean, record->>'untrusted_source' FROM tasks WHERE record->'refs' ? $1`,
+		task).Scan(&seen, &source); err != nil || !seen || source != "goal:service" {
+		t.Fatalf("the redriven program task: %v %q %v", seen, source, err)
 	}
 	authored := newPeopleBench(t, func(ms []map[string]any) {
 		for _, m := range ms {
