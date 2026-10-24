@@ -12,7 +12,7 @@ import (
 // Fuzzing the whole outgoing text: whatever a model writes, the message fits Telegram, stays
 // valid UTF-8 and opens no link outside the allowlist (INJ-11).
 func FuzzOutText(f *testing.F) {
-	for _, s := range []string{"see evil.example.com", strings.Repeat("\U0001F600", 2100) + " evil.example.com", "docs.example.org/a?b=c", "a​b.example.com"} {
+	for _, s := range []string{"see evil.example.com", strings.Repeat("\U0001F600", 2100) + " evil.example.com", "docs.example.org/a?b=c", "a\u200bb.example.com"} {
 		f.Add(s)
 	}
 	c := New(Config{LinkAllowlist: []string{"docs.example.org"}})

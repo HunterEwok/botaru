@@ -43,7 +43,7 @@ func TestP3HostileModel(t *testing.T) {
 		"a tool the role lacks":      {Name: "services_restart", Arguments: map[string]any{"host": "web1", "service": "nginx"}},
 		"a slash name":               {Name: "cmd/run", Arguments: map[string]any{"command": "disk_usage", "host": "web1"}},
 		"an upper-case name":         {Name: "CMD_RUN", Arguments: map[string]any{"command": "disk_usage", "host": "web1"}},
-		"a zero-width name":          {Name: "cmd_run​", Arguments: map[string]any{"command": "disk_usage", "host": "web1"}},
+		"a zero-width name":          {Name: "cmd_run\u200b", Arguments: map[string]any{"command": "disk_usage", "host": "web1"}},
 		"a trailing space":           {Name: "cmd_run ", Arguments: map[string]any{"command": "disk_usage", "host": "web1"}},
 	} {
 		r, err := b.c.P3ToolsCall(ctx, h, p)
