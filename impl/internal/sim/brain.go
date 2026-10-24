@@ -63,6 +63,9 @@ type brainRequest struct {
 		Name        string         `json:"name"`
 		InputSchema map[string]any `json:"input_schema"`
 	} `json:"tools"`
+	ToolChoice struct {
+		Type string `json:"type"`
+	} `json:"tool_choice"`
 }
 
 type block struct {
@@ -431,7 +434,9 @@ func (b *Brain) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	var content []map[string]any
 	stop := "end_turn"
-	if call, ans, ok := governance(system, goal, seen.String(), names, offered, called, b.evolveTarget()); ok {
+	// tool_choice none: the call may not use a tool, so the mock answers with what it has.
+	noTools := req.ToolChoice.Type == "none"
+	if call, ans, ok := governance(system, goal, seen.String(), names, offered, called, b.evolveTarget()); ok && !(noTools && call != nil) {
 		if call != nil {
 			call["id"] = fmt.Sprintf("toolu_sim%06d", n)
 			content = []map[string]any{{"type": "text", "text": "Let me read the series."}, call}
@@ -439,7 +444,7 @@ func (b *Brain) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		} else {
 			content = []map[string]any{{"type": "text", "text": ans}}
 		}
-	} else if next := b.next(system, goal, seen.String(), names, offered, called); next != nil {
+	} else if next := b.nextUnless(noTools, system, goal, seen.String(), names, offered, called); next != nil {
 		content = []map[string]any{{"type": "text", "text": "Let me look at that."}, next}
 		next["id"] = fmt.Sprintf("toolu_sim%06d", n)
 		stop = "tool_use"
@@ -459,6 +464,14 @@ func (b *Brain) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"usage": map[string]any{"input_tokens": len(raw)/4 + 1, "output_tokens": len(out)/4 + 1}}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// nextUnless is next, or nil when the call may not use a tool.
+func (b *Brain) nextUnless(noTools bool, system, goal, seen string, names []string, offered map[string]map[string]any, called map[string]int) map[string]any {
+	if noTools {
+		return nil
+	}
+	return b.next(system, goal, seen, names, offered, called)
 }
 
 // next is the next tool call of the plan, nil when the bot answers.
