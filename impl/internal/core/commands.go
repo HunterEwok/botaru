@@ -433,16 +433,27 @@ func (c *Core) cancelTaskIDs(ctx context.Context, tx pgx.Tx, now time.Time, tena
 // (metadata only, such as the detailed access reason of PRM-8).
 func (c *Core) cancelTaskIDsWith(ctx context.Context, tx pgx.Tx, now time.Time, tenant string, tasks []string, reason string, extra map[string]any) error {
 	for _, id := range tasks {
+		// Only a task that has not ended is canceled: a caller that picked the task without a
+		// row lock may meet a Complete that committed meanwhile, and a terminal state is final.
+		// The update waits for such a transaction and re-checks the state after it.
+		tag, err := tx.Exec(ctx, `UPDATE tasks SET state = 'canceled', reason = $2, run_at = NULL, updated_at = $3
+			WHERE id = $1 AND state IN ('submitted', 'working')`, id, reason, now)
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() == 0 {
+			continue
+		}
 		if _, err := tx.Exec(ctx, `DELETE FROM handles WHERE work_id = $1`, id); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(ctx, `UPDATE leases SET state = 'revoked', reason = $3, closed_at = $2 WHERE work_id = $1 AND state = 'active'`, id, now, reason); err != nil {
 			return err
 		}
-		if err := c.settleMessages(ctx, tx, now, id); err != nil {
+		if err := grantEnded(ctx, tx, now, id); err != nil {
 			return err
 		}
-		if _, err := tx.Exec(ctx, `UPDATE tasks SET state = 'canceled', reason = $2, run_at = NULL, updated_at = $3 WHERE id = $1`, id, reason, now); err != nil {
+		if err := c.settleMessages(ctx, tx, now, id); err != nil {
 			return err
 		}
 		if err := releaseTaskReserve(ctx, tx, id); err != nil {

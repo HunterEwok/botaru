@@ -396,9 +396,11 @@ func (c *Core) endAttemptUnspent(ctx context.Context, tx pgx.Tx, now time.Time, 
 }
 
 // grantEnded releases an active grant when its attempt ends: back to approved while attempts are
-// left, else consumed (MGR-18). closeLease calls it for every attempt lease.
+// left and the task has not ended, else consumed (MGR-18). Every end of an attempt lease calls it: closeLease, the reaper,
+// the stall check, a rejected result, the deadline and a cancel.
 func grantEnded(ctx context.Context, tx pgx.Tx, now time.Time, task string) error {
-	_, err := tx.Exec(ctx, `UPDATE model_grants SET state = CASE WHEN attempts_left > 0 AND (expires_at IS NULL OR expires_at > $2) THEN 'approved' ELSE 'consumed' END,
+	_, err := tx.Exec(ctx, `UPDATE model_grants SET state = CASE WHEN attempts_left > 0 AND (expires_at IS NULL OR expires_at > $2)
+		AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.id = $1 AND t.state IN ('completed', 'failed', 'canceled')) THEN 'approved' ELSE 'consumed' END,
 		updated_at = $2 WHERE task = $1 AND state = 'active'`, task, now)
 	return err
 }

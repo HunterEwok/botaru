@@ -25,7 +25,7 @@ func main() {
 	showVersion := flag.Bool("version", false, "print the version and exit")
 	coreURL := flag.String("core", "http://127.0.0.1:8401", "the P1 address of the core")
 	tokenFile := flag.String("token-file", "", "the file with the worker token from worker.enroll")
-	maxTokens := flag.Int64("max-tokens", 1000, "the output limit of one model call; P4 caps it by the profile")
+	maxTokens := flag.Int64("max-tokens", agent.DefaultMaxTokens, "the output limit of one model call; P4 caps it by the profile's max_output_tokens")
 	flag.Parse()
 	if *showVersion {
 		fmt.Println(version.String("botaru-agent"))

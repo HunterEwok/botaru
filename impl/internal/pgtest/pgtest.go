@@ -220,7 +220,7 @@ func setup() {
 		setupErr = err
 		return
 	}
-	opts := fmt.Sprintf("-p %d -k %s -c listen_addresses=127.0.0.1 -c fsync=off -c synchronous_commit=off -c full_page_writes=off -c max_connections=200", port, dir)
+	opts := fmt.Sprintf("-p %d -k %s -c listen_addresses=127.0.0.1 -c fsync=off -c synchronous_commit=off -c full_page_writes=off -c max_connections=400", port, dir)
 	out, err = exec.Command(filepath.Join(bin, "pg_ctl"), "-D", data, "-o", opts, "-l", filepath.Join(dir, "log"), "-w", "start").CombinedOutput()
 	if err != nil {
 		setupErr = fmt.Errorf("pg_ctl start: %v: %s", err, out)

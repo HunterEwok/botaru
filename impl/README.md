@@ -208,6 +208,11 @@ Core, ports and people:
 - The chat command `/invite`; merging a daily digest of preferences into one message.
 - The purge of `runtime_internal` sessions by period (RET-11).
 - The line "improvement cycle disabled" in the `apply` lint (INS-6): `doctor` and the digest show it.
+- The attempt deadline: `timeouts.attempt` of a task type and of a tenant dispatch rule, and the rule's
+  `max_attempts`, are not applied (DSP-3); an attempt ends by `stall_after`, the agent's turn limit or the task
+  deadline.
+- Sessions in `botaru-agent`: the core issues the session handle, but the agent neither loads nor appends the session
+  (MEM-1), and after a provider failure the next attempt starts again from the first model call.
 
 Monitoring:
 
