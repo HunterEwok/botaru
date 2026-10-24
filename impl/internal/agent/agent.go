@@ -395,8 +395,11 @@ func (a *Agent) run(ctx context.Context, p attemptPayload) (map[string]any, stri
 			// The last call: the model hears so and gets no tools, so the attempt ends with
 			// its answer instead of a tool call that would never run. The note goes into the
 			// system text, not after the tool results: a text block right after tool results
-			// makes the model end its turn with an empty answer.
+			// makes the model end its turn with an empty answer. A changed system text unbinds
+			// the thinking blocks of the earlier answers (the provider refuses them as bound to
+			// a different conversation), so this call goes without them.
 			params.System = append(params.System, anthropic.TextBlockParam{Text: lastTurnNote})
+			params.Messages = withoutThinking(messages)
 			if len(tools) > 0 {
 				params.ToolChoice = anthropic.ToolChoiceUnionParam{OfNone: &anthropic.ToolChoiceNoneParam{}}
 			}
@@ -499,6 +502,25 @@ func (a *Agent) run(ctx context.Context, p attemptPayload) (map[string]any, stri
 		messages = append(messages, anthropic.NewUserMessage(results...))
 	}
 	return nil, "runtime_error", errors.New("the model did not answer within the turn limit")
+}
+
+// withoutThinking is a copy of the messages without thinking blocks; a message left with no
+// block is dropped, and the provider joins the user messages around it.
+func withoutThinking(messages []anthropic.MessageParam) []anthropic.MessageParam {
+	out := make([]anthropic.MessageParam, 0, len(messages))
+	for _, m := range messages {
+		var content []anthropic.ContentBlockParamUnion
+		for _, b := range m.Content {
+			if b.OfThinking == nil && b.OfRedactedThinking == nil {
+				content = append(content, b)
+			}
+		}
+		if len(content) > 0 {
+			m.Content = content
+			out = append(out, m)
+		}
+	}
+	return out
 }
 
 // cutToolUses are the error results for the tool calls of an answer the output limit ended: the

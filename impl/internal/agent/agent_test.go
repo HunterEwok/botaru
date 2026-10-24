@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/HunterEwok/botaru/impl/internal/p1client"
+	"github.com/anthropics/anthropic-sdk-go"
 )
 
 func TestParseResult(t *testing.T) {
@@ -473,5 +474,24 @@ func TestAgentToolUseWithoutCall(t *testing.T) {
 	}
 	if len(f.completes) != 1 || f.completes[0]["result"] == nil {
 		t.Fatalf("completes %v", f.completes)
+	}
+}
+
+// The last call goes without thinking blocks: its changed system text would unbind them. A
+// message of thinking only is dropped.
+func TestWithoutThinking(t *testing.T) {
+	in := []anthropic.MessageParam{
+		anthropic.NewUserMessage(anthropic.NewTextBlock("task")),
+		anthropic.NewAssistantMessage(anthropic.NewThinkingBlock("sig", ""), anthropic.NewToolUseBlock("t1", map[string]any{}, "logs_tail")),
+		anthropic.NewUserMessage(anthropic.NewToolResultBlock("t1", "ok", false)),
+		anthropic.NewAssistantMessage(anthropic.NewRedactedThinkingBlock("x")),
+		anthropic.NewUserMessage(anthropic.NewTextBlock(repairPrompt)),
+	}
+	out := withoutThinking(in)
+	if len(out) != 4 || len(out[1].Content) != 1 || out[1].Content[0].OfToolUse == nil {
+		t.Fatalf("without thinking %+v", out)
+	}
+	if len(in[1].Content) != 2 {
+		t.Error("the history itself lost a block")
 	}
 }
