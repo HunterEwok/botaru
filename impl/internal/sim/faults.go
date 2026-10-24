@@ -565,12 +565,20 @@ func playFarmFaults(ctx context.Context, d *Director, sc string, part faultPart)
 		}
 		var provReason string
 		_ = s.Bench.Store().Pool.QueryRow(ctx, `SELECT coalesce(record->>'provider_reason', '') FROM tasks WHERE tenant = $1 AND idempotency_key = $2`, home, key).Scan(&provReason)
-		// The task itself met the fault (its last provider reason is kept); the run cap may end a
-		// task of several calls while the fault lasts (expected), and a provider failure never ends
-		// it any other way.
+		// The task itself met the fault (its last provider reason is kept); the run cap or the
+		// tree's money spent on answered calls may end a task of several calls that the fault made
+		// start over (expected), and a provider failure never ends it any other way.
+		// The money ran out only on answered calls: every model call of the tree is settled, and
+		// those without an answer cost nothing.
+		var open, unanswered, paid int64
+		_ = s.Bench.Store().Pool.QueryRow(ctx, `SELECT count(*) FILTER (WHERE s.state <> 'committed'),
+			coalesce(sum(s.eur_micros) FILTER (WHERE s.tokens IS NULL), 0), coalesce(sum(s.eur_micros) FILTER (WHERE s.tokens IS NOT NULL), 0)
+			FROM spend s JOIN tasks t ON s.root = t.id WHERE t.tenant = $1 AND t.idempotency_key = $2 AND s.unit = 'tokens'`, home, key).Scan(&open, &unanswered, &paid)
+		moneyOut := reason == "budget_exhausted" && open == 0 && unanswered == 0 && paid > 0
 		d.check(sc, "provider_errors_survived", errs[500]+errs[529]+errs[429] > 0 && provReason != "" &&
-			(state == "completed" || state == "failed" && reason == "runs_exhausted"),
-			"state %s %s (last provider reason %q); answered by the front: 500 %d, 529 %d, 429 %d; attempts %d", state, reason, provReason, errs[500], errs[529], errs[429], attempts(key))
+			(state == "completed" || state == "failed" && (reason == "runs_exhausted" || moneyOut)),
+			"state %s %s (last provider reason %q); answered by the front: 500 %d, 529 %d, 429 %d; attempts %d; model calls of the tree: %d unsettled, %d µEUR without an answer, %d µEUR answered",
+			state, reason, provReason, errs[500], errs[529], errs[429], attempts(key), open, unanswered, paid)
 		s.HealFarm()
 		if key, err = ask(); err != nil {
 			return err

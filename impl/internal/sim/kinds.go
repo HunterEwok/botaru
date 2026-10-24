@@ -498,8 +498,9 @@ func botMessages(ctx context.Context, d *Director, sc string) error {
 	return nil
 }
 
-// followUpMemory plays the continuation of a conversation (R-16): alice asks how the sensors
-// are, the summary answers and asks back, which opens the follow-up window, and her next words
+// followUpMemory plays the continuation of a conversation (R-16): alice asks how the sensor of
+// her station is without naming the station, the summary asks back, which opens the follow-up
+// window, and her next words
 // without a command continue that task with its type, in the same session of the conversation,
 // which the second task loads and writes on (MEM-1). A person's own memory is deferred (MEM-2),
 // so the session is the memory the scenario checks.
@@ -520,7 +521,7 @@ func followUpMemory(ctx context.Context, d *Director, sc string) error {
 			ORDER BY l.lease_no DESC LIMIT 1`, home, key).Scan(&id, &n)
 		return id, n
 	}
-	key, err := d.S.Say("alice", "alice-dm", "How is the sensor doing today?")
+	key, err := d.S.Say("alice", "alice-dm", "How is the sensor at my station doing today?")
 	if err != nil {
 		return err
 	}
@@ -534,7 +535,7 @@ func followUpMemory(ctx context.Context, d *Director, sc string) error {
 	d.check(sc, "window_opened", state == "completed" && result["need_input"] == true && until != "",
 		"state %s %s, need_input %v, window until %q", state, reason, result["need_input"], until)
 	firstSession, firstEntries := session(key)
-	key, err = d.S.Say("alice", "alice-dm", "And was it the same yesterday?")
+	key, err = d.S.Say("alice", "alice-dm", "Station st-02. And was it the same yesterday?")
 	if err != nil {
 		return err
 	}
