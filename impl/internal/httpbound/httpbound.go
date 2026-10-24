@@ -3,7 +3,9 @@
 // Package httpbound bounds how long a client may take to send its request. http.Server's
 // ReadTimeout would also end a long poll of claim or a model call through P4 while the
 // handler still runs, so the deadline covers the request body only: it is cleared once the
-// handler has read the body to its end.
+// handler has read the body to its end. A handler that runs long must therefore read its body
+// to EOF first, even an empty one: over HTTP/1.1 a deadline left in place ends the request
+// once it passes.
 package httpbound
 
 import (

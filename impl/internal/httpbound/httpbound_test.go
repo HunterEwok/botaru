@@ -57,3 +57,30 @@ func TestBody(t *testing.T) {
 		t.Fatalf("a slow body held the connection: %q after %v", line, time.Since(start))
 	}
 }
+
+// Over TLS and HTTP/2 a handler that runs on after the body is not cut off either.
+func TestBodyTLS(t *testing.T) {
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.ReadAll(r.Body)
+		select {
+		case <-r.Context().Done():
+			return
+		case <-time.After(400 * time.Millisecond):
+		}
+		_, _ = io.WriteString(w, r.Proto)
+	})
+	s := httptest.NewUnstartedServer(nil)
+	s.Config = Server("", h, 200*time.Millisecond, time.Second)
+	s.EnableHTTP2 = true
+	s.StartTLS()
+	defer s.Close()
+	resp, err := s.Client().Post(s.URL, "application/json", strings.NewReader("{}"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if string(b) != "HTTP/2.0" {
+		t.Fatalf("a long handler over HTTP/2: %q", b)
+	}
+}
