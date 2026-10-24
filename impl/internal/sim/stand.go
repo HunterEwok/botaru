@@ -445,8 +445,14 @@ func editSeed(sd *evals.Seed) {
 	}
 }
 
+// cacheWriteRatio and cacheReadRatio are the prices of a cache write and read as parts of the
+// input price.
+const cacheWriteRatio, cacheReadRatio = 1.25, 0.1
+
 // editManifests sets the model and the prices of a real run in every model profile: Model in
-// each, or the model of the profile's rank.
+// each, or the model of the profile's rank. A profile with cache prices keeps the cache, at the
+// provider's ratios to the input price: a write at 1.25 times, a read at 0.1 times (a model whose
+// read is cheaper is counted from above).
 func editManifests(ms []map[string]any, cfg Config) []map[string]any {
 	if !cfg.Real || cfg.Model == "" && len(cfg.RankModels) == 0 {
 		return ms
@@ -469,6 +475,9 @@ func editManifests(ms []map[string]any, cfg Config) []map[string]any {
 		}
 		p := cfg.Prices[model]
 		pr["input"], pr["output"] = p[0], p[1]
+		if _, cached := pr["cache_write"]; cached {
+			pr["cache_write"], pr["cache_read"] = p[0]*cacheWriteRatio, p[0]*cacheReadRatio
+		}
 	}
 	widenBudgets(ms)
 	return ms
@@ -615,10 +624,11 @@ func widenBudgets(ms []map[string]any) {
 
 // callReserve is what the gateway reserves for one call of a profile in EUR (gateway.Reserve):
 // the output limit at the output price, and a request of 60000 bytes, which an agent with a few
-// tool results reaches, at the input price.
+// tool results reaches, at the higher of the input and cache write prices.
 func callReserve(profile map[string]any) float64 {
 	pr := mapOf(profile["price"])
-	return (num(profile["max_output_tokens"])*num(pr["output"]) + 60000*num(pr["input"])) / 1e6
+	in := max(num(pr["input"]), num(pr["cache_write"]))
+	return (num(profile["max_output_tokens"])*num(pr["output"]) + 60000*in) / 1e6
 }
 
 // num reads a number of a manifest, whatever number type the reader gave.
@@ -1390,7 +1400,8 @@ func (s *Stand) onModelCall(req, resp []byte, status int) {
 	}
 	in := r.Usage.In + r.Usage.CacheRead + r.Usage.CacheCreate
 	p := s.price(r.Model)
-	cost := int64(float64(in)*p[0] + float64(r.Usage.Out)*p[1]) // EUR per Mtok -> micro-euros
+	cost := int64((float64(r.Usage.In)+cacheWriteRatio*float64(r.Usage.CacheCreate)+cacheReadRatio*float64(r.Usage.CacheRead))*p[0] +
+		float64(r.Usage.Out)*p[1]) // EUR per Mtok -> micro-euros
 	msg := fmt.Sprintf("%s: %d tokens in, %d out, stop %s", r.Model, in, r.Usage.Out, r.StopReason)
 	if s.cfg.Real {
 		msg += fmt.Sprintf(", about %d µEUR", cost)

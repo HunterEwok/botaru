@@ -36,7 +36,9 @@ spec:
   fallback_on: [overloaded, unavailable, retired]
   max_output_tokens: 8000         # output limit of one call, reasoning included
   tokens_per_s: 60                # gives the response deadline (GW-12)
-  price: {input: 1.00, output: 4.00, checked: 2026-10-01}   # EUR per million tokens
+  # effort: low                  # optional reasoning effort P4 sets in every call (GW-19); the provider's default when absent
+  price: {input: 1.00, output: 4.00, cache_write: 1.25, cache_read: 0.10, checked: 2026-10-01}   # EUR per million tokens
+  # price.above: {input_tokens: 100000, input: 5.00, output: 25.00}   # optional tier for a long input (BUD-17)
   provider_retention_days: {value: 30, checked: 2026-10-01}
   requires_retention: false
   provider_training: {value: false, checked: 2026-10-01}
@@ -45,7 +47,7 @@ spec:
   retires_at: null                # doctor warns ahead of a retirement date
 ```
 
-The person who edits a profile converts the provider's prices to euros and sets `checked`; the core fetches no prices or rates, but a date older than 60 days gives a `doctor` warning and one older than 120 days fails `apply` ([GW-17](../conformance/rules.md#GW-17)), because a stale price understates reserves. A new model may have a new tokenizer, so its price is recomputed.
+The person who edits a profile converts the provider's prices to euros and sets `checked`; the core fetches no prices or rates, but a date older than 60 days gives a `doctor` warning and one older than 120 days fails `apply` ([GW-17](../conformance/rules.md#GW-17)), because a stale price understates reserves. A new model may have a new tokenizer, so its price is recomputed. Without `cache_write` and `cache_read` the prompt cache is off for the profile, because an unpaid cache would not be part of the reserve; with them P4 sets the cache points and a run of a dozen calls pays a tenth of the input price for what it has already sent, while the reserve counts the input at the higher cache write price, so a profile of one-call work (a review lens, a translator) is better off without them ([GW-16](../conformance/rules.md#GW-16), [GW-18](../conformance/rules.md#GW-18)). A provider that bills every token of a call with a long input at a higher price gets a second tier `price.above`, so that such calls are counted at what they cost and short ones are not counted at the long price ([BUD-17](../conformance/rules.md#BUD-17)).
 
 A tenant lists the profiles it allows in `models_allowed` and the providers in `providers_allowed`; a role refers to profiles through slots (`models: {base: base-std}` for `data-reader`). A role whose slot profile is not allowed in a tenant does not pass `apply` there ([GW-7](../conformance/rules.md#GW-7)).
 
@@ -73,7 +75,7 @@ A fallback profile is used only for a reason from `fallback_on`, passes the same
 3. Resolves the profile by slot and checks rank, provider, region and retention (GW-7, GOV-3, GW-14, GW-15).
 4. Looks at the circuit breaker and the rate limit wait of the (workspace, model pool) pair (GW-10, GW-11).
 5. Reserves the worst case in every applicable limit and caps the request's output at `max_output_tokens` ([GW-2](../conformance/rules.md#GW-2), [GW-6](../conformance/rules.md#GW-6)).
-6. Sets the region and the prompt cache point after the unchanging part of the request (instructions and tool catalog) and sends the call with the tenant's key ([GW-16](../conformance/rules.md#GW-16)).
+6. Sets the profile's reasoning effort, the region, the prompt cache point after the unchanging part of the request (instructions and tool catalog) and, from the second call of a run on, after the last message, and sends the call with the tenant's key ([GW-16](../conformance/rules.md#GW-16), [GW-18](../conformance/rules.md#GW-18), [GW-19](../conformance/rules.md#GW-19)).
 7. On a response, charges the usage summed over all iterations (input, output, cache write and read, reasoning, compaction), writes a usage line and releases the rest of the reserve ([BUD-3](../conformance/rules.md#BUD-3)).
 8. Without a response, charges the full reserve ([BUD-11](../conformance/rules.md#BUD-11)).
 
@@ -200,6 +202,7 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [BUD-14](../conformance/rules.md#BUD-14) | The enqueue estimate uses the type's actual price | v0.1 | no |
 | [BUD-15](../conformance/rules.md#BUD-15) | Actual usage per budget line in doctor | v0.1 | no |
 | [BUD-16](../conformance/rules.md#BUD-16) | The principal in a usage line is anonymized after 93 days | v0.2 | yes |
+| [BUD-17](../conformance/rules.md#BUD-17) | A second price tier for a long input | v0.3 | no |
 | [GW-1](../conformance/rules.md#GW-1) | The model request matches the catalog and the allowlist | v0.1 | yes |
 | [GW-2](../conformance/rules.md#GW-2) | Worst-case reserve and charging by the provider response | v0.1 | yes |
 | [GW-3](../conformance/rules.md#GW-3) | Only P4 has the provider key, each tenant has its own workspace | v0.1 | yes |
@@ -215,3 +218,5 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [GW-15](../conformance/rules.md#GW-15) | Provider retention and terms in the model profile | v0.1 | yes |
 | [GW-16](../conformance/rules.md#GW-16) | The prompt cache is the provider's | v0.1 | yes |
 | [GW-17](../conformance/rules.md#GW-17) | Profile prices and speed with a date and a shelf life | v0.1 | no |
+| [GW-18](../conformance/rules.md#GW-18) | A cache point on the conversation of a run | v0.3 | no |
+| [GW-19](../conformance/rules.md#GW-19) | The reasoning effort is the profile's | v0.3 | no |

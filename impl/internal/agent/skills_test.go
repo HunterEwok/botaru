@@ -34,7 +34,8 @@ func TestSKL2RuntimeSkillFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(section, files["SKILL.md"]) || strings.Contains(section, "not in the role") {
+	// The directory is new for every attempt, so it stays out of the system text (GW-16).
+	if !strings.Contains(section, files["SKILL.md"]) || strings.Contains(section, "not in the role") || strings.Contains(section, dir) {
 		t.Fatalf("section %q", section)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "other")); !os.IsNotExist(err) {

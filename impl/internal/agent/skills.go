@@ -47,7 +47,10 @@ func treeHash(files map[string]string) (string, error) {
 // one folder per skill-ref (runtime.skills: runtime_files, SKL-2). Only the skills of the refs
 // are written, each only when its files give the ref's tree hash; a file outside a ref has no
 // place on the disk. It returns the directory and the section of the system prompt that names
-// the skills and carries their SKILL.md text, which is reviewed text from the farm git.
+// the skills and carries their SKILL.md text, which is reviewed text from the farm git. The
+// section does not hold the directory, which is new for every attempt: the first message names
+// it, so the system text of a role stays the same between attempts and the provider's prompt
+// cache serves it (GW-16).
 func writeSkills(base string, refs []skillRef, files map[string]map[string]string) (string, string, error) {
 	if len(refs) == 0 {
 		return "", "", nil
@@ -57,7 +60,7 @@ func writeSkills(base string, refs []skillRef, files map[string]map[string]strin
 		return "", "", err
 	}
 	var section strings.Builder
-	section.WriteString("\n\nSkills of your role. Each is a procedure from the farm git; follow it when the task fits its description. Its files are under " + dir + ".")
+	section.WriteString("\n\nSkills of your role. Each is a procedure from the farm git; follow it when the task fits its description. Its files are in the skills directory that the first message names.")
 	for _, r := range refs {
 		fs := files[r.Name]
 		if h, err := treeHash(fs); err != nil || h != r.SHA256 || !skillName.MatchString(r.Name) {
