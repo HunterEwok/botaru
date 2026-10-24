@@ -325,9 +325,10 @@ func (a *Agent) run(ctx context.Context, p attemptPayload) (map[string]any, stri
 		}
 		if turn > 0 && turn+1 == maxTurns {
 			// The last call: the model hears so and gets no tools, so the attempt ends with
-			// its answer instead of a tool call that would never run.
-			last := &messages[len(messages)-1]
-			last.Content = append(last.Content, anthropic.NewTextBlock(lastTurnNote))
+			// its answer instead of a tool call that would never run. The note goes into the
+			// system text, not after the tool results: a text block right after tool results
+			// makes the model end its turn with an empty answer.
+			params.System = append(params.System, anthropic.TextBlockParam{Text: lastTurnNote})
 			if len(tools) > 0 {
 				params.ToolChoice = anthropic.ToolChoiceUnionParam{OfNone: &anthropic.ToolChoiceNoneParam{}}
 			}
