@@ -1976,7 +1976,8 @@ nothing again (OBV-1..7).
   catalog hosts and resources by the series' `catalog_kind`, each one that `subjectOfTenant` accepts; its description
   says which kind each series takes and which rollups fit a closed-list series. The core checks a query as before.
 - An analysis task carries the extension field `insight_context`: `role_task_types` (the subjects of the role's work
-  types) and, for a tenant with `insights.evolution.enabled`, `proposable_targets`: the Tenant limit fields with
+  types) and, for a tenant with `insights.evolution.enabled`, `decided_categories` (the proposal categories an active
+  person of the tenant may decide on; screening dismisses any other, COM-5) and `proposable_targets`: the Tenant limit fields with
   their current values (only lower), the cron and zone of each proposable schedule and the blocks `benefit`, `cost`
   and `risk` a manifest change needs (PRP-3), and for a tenant with one dispatcher rule the block `dispatch`: that rule's
   guarded fields (attempt deadline, attempt limit above 1, `max_running`) with current values and limits (PRP-12). It spares the model guesses; the core checks every proposal.

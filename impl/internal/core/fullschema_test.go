@@ -5,6 +5,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"slices"
 	"strings"
@@ -136,6 +137,19 @@ func TestObservationsQuerySubjects(t *testing.T) {
 	}
 }
 
+// With the evolution on, the analysis hears the categories its tenant can decide on; without
+// it, its input stays as it was.
+func TestInsightContextCategories(t *testing.T) {
+	cat := &Catalog{Tenants: map[string]*TenantView{"demo": {Name: "demo"}}}
+	dc, _ := insightContext(cat, "demo", "ops-reader", true, []any{"reliability"})["decided_categories"].(map[string]any)
+	if fmt.Sprint(dc["categories"]) != "[reliability]" {
+		t.Errorf("decided categories %v", dc)
+	}
+	if _, ok := insightContext(cat, "demo", "ops-reader", false, []any{"reliability"})["decided_categories"]; ok {
+		t.Error("decided categories with the evolution off")
+	}
+}
+
 // With the evolution on and one dispatcher rule, the analysis sees the guarded fields of that
 // rule with their current values, the ones checkTenantOp takes (PRP-12); with two rules, none.
 func TestInsightContextDispatch(t *testing.T) {
@@ -143,7 +157,7 @@ func TestInsightContextDispatch(t *testing.T) {
 		"retry": map[string]any{"max_attempts": 1}}
 	cat := &Catalog{Tenants: map[string]*TenantView{"demo": {Name: "demo", Raw: map[string]any{"spec": map[string]any{
 		"limits": map[string]any{"max_queued": 50}, "dispatch": map[string]any{"rules": []any{rule}}}}}}}
-	pt, _ := insightContext(cat, "demo", "ops-reader", true)["proposable_targets"].(map[string]any)
+	pt, _ := insightContext(cat, "demo", "ops-reader", true, nil)["proposable_targets"].(map[string]any)
 	d, _ := pt["dispatch"].(map[string]any)
 	fields, _ := d["fields"].(map[string]any)
 	f, _ := fields["spec.dispatch.rules[].timeouts.attempt"].(map[string]any)
@@ -154,13 +168,13 @@ func TestInsightContextDispatch(t *testing.T) {
 		t.Errorf("target %v", d["target"])
 	}
 	rule["retry"] = map[string]any{"max_attempts": 3}
-	pt, _ = insightContext(cat, "demo", "ops-reader", true)["proposable_targets"].(map[string]any)
+	pt, _ = insightContext(cat, "demo", "ops-reader", true, nil)["proposable_targets"].(map[string]any)
 	d, _ = pt["dispatch"].(map[string]any)
 	if fields, _ := d["fields"].(map[string]any); len(fields) != 2 {
 		t.Errorf("an attempt limit of 3 is not offered: %v", d)
 	}
 	cat.Tenants["demo"].Raw["spec"].(map[string]any)["dispatch"] = map[string]any{"rules": []any{rule, rule}}
-	pt, _ = insightContext(cat, "demo", "ops-reader", true)["proposable_targets"].(map[string]any)
+	pt, _ = insightContext(cat, "demo", "ops-reader", true, nil)["proposable_targets"].(map[string]any)
 	if _, ok := pt["dispatch"]; ok {
 		t.Error("dispatch targets with two rules")
 	}
