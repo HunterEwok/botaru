@@ -16,6 +16,7 @@ import (
 	"log/slog"
 	"maps"
 	"slices"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -124,6 +125,11 @@ type Core struct {
 	// storeDown is set when the store stopped answering and cleared when every loop ticked
 	// again after it returned (OBS-8).
 	storeDown atomic.Bool
+	// fastMu holds the fast loops while the core leaves not_ready (FEN-5).
+	fastMu sync.Mutex
+	// skipped are the rows a drain loop failed on while the store answered, skipped for a while
+	// so that the rows behind them still get their turn (poison.go).
+	skipped skipList
 	// budgetAt and retentionAt are the store times of the last slow passes.
 	budgetAt, retentionAt atomic.Int64
 	// restoring is set while a restore from a backup waits for restore.complete (RET-6).
