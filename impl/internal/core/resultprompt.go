@@ -238,8 +238,8 @@ func (c *Core) refTarget(ref, doc string) (map[string]any, string) {
 // insightContext is the reference of an analysis task: role_task_types are the subjects of the
 // work types of the role (the analysis types left out), and with the evolution on
 // proposable_targets lists the changes a manifest_change of this tenant may hold, with the
-// current values of the Tenant limits and the cron of each proposable schedule (PRP-3,
-// PRP-10, PRP-11). The core checks every proposal; this only spares the model guesses.
+// current values of the Tenant limits, the cron of each proposable schedule and the guarded
+// fields of the tenant's dispatcher rule (PRP-3, PRP-10, PRP-11, PRP-12). The core checks every proposal; this only spares the model guesses.
 func insightContext(cat *Catalog, tenant, role string, evolution bool) map[string]any {
 	types := []any{}
 	if r, ok := cat.Roles[role]; ok {
@@ -274,7 +274,7 @@ func insightContext(cat *Catalog, tenant, role string, evolution bool) map[strin
 		}
 		schedules[name] = map[string]any{"spec.cron": sc.Cron, "spec.timezone": scheduleTZ(tv, sc)}
 	}
-	out["proposable_targets"] = map[string]any{
+	targets := map[string]any{
 		"change_kinds": "change.kind none for an observation without a change; manifest_change for a change of the fields below, with benefit (a series of the role with direction and expected change), cost and risk",
 		"tenant": map[string]any{"target": map[string]any{"kind": "Tenant", "name": tenant}, "op": "set",
 			"rule": "a field of spec.limits, spec.campaigns or spec.scripts, only lower than its current value", "current": limits},
@@ -282,5 +282,54 @@ func insightContext(cat *Catalog, tenant, role string, evolution bool) map[strin
 			"rule":    "spec.cron shifts the minutes and hours at no more than the current frequency and at least half of it; spec.timezone is a zone name",
 			"current": schedules},
 	}
+	if d := dispatchTargets(spec, tenant); d != nil {
+		targets["dispatch"] = d
+	}
+	out["proposable_targets"] = targets
 	return out
+}
+
+// intAbove1 is true for a number above 1: only such an attempt limit can still be lowered.
+func intAbove1(v any) bool {
+	switch n := v.(type) {
+	case int:
+		return n > 1
+	case int64:
+		return n > 1
+	case float64:
+		return n > 1
+	}
+	return false
+}
+
+// dispatchTargets are the guarded fields of the tenant's dispatcher rule a proposal may change,
+// with their current values and limits (PRP-12): only when the tenant has exactly one rule, the
+// one an operation without a rule name reaches (checkTenantOp), and only the fields that rule
+// sets. nil when there is none.
+func dispatchTargets(spec map[string]any, tenant string) map[string]any {
+	disp, _ := spec["dispatch"].(map[string]any)
+	rules, _ := disp["rules"].([]any)
+	if len(rules) != 1 {
+		return nil
+	}
+	rule, _ := rules[0].(map[string]any)
+	fields := map[string]any{}
+	if t, _ := rule["timeouts"].(map[string]any); t["attempt"] != nil {
+		fields["spec.dispatch.rules[].timeouts.attempt"] = map[string]any{"current": t["attempt"],
+			"rule": "a duration up by at most two times and not beyond the task deadline"}
+	}
+	if r, _ := rule["retry"].(map[string]any); intAbove1(r["max_attempts"]) {
+		fields["spec.dispatch.rules[].retry.max_attempts"] = map[string]any{"current": r["max_attempts"],
+			"rule": "only lower, not below 1"}
+	}
+	if v := rule["max_running"]; v != nil {
+		fields["spec.dispatch.rules[].max_running"] = map[string]any{"current": v,
+			"rule": "one up or one down, not below 1, within the tenant ceilings"}
+	}
+	if len(fields) == 0 {
+		return nil
+	}
+	return map[string]any{"target": map[string]any{"kind": "Tenant", "name": tenant}, "op": "set",
+		"match": rule["match"], "fields": fields,
+		"rule": "guarded fields: never after untrusted text, recommended only when both lenses with a veto give at least 3, then tried under guards"}
 }

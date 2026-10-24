@@ -53,7 +53,7 @@ failure of the metric `M-6`.
 | Profile | Tenants | Machines | Workers |
 |---|---|---|---|
 | `smoke` (default) | `demo` | `web1`, `db1`, `ctd1` | one of each role |
-| `standard` | `ops-dept`, `lab-dept`, `small-dept`, `other-dept` | 8, 4, 2 and 2 of 16 | 6 `ops-reader` in `ops-dept`, two of the data bots in `lab-dept`, no farm manager in `small-dept` and `other-dept`, and so on |
+| `standard` | `ops-dept`, `lab-dept`, `small-dept`, `other-dept` | 8, 4, 2 and 2 of 16 | 6 `ops-reader` in `ops-dept`, two of the data bots in `lab-dept`, the farm manager and the evolution in `ops-dept` and `lab-dept` only, and so on |
 
 The tenants of `standard` are named `<name>-dept`: the apply lint refuses a tenant named `ops`, since it reads the
 field name `responses.ops` of the incident classes as tenant data in a global manifest (`global_tenant_data`,

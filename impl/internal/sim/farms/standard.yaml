@@ -27,6 +27,7 @@ tenants:
       - {id: ctd3, kind: ctd}
       - {id: geo1, kind: geo}
     manager: true
+    evolution: true
     replicas: {hello: 1, ops-reader: 1, data-reader: 2, geo-reader: 1, pipeline-reader: 2, reporter: 1, reviewer-a: 1, reviewer-b: 1,
       farm-manager: 1, farm-manager-reader: 1, data-job: 1, translator: 2}
   - name: small-dept
