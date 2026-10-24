@@ -472,7 +472,7 @@ func (g *Gateway) providerBody(req map[string]any, grant *core.ModelGrant) (map[
 // shallow is a one-level copy of a JSON object; anything else gives an empty object.
 func shallow(v any) map[string]any {
 	m, _ := v.(map[string]any)
-	out := make(map[string]any, len(m)+1)
+	out := make(map[string]any, len(m))
 	for k, x := range m {
 		out[k] = x
 	}
