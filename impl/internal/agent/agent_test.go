@@ -131,6 +131,7 @@ type fakeCore struct {
 	mu        sync.Mutex
 	answers   []string
 	cut       bool // the first model answer is a tool call the output limit cut
+	cuts      int  // more cut answers after the first
 	model     [][]byte
 	completes []map[string]any
 	claimed   bool
@@ -165,8 +166,12 @@ func (f *fakeCore) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{}`))
 	case "/v1/p4/anthropic/v1/messages":
 		f.model = append(f.model, body)
-		if f.cut {
-			f.cut = false
+		if f.cut || f.cuts > 0 {
+			if f.cut {
+				f.cut = false
+			} else {
+				f.cuts--
+			}
 			_ = json.NewEncoder(w).Encode(map[string]any{"id": "msg_0", "type": "message", "role": "assistant", "model": "m",
 				"content":     []any{map[string]any{"type": "tool_use", "id": "toolu_1", "name": "logs__tail", "input": map[string]any{}}},
 				"stop_reason": "max_tokens", "usage": map[string]any{"input_tokens": 1, "output_tokens": 1}})
@@ -262,6 +267,50 @@ func TestAgentCutToolCall(t *testing.T) {
 	last := second.Messages[len(second.Messages)-1]
 	if last.Role != "user" || len(last.Content) != 1 || last.Content[0].Type != "tool_result" || last.Content[0].ToolUseID != "toolu_1" || !last.Content[0].IsError {
 		t.Errorf("the message after the cut call %+v", last)
+	}
+	if len(f.completes) != 1 || f.completes[0]["result"] == nil {
+		t.Fatalf("completes %v", f.completes)
+	}
+}
+
+// The last model call of an attempt says so, so the attempt ends with an answer instead of a
+// tool call that would never run.
+func TestAgentLastTurn(t *testing.T) {
+	f := &fakeCore{cuts: maxTurns - 1, answers: []string{`{"answer":"nginx is down","verdict":"cause_found","services":["nginx"]}`}}
+	srv := httptest.NewServer(f)
+	defer srv.Close()
+	a := New(Config{Core: &p1client.Client{BaseURL: srv.URL, Token: "w"}})
+	if worked, err := a.Once(context.Background(), 0); err != nil || !worked {
+		t.Fatalf("once: %v %v", worked, err)
+	}
+	if len(f.model) != maxTurns {
+		t.Fatalf("%d model calls, want %d", len(f.model), maxTurns)
+	}
+	type req struct {
+		ToolChoice *struct {
+			Type string `json:"type"`
+		} `json:"tool_choice"`
+		Messages []struct {
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"messages"`
+	}
+	var before, last req
+	if json.Unmarshal(f.model[maxTurns-2], &before) != nil || json.Unmarshal(f.model[maxTurns-1], &last) != nil {
+		t.Fatal("request bodies")
+	}
+	if before.ToolChoice != nil {
+		t.Errorf("a call before the last chose tools: %+v", before.ToolChoice)
+	}
+	// This attempt has no tools, so the call names no tool choice either (the API refuses
+	// tool_choice without tools); with tools it is none.
+	if last.ToolChoice != nil {
+		t.Errorf("the last call's tool choice without tools %+v", last.ToolChoice)
+	}
+	msg := last.Messages[len(last.Messages)-1]
+	if got := msg.Content[len(msg.Content)-1].Text; got != lastTurnNote {
+		t.Errorf("the last call ends with %q", got)
 	}
 	if len(f.completes) != 1 || f.completes[0]["result"] == nil {
 		t.Fatalf("completes %v", f.completes)
