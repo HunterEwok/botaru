@@ -21,6 +21,11 @@ const seedInvestigations = 18
 // points the observe loop would have written for such tasks (OBV-5). The keys are fixed per
 // point, so a second seeding writes nothing again.
 func (s *Stand) SeedInvestigationLoad(ctx context.Context) error {
+	return s.SeedInvestigationLoadIn(ctx, s.Home())
+}
+
+// SeedInvestigationLoadIn is SeedInvestigationLoad in the given tenant.
+func (s *Stand) SeedInvestigationLoadIn(ctx context.Context, tenant string) error {
 	now := time.Now().UTC()
 	db := s.Bench.Store().Pool
 	const subject = "task_type:ops.investigate.v1"
@@ -50,11 +55,11 @@ func (s *Stand) SeedInvestigationLoad(ctx context.Context) error {
 		} {
 			if _, err := db.Exec(ctx, `INSERT INTO obs_points (tenant, series, subject, at, num, enum, source, data_mark, role, key, created_at)
 				VALUES ($8, $1, $2, $3, $4, $5, 'core', 'internal', 'ops-reader', $6, $7) ON CONFLICT DO NOTHING`,
-				p.series, subject, at, p.num, p.enum, key, now, s.Home()); err != nil {
+				p.series, subject, at, p.num, p.enum, key, now, tenant); err != nil {
 				return err
 			}
 		}
 	}
-	s.log.Addf(KindDirector, "the history of the world: %d past investigations of ops-reader in the core series, two of three cut at the attempt deadline, half of those failed", seedInvestigations)
+	s.log.Addf(KindDirector, "the history of the world: %d past investigations of ops-reader in the core series of %s, two of three cut at the attempt deadline, half of those failed", seedInvestigations, tenant)
 	return nil
 }

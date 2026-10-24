@@ -423,13 +423,21 @@ An analysis turn switches its tenant's schedule `ops-insight` on until the first
 most 75 seconds, and off again; each switch is a commit of
 the farm git. Every rate is per tenant, so the farm sees the sum over its tenants.
 
+A load run starts on a fresh store, where the analyses would rightly find nothing to improve. So, before the
+first work, each tenant with the farm manager gets the history of past investigations of
+`incident-and-commission` (18 investigations of `ops-reader`, two of three cut at the attempt deadline): the
+analyses then have a weak spot to find, and the path of improvement (`M-10`) something to pass.
+
 A profile can also put farm faults on (below) at their times; `every` repeats one, and `tenant` names its tenant
-(the home tenant when empty). `load.json` then counts them by code and tenant (`faults`) with what the provider
+(the home tenant when empty). `F-1` waits past its time, up to 10 minutes, for a replica of its tenant that
+holds an attempt lease and whose role runs another replica there, so that it stops one in the middle of a task
+that another replica can take over (`M-5` measures that task); with none by then it stops an idle replica and says
+so. Without a task asked for, `F-1` (also from the console) only takes such a lease holder. `load.json` then counts them by code and tenant (`faults`) with what the provider
 front and the monitor counted (`fault_counts`):
 
 ```yaml
 faults:
-  - {code: F-1, at: 10m, tenant: lab-dept}   # tenant counts for F-1 only
+  - {code: F-1, at: 10m, tenant: ops-dept}   # tenant counts for F-1 only
   - {code: F-3, at: 20m, every: 30m}
 ```
 
@@ -444,7 +452,7 @@ profile (`faults`) and the scenario `farm-faults`, which plays them all on the m
 
 | Code | Fault | Expected outcome |
 |---|---|---|
-| `F-1` | the running replica that holds the newest attempt lease of the tenant (or, with none, a replica of its role with the most replicas) stops as a crash would: no pulses, the lease is not released; it starts again after 150 s with the same enrollment | the lease expires and the attempt is dispatched again, to another replica of the role if one runs (then within two lease terms); the task completes; `alarm.worker.stale` for the silent worker (after two minutes of silence), resolved when it calls again |
+| `F-1` | the running replica that holds the newest attempt lease of the tenant, of a role with another running replica there (or, with none, a replica of its role with the most replicas; the scenario `farm-faults` names its task's lease instead) stops as a crash would: no pulses, the lease is not released; it starts again after 150 s with the same enrollment | the lease expires and the attempt is dispatched again, to another replica of the role if one runs (then within two lease terms); the task completes; `alarm.worker.stale` for the silent worker (after two minutes of silence), resolved when it calls again |
 | `F-2` | the next plugin process a toolhost starts is killed (`SIGKILL`) when its tool call comes in | that tool call ends in `error`; the bot sees a tool error, the attempt goes on or is retried; the next call starts a new process. A plugin is a process per call (`toolhost`), so "the next one" is the one in flight |
 | `F-3` | for 2 minutes the provider answers `500`, `529` or `429` to the next 3 model calls and to a quarter of the others | the gateway maps `500` and `529` to `provider_unavailable` and `429` to `provider_rate_limited`; the agent ends the attempt at the failed call without spending it, the task waits for the provider (`provider_quota`) and starts the attempt over from its first call, so the model calls and tool calls before the failure are made again; an attempt in which the model had answered before the failure counts a run, so a task of several calls may end `runs_exhausted` (`retry.max_runs`) or, its calls paid again, `budget_exhausted` (`tree_budget_eur`) while the fault lasts; work after the fault completes |
 | `F-4` | the provider waits 30 s before every model call for 2 minutes | the calls stay under the gateway deadline (at least 60 s) and succeed late; no alarm |
