@@ -230,6 +230,9 @@ func (a *Agent) heartbeats(ctx context.Context, cancel context.CancelFunc, lease
 // maxTurns bounds the model calls of one attempt.
 const maxTurns = 10
 
+// lastTurnNote tells the model that its next answer is the last one of the attempt.
+const lastTurnNote = "This is the last model call of this attempt: no tool runs any more. Answer now with the result from what you have."
+
 // repairPrompt asks a model that answered in prose for the result object.
 const repairPrompt = "Your answer is not a JSON object. Answer again with one JSON object that matches the JSON Schema of the instructions, and nothing else: put your answer into its fields."
 
@@ -313,13 +316,23 @@ func (a *Agent) run(ctx context.Context, p attemptPayload) (map[string]any, stri
 			}
 			tools = list
 		}
-		msg, err := client.Messages.New(ctx, anthropic.MessageNewParams{
+		params := anthropic.MessageNewParams{
 			Model:     anthropic.Model("base"), // P4 sets the model of the slot (GW-7)
 			MaxTokens: a.cfg.MaxTokens,
 			System:    []anthropic.TextBlockParam{{Text: system}},
 			Messages:  messages,
 			Tools:     tools,
-		})
+		}
+		if turn > 0 && turn+1 == maxTurns {
+			// The last call: the model hears so and gets no tools, so the attempt ends with
+			// its answer instead of a tool call that would never run.
+			last := &messages[len(messages)-1]
+			last.Content = append(last.Content, anthropic.NewTextBlock(lastTurnNote))
+			if len(tools) > 0 {
+				params.ToolChoice = anthropic.ToolChoiceUnionParam{OfNone: &anthropic.ToolChoiceNoneParam{}}
+			}
+		}
+		msg, err := client.Messages.New(ctx, params)
 		if err != nil {
 			var apiErr *anthropic.Error
 			if errors.As(err, &apiErr) {
