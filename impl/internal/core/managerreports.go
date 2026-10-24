@@ -437,11 +437,7 @@ func postmortemFirstCall(cat *Catalog, tenant, profile string) int64 {
 	if !ok {
 		return 0
 	}
-	in := p.Price.Input
-	if p.Price.CacheWrite != nil && *p.Price.CacheWrite > in {
-		in = *p.Price.CacheWrite
-	}
-	return int64(math.Ceil(1024*in + float64(p.MaxOutputTokens)*p.Price.Output))
+	return int64(math.Ceil(1024*p.Price.InputCeiling() + float64(p.MaxOutputTokens)*p.Price.Output))
 }
 
 // linkCandidates are the link candidates code found for an incident under every rule: a change

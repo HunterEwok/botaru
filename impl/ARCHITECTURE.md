@@ -559,6 +559,18 @@ When the slot's provider answers a reason of the profile's `fallback_on` from th
 - The usage line of a fallback call names the fallback profile with `fallback` and the slot profile (`slot_profile`),
   and the event `model.fallback.v1` names the task, both profiles, the reason and the slot.
 
+### Prompt cache, effort and price tiers
+
+- A profile with `cache_write` and `cache_read` gets a cache point on the last system block, and from the second call of
+  a run on one on the last block of the last message, while the call has fewer than four points (GW-16, GW-18). The
+  agent keeps the time, the reply language, the skills directory and the data block in the first message, so the system
+  text of a role is the same for every attempt; the last-call note is a second system block, after the cached one.
+- A profile's `effort` replaces `output_config.effort` of the request (GW-19).
+- `price.above` prices every line of a call whose input, cache write and read together is above its `input_tokens`; the
+  reserve of a call and the estimate of a model grant take the tier of their own input estimate (BUD-17). The other
+  estimates of a worst case from a profile (the lint, the manager's first call) stay at the base tier, which fits
+  their inputs of a few thousand tokens.
+
 ### Provider terms and regions
 
 - A profile is admitted only when its human review is at most the tenant's `terms.human_review` (order `none`,

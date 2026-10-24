@@ -29,6 +29,6 @@ spec:
   params_schema: {type: object, additionalProperties: false, properties: {}}
   timeouts: {start_by: 1h, lease: 60s, heartbeat: 20s, attempt: 5m, deadline: 2h}
   retry: {max_attempts: 1, max_runs: 2}
-  tree_budget_eur: 0.10
+  tree_budget_eur: 0.15
   max_children: 0
   proposable: false

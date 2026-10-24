@@ -388,6 +388,9 @@ func (a *Agent) run(ctx context.Context, p attemptPayload) (map[string]any, stri
 		// the same for recipients of different languages.
 		first = append(first, anthropic.NewTextBlock("Write the free text of your answer in the language with the code "+p.ReplyLocale+"; keep codes, names and identifiers as they are."))
 	}
+	if dir != "" {
+		first = append(first, anthropic.NewTextBlock("The skills directory of this attempt is "+dir+"."))
+	}
 	if d := dataText(p); d != "" {
 		first = append(first, anthropic.NewTextBlock(d))
 	}

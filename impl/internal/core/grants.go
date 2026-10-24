@@ -247,11 +247,8 @@ func initialInputTokens(body []byte) int {
 // grantEstimate is the worst case of a grant: per attempt one call with the task body and the
 // profile's output limit at its prices, as P4 reserves a call (GW-2).
 func grantEstimate(p manifest.ModelProfile, bodyBytes, attempts int) int64 {
-	in := p.Price.Input
-	if p.Price.CacheWrite != nil && *p.Price.CacheWrite > in {
-		in = *p.Price.CacheWrite
-	}
-	per := float64(bodyBytes+1024)*in + float64(p.MaxOutputTokens)*p.Price.Output
+	tier := p.Price.Tier(int64(bodyBytes + 1024))
+	per := float64(bodyBytes+1024)*tier.InputCeiling() + float64(p.MaxOutputTokens)*tier.Output
 	return int64(per+0.999999) * int64(max(attempts, 1))
 }
 

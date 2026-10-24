@@ -1156,7 +1156,7 @@ func (s *Stand) spend(ctx context.Context, elapsed time.Duration) (Spend, error)
 		}
 		p := s.cfg.ProviderPrices[model]
 		// The provider bills a cache write at 1.25 and a cache read at 0.1 of the input price.
-		cost := int64((float64(in)+1.25*float64(cw)+0.1*float64(cr))*p[0] + float64(out)*p[1])
+		cost := int64((float64(in)+cacheWriteRatio*float64(cw)+cacheReadRatio*float64(cr))*p[0] + float64(out)*p[1])
 		row.Calls += calls
 		row.CacheWrite += cw
 		row.CacheRead += cr

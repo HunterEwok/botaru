@@ -1347,6 +1347,27 @@
   fixtures: [blackbox:budget/subject-anonymized-93d]
   doc: docs/models-and-money.md
 
+- id: BUD-17
+  title: A second price tier for a long input
+  status: active
+  text: >-
+    A model profile may give a second price tier `price.above` for a provider that bills every
+    token of a call with a long input at a higher price: a call whose input tokens, cache write and
+    read included, are above the tier's `input_tokens` is priced by the tier in all its lines, and
+    the reserve of a call (GW-2) and of a model grant (MGR-17) takes the tier of its own input
+    estimate. A cache price the tier leaves out is the base cache price times the ratio of the
+    tier's input price to the base input price. Each compaction iteration takes the tier of its own
+    input, and a tier price below the base price counts as the base price. A short call is then
+    counted at the base price and a long one at what it costs (BUD-9).
+  goal: G3
+  check: [impl]
+  waivable: true
+  version: v0.3
+  profile: core
+  decisions: [D-121]
+  fixtures: [impl:internal/gateway/TestPriceTier]
+  doc: docs/models-and-money.md
+
 - id: CAP-1
   title: Tenant ceilings on counters
   status: active
@@ -5005,6 +5026,45 @@
   profile: core
   decisions: []
   fixtures: [lint:model/price-age-lint]
+  doc: docs/models-and-money.md
+
+- id: GW-18
+  title: A cache point on the conversation of a run
+  status: active
+  text: >-
+    From the second call of a run on, that is when the request holds more than one message, P4
+    sets a second cache point of a profile with cache prices on the last block of the last message,
+    unless it is a reasoning block and while the call has fewer than four points, so that the next
+    call of the run, which sends the same messages and its new ones, reads the conversation so far
+    from the cache instead of paying the full input price for it again; the first call of a run
+    gets no such point, since nothing would read it (GW-16, BUD-9). The runtime keeps the text
+    that is the same for every attempt of a role in the system text and the text of one attempt,
+    such as the current time and the path of the skills directory, in the first message.
+  goal: G3
+  check: [impl]
+  waivable: true
+  version: v0.3
+  profile: core
+  decisions: [D-121]
+  fixtures: [impl:internal/gateway/TestProviderBody, impl:internal/agent/TestSKL2RuntimeSkillFiles]
+  doc: docs/models-and-money.md
+
+- id: GW-19
+  title: The reasoning effort is the profile's
+  status: active
+  text: >-
+    A model profile may set `effort`; P4 then sets it in every request of the profile in place of
+    any value the runtime sent, as it sets the output limit (GW-2, GW-7), and without it the
+    request goes as it came and the provider's default holds. The provider binding names the
+    request field. A model that does not take the field answers with an error, so the person who
+    edits the profile sets `effort` only for a model that takes it.
+  goal: G3
+  check: [impl]
+  waivable: true
+  version: v0.3
+  profile: core
+  decisions: [D-121]
+  fixtures: [impl:internal/gateway/TestProviderBody]
   doc: docs/models-and-money.md
 
 - id: HLD-1
