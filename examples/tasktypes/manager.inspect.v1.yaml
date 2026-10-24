@@ -13,7 +13,9 @@ spec:
   data_class: internal
   instruction: |
     Read what the input block names for the incident and hand in findings: each names a subject of this tenant and
-    the ids of the objects you read as evidence.
+    the ids of the objects you read as evidence. Evidence is only what you named when you called a tool in this
+    attempt, such as the host db1 or the item disk_used; an id you saw only in a tool's answer, such as an event or a
+    trigger number, is not evidence, and a finding that cites one is refused.
   params_schema: {type: object, additionalProperties: false, properties: {}}   # the core passes its own input block
   timeouts: {start_by: 1h, lease: 60s, heartbeat: 20s, attempt: 10m, deadline: 2h}
   retry: {max_attempts: 2, max_runs: 2}
