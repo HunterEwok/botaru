@@ -523,10 +523,22 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 					if err != nil {
 						return nil, err
 					}
+					// The enqueue did not check its money (ClaimGated): the windows of the line
+					// outside the sev1 reserve, or of the fallback profile, and the day's ceiling
+					// must hold the first call, or the call is refused and the analysis lost.
+					if ok {
+						prof := seatProfile(cat, role)
+						if fb != "" {
+							prof = fb
+						}
+						first := postmortemFirstCall(cat, w.Tenant, prof)
+						ok = budget >= first && c.checkBudget(ctx, tx, now, tv, budgetAsk{subject: "system", extra: first,
+							line: c.budgetLine(cat.TaskTypes[typ].Purpose), ownRoot: id, fallback: fb != "", crossed: &[]crossing{}}) == nil
+					}
 					if !ok {
 						// The deadline and start_by move by the same shift, so the wait does not
 						// end the task.
-						if _, err := tx.Exec(ctx, `UPDATE tasks SET run_at = $2, deadline_at = deadline_at + ($2 - $3), start_by_at = start_by_at + ($2 - $3) WHERE id = $1`,
+						if _, err := tx.Exec(ctx, `UPDATE tasks SET run_at = $2, deadline_at = deadline_at + ($2::timestamptz - $3::timestamptz), start_by_at = start_by_at + ($2::timestamptz - $3::timestamptz) WHERE id = $1`,
 							id, tenantDay(tv, now).AddDate(0, 0, 1), now); err != nil {
 							return nil, err
 						}

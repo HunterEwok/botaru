@@ -103,6 +103,10 @@ type enqueueInput struct {
 	// OwnRefs makes the refs and the attached files of a sender's request pass TEN-7: each must
 	// be an object of the tenant that the initiator uploaded or created.
 	OwnRefs bool
+	// ClaimGated marks a task whose money the claim checks: the enqueue neither reserves an
+	// estimate nor refuses it on money, and the claim holds it until there is some. The analysis
+	// after an incident waits for the next day this way instead of being lost (MGR-53).
+	ClaimGated bool
 }
 
 // fairnessKey writes the dispatcher fairness key <kind>:<id> from the task source (DSP-2,
@@ -814,7 +818,11 @@ func (c *Core) authorizeEnqueue(ctx context.Context, tx pgx.Tx, now time.Time, c
 	if pt := cat.Tenants[in.PayTenant]; pt != nil && in.PayTenant != in.Tenant {
 		budgetTV, payer, askSubject = pt, in.PayTenant, "system"
 	}
-	if p := c.checkBudget(ctx, tx, now, budgetTV, budgetAsk{subject: askSubject, groups: groups, extra: estimate, line: line, sev1: in.Sev1, crossed: &crossed}); p != nil {
+	if in.ClaimGated {
+		// No reserve that would count against the other work while the task waits: the claim
+		// checks the windows, and each call reserves its own (BUD-2).
+		estimate = 0
+	} else if p := c.checkBudget(ctx, tx, now, budgetTV, budgetAsk{subject: askSubject, groups: groups, extra: estimate, line: line, sev1: in.Sev1, crossed: &crossed}); p != nil {
 		return deny(p)
 	}
 	// A wake-up reserves in the day limit of each principal the entries came from too (MSG-11).

@@ -13,6 +13,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/HunterEwok/botaru/impl/internal/ids"
 	"github.com/HunterEwok/botaru/impl/internal/money"
 )
 
@@ -266,6 +267,76 @@ func TestPostmortemOnceV03(t *testing.T) {
 	}
 	if _, ok := budget(second); ok {
 		t.Fatal("past the ceiling")
+	}
+}
+
+// An incident resolved once the manager line outside the sev1 reserve is spent still gets its
+// analysis: the enqueue does not refuse it on money, the claim holds it until the next day
+// (MGR-53).
+func TestPostmortemWaitsForMoneyV03(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	b := newManagerBenchWith(t, nil, []map[string]any{postmortemDoc()}, claimPostmortem)
+	w := b.enroll(t, EnrollRequest{Tenant: "demo", Kind: "agent", Role: "farm-manager"})
+	if _, err := b.c.SeatAssign(ctx, b.farmOp(), SeatRequest{Seat: managerSeatID}); err != nil {
+		t.Fatal(err)
+	}
+	// 1.39 EUR of the 2 EUR day: below the 70% that work outside sev1 may use, but with no room
+	// for the first call of an analysis.
+	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO spend (id, tenant, line, unit, state, eur_micros, provider, time)
+		VALUES ($1, 'demo', 'manager', 'tokens', 'committed', 1390000, 'mock', $2)`, ids.New(ids.Spend), b.now(t)); err != nil {
+		t.Fatal(err)
+	}
+	b.diskAlarm(t, true, 3)
+	b.advance(t, 6*60)
+	b.loop(t, "incident")
+	b.diskAlarm(t, false, 50)
+	b.advance(t, 11*60)
+	b.loop(t, "incident")
+	b.advance(t, 11*60)
+	b.loop(t, "incident")
+	list := incidentsOf(t, b, "disk_full")
+	if len(list) != 1 || list[0].State != "resolved" {
+		t.Fatalf("incidents %+v", list)
+	}
+	var id string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT id FROM tasks WHERE type = $1 AND record->>'postmortem' = $2`, postmortemType, list[0].ID).Scan(&id); err != nil {
+		t.Fatalf("no analysis with the line spent: %v", err)
+	}
+	// A waiting analysis holds no reserve that the other work of the line would count.
+	var reserves int
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM spend WHERE task = $1 AND unit = 'task'`, id).Scan(&reserves); err != nil || reserves != 0 {
+		t.Fatalf("the analysis reserved at enqueue: %d %v", reserves, err)
+	}
+	// The seat's incident tasks are out of the way: the worker takes one attempt at a time.
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE tasks SET state = 'canceled' WHERE type = $1`, incidentRespondType); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `DELETE FROM spend WHERE unit = 'task' AND task IN (SELECT id FROM tasks WHERE type = $1)`, incidentRespondType); err != nil {
+		t.Fatal(err)
+	}
+	for range 5 {
+		item := b.claim(t, w, "attempt")
+		if item == nil {
+			break
+		}
+		if item.Payload["task"].(map[string]any)["id"] == id {
+			t.Fatal("the analysis was handed out with the line spent")
+		}
+	}
+	var state, reason string
+	var runAt *time.Time
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT state, coalesce(reason, ''), run_at FROM tasks WHERE id = $1`, id).Scan(&state, &reason, &runAt); err != nil {
+		t.Fatal(err)
+	}
+	if state != "submitted" || reason != "budget_exhausted" || runAt == nil || !runAt.After(b.now(t)) {
+		t.Fatalf("the analysis does not wait for the next day: %s %s %v", state, reason, runAt)
+	}
+	// The next day has money again: the analysis is handed out.
+	b.advance(t, int(runAt.Sub(b.now(t)).Seconds())+60)
+	item := b.claim(t, w, "attempt")
+	if item == nil || item.Payload["task"].(map[string]any)["id"] != id {
+		t.Fatalf("the analysis was not handed out the next day: %+v", item)
 	}
 }
 
