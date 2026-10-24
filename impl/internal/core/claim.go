@@ -804,13 +804,19 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		}
 		payload["my_outcomes"] = mo
 		// Extension field insight_context (MAN-3): the subjects of the role's work and, with
-		// the evolution on, the manifest fields a proposal of this tenant may change, so that
+		// the evolution on, the categories and manifest fields a proposal of this tenant may take, so that
 		// a model reads the right series and proposes only what the core takes (PRP-3).
 		evoOn, err := evolutionOn(ctx, tx, w.Tenant)
 		if err != nil {
 			return nil, err
 		}
-		payload["insight_context"] = insightContext(cat, w.Tenant, w.Role, evoOn)
+		var decided []any
+		if tv := cat.Tenants[w.Tenant]; evoOn && tv != nil {
+			if decided, err = decidedCategories(ctx, tx, tv); err != nil {
+				return nil, err
+			}
+		}
+		payload["insight_context"] = insightContext(cat, w.Tenant, w.Role, evoOn, decided)
 		// And the evolution block of its role: variants of the archive with different
 		// approaches and the live review rules, outcome classes only (EVO-3, EVO-5).
 		// Only for a tenant with the evolution on: the input of 0.3.0 stays as it was otherwise.

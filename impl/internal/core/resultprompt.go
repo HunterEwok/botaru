@@ -3,10 +3,12 @@
 package core
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 
 	"github.com/HunterEwok/botaru/impl/internal/manifest"
+	"github.com/jackc/pgx/v5"
 )
 
 // coreResultSchema is the result schema of a task type whose result the core checks against
@@ -237,10 +239,11 @@ func (c *Core) refTarget(ref, doc string) (map[string]any, string) {
 
 // insightContext is the reference of an analysis task: role_task_types are the subjects of the
 // work types of the role (the analysis types left out), and with the evolution on
+// decided_categories, the categories a proposal of this tenant may take, and
 // proposable_targets lists the changes a manifest_change of this tenant may hold, with the
 // current values of the Tenant limits, the cron of each proposable schedule and the guarded
 // fields of the tenant's dispatcher rule (PRP-3, PRP-10, PRP-11, PRP-12). The core checks every proposal; this only spares the model guesses.
-func insightContext(cat *Catalog, tenant, role string, evolution bool) map[string]any {
+func insightContext(cat *Catalog, tenant, role string, evolution bool, decided []any) map[string]any {
 	types := []any{}
 	if r, ok := cat.Roles[role]; ok {
 		for _, t := range r.Claims {
@@ -257,6 +260,8 @@ func insightContext(cat *Catalog, tenant, role string, evolution bool) map[strin
 	if tv == nil {
 		return out
 	}
+	out["decided_categories"] = map[string]any{"categories": decided,
+		"rule": "the category of a proposal is one of these; a proposal of another category has nobody to decide on it and is dismissed before any review"}
 	limits := map[string]any{}
 	spec, _ := tv.Raw["spec"].(map[string]any)
 	for _, sec := range []string{"limits", "campaigns", "scripts"} {
@@ -287,6 +292,22 @@ func insightContext(cat *Catalog, tenant, role string, evolution bool) map[strin
 	}
 	out["proposable_targets"] = targets
 	return out
+}
+
+// decidedCategories are the proposal categories an active person of the tenant may decide on:
+// screening dismisses a proposal of any other category before a review (COM-5).
+func decidedCategories(ctx context.Context, tx pgx.Tx, tv *TenantView) ([]any, error) {
+	out := []any{}
+	for _, c := range proposalCategories {
+		ok, err := hasDecider(ctx, tx, tv, c)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			out = append(out, c)
+		}
+	}
+	return out, nil
 }
 
 // intAbove1 is true for a number above 1: only such an attempt limit can still be lowered.
