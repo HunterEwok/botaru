@@ -28,3 +28,7 @@ What to expect:
 - a fix and a published advisory for accepted reports, with credit to you if you want it.
 
 Use only test data and your own installation. Do not access data that is not yours, and do not degrade other people's services.
+
+## Past reviews
+
+- [Security review, October 2026](docs/security-review-2026-10.md): what was checked, what was found and fixed, and what is left.
