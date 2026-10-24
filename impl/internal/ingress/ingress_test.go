@@ -121,6 +121,10 @@ func (r *rig) post(id string, ts time.Time, sig string, body []byte, hdr map[str
 			req.TLS = &tls.ConnectionState{}
 			continue
 		}
+		if k == "remote" {
+			req.RemoteAddr = v
+			continue
+		}
 		req.Header.Set(k, v)
 	}
 	rec := httptest.NewRecorder()
@@ -206,9 +210,9 @@ func TestIngressMapping(t *testing.T) {
 
 // A body above max_body_bytes is refused whole with 413, by its length or by what arrives; a
 // fourth authentic delivery in a minute gets 429 with Retry-After; forged requests do not use up
-// the source's limit but meet the listener's ceiling; a repeated delivery id is answered again
-// without a second file; a body that is not JSON or not strict I-JSON is refused (ING-3,
-// blackbox:ingress/repeat-and-limits).
+// the source's limit but meet the listener's ceiling of their own network only; a repeated
+// delivery id is answered again without a second file and without counting; a body that is not
+// JSON or not strict I-JSON is refused (ING-3, blackbox:ingress/repeat-and-limits).
 func TestIngressLimits(t *testing.T) {
 	r := newRig(t, "signature", func(c *Config) { c.ListenerPerMinute = 8 })
 	big := append([]byte(`{"pad":"`), append(bytes.Repeat([]byte("x"), 600), []byte(`"}`)...)...)
@@ -237,9 +241,23 @@ func TestIngressLimits(t *testing.T) {
 	if rec.Code != http.StatusTooManyRequests || rec.Header().Get("Retry-After") == "" {
 		t.Fatalf("over per_minute: %d %v", rec.Code, rec.Header())
 	}
-	// The listener ceiling of 8 is reached: even a forged request gets 429 before its body.
-	if rec := r.post("msg_x", r.now, "v1,AAAA", body, nil); rec.Code != http.StatusTooManyRequests {
+	// A repeat of a delivery the core took is answered without counting toward per_minute.
+	if rec := r.post("msg_0", r.now, "", body, nil); rec.Code != http.StatusNoContent {
+		t.Fatalf("repeat over per_minute: %d", rec.Code)
+	}
+	// Two bodies and three forged requests were refused; three more reach the ceiling of 8 of
+	// this network, and then even a forged request gets 429 before its body.
+	for range 3 {
+		if rec := r.post("msg_x", r.now, "v1,AAAA", body, nil); rec.Code != http.StatusUnauthorized {
+			t.Fatalf("forged %d", rec.Code)
+		}
+	}
+	if rec := r.post("msg_x", r.now, "v1,AAAA", body, map[string]string{"remote": "192.0.2.77:4000"}); rec.Code != http.StatusTooManyRequests {
 		t.Fatalf("listener ceiling %d", rec.Code)
+	}
+	// Another network is not held back by it.
+	if rec := r.post("msg_x", r.now, "v1,AAAA", body, map[string]string{"remote": "198.51.100.7:4000"}); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("another network %d", rec.Code)
 	}
 	if len(r.core.files) != 3 || len(r.core.activities) != 3 {
 		t.Fatalf("files %d activities %d", len(r.core.files), len(r.core.activities))

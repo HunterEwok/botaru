@@ -26,10 +26,10 @@ The driver listens on its own address, which the deployment sets; the path is `/
 | Step | Check | Refusal |
 |---|---|---|
 | 1. Method and path | `POST` to the path of a known source | `404` |
-| 2. Request rate | a ceiling on all requests to the path, authentic or not, set by the deployment for the listener (by default 10 times `ingress.limits.per_minute` in a sliding minute), counted before the body is read, so a flood of forged requests cannot use up the source's own limit | `429` with `Retry-After` in seconds |
+| 2. Refused requests | a ceiling on the requests refused at steps 3 and 4 from one network of the sender (the /24 of an IPv4 address, the /48 of an IPv6 one) in a sliding minute, set by the deployment for the listener (by default 10 times `ingress.limits.per_minute`), checked before the body is read; authentic deliveries never count, so a flood of forged requests from another network neither holds back a real delivery nor uses up the source's own limit | `429` with `Retry-After` in seconds |
 | 3. Size | `Content-Length` above `ingress.limits.max_body_bytes`, or more bytes arrive than that limit: the driver stops reading and refuses; it never truncates a body (ING-3) | `413` |
 | 4. Authenticity | by `ingress.auth`, table below | `401` |
-| 5. Source rate | at most `ingress.limits.per_minute` authentic deliveries of this source in a sliding minute; only deliveries that passed step 4 count (ING-3) | `429` with `Retry-After` in seconds |
+| 5. Source rate | at most `ingress.limits.per_minute` authentic deliveries of this source in a sliding minute; only deliveries that passed step 4 count, and a repeat of a delivery id the core already took is answered `2xx` at once without counting (ING-3) | `429` with `Retry-After` in seconds |
 | 6. Body | `Content-Type` `application/json`, and the body is strict I-JSON (no repeated key) | `415` or `400` |
 
 | `ingress.auth` | How the driver checks |

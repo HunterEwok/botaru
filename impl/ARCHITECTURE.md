@@ -1041,8 +1041,9 @@ The driver:
   its one attachment;
 - claims a delivery id before it puts the body: an identical delivery in flight is answered `503` with `Retry-After`; it
   remembers the last 4096 delivery ids;
-- counts only authentic deliveries for the per-source rate; its listener ceiling defaults to 10 times the source's
-  `per_minute`;
+- counts only authentic deliveries for the per-source rate, and a repeat of a delivery the core took not at all; its
+  listener ceiling counts only refused requests, per sender network (/24 or /48, at most 4096 networks remembered), and
+  defaults to 10 times the source's `per_minute`;
 - always requires TLS; `-secret-files` and `-source-token-files` take two files during a rotation.
 
 The core:

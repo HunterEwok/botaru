@@ -22,7 +22,9 @@ import (
 	"log/slog"
 	"math"
 	"mime"
+	"net"
 	"net/http"
+	"net/netip"
 	"regexp"
 	"slices"
 	"strconv"
@@ -59,8 +61,8 @@ type Config struct {
 	Secrets [][]byte
 	// TokenHashes are the SHA-256 of the tokens of auth: tls_token; the driver keeps no token.
 	TokenHashes [][sha256.Size]byte
-	// ListenerPerMinute is the ceiling on all requests to the path in a sliding minute; 0 is
-	// ten times ingress.limits.per_minute.
+	// ListenerPerMinute is the ceiling on refused requests (size or authenticity) from one
+	// network in a sliding minute; 0 is ten times ingress.limits.per_minute.
 	ListenerPerMinute int
 	// Formats check the x-botaru-format leaves of the mapping; a format missing here passes no
 	// value.
@@ -76,8 +78,9 @@ type Driver struct {
 	source string
 	log    *slog.Logger
 
-	mu       sync.Mutex
-	requests []time.Time // every request to the path, for the listener ceiling
+	mu sync.Mutex
+	// refused holds the refused requests of each network, for the listener ceiling.
+	refused  map[netip.Prefix][]time.Time
 	accepted []time.Time // authentic deliveries, for the source's per_minute
 	// done remembers the latest delivery ids the core took, so a repeat is answered at once
 	// without a second file.
@@ -125,7 +128,7 @@ func New(cfg Config) (*Driver, error) {
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
 	}
-	return &Driver{cfg: cfg, ing: ing, source: ing.Source(), log: cfg.Logger, done: map[string]bool{}, inflight: map[string]bool{}}, nil
+	return &Driver{cfg: cfg, ing: ing, source: ing.Source(), log: cfg.Logger, done: map[string]bool{}, inflight: map[string]bool{}, refused: map[netip.Prefix][]time.Time{}}, nil
 }
 
 // Path is the path of the source: /hooks/<source>.
@@ -147,33 +150,44 @@ func (d *Driver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := d.cfg.Now()
-	// 2. The request rate of the listener, before the body is read.
-	if wait := d.take(&d.requests, now, d.cfg.ListenerPerMinute); wait > 0 {
+	// 2. The refused requests of the sender's network, before the body is read: only refusals
+	// count, so a flood of forged requests from elsewhere never holds back an authentic one.
+	src := network(r.RemoteAddr)
+	if wait := d.refusedWait(src, now); wait > 0 {
 		tooMany(w, wait)
 		return
 	}
 	// 3. Size: refused whole, never truncated (ING-3).
 	limit := d.ing.Limits.MaxBodyBytes
 	if r.ContentLength > limit {
+		d.refuse(src, now)
 		status(w, http.StatusRequestEntityTooLarge)
 		return
 	}
 	body, err := io.ReadAll(io.LimitReader(r.Body, limit+1))
 	if err != nil {
+		d.refuse(src, now)
 		status(w, http.StatusBadRequest)
 		return
 	}
 	if int64(len(body)) > limit {
+		d.refuse(src, now)
 		status(w, http.StatusRequestEntityTooLarge)
 		return
 	}
 	// 4. Authenticity (ING-1).
 	id, ok := d.authentic(r, body, now)
 	if !ok {
+		d.refuse(src, now)
 		status(w, http.StatusUnauthorized)
 		return
 	}
-	// 5. The source's own rate counts only authentic deliveries (ING-3).
+	// 5. The source's own rate counts only authentic deliveries (ING-3); a repeat of a delivery
+	// the core already took is answered without counting, so a replayed one uses up nothing.
+	if d.isDone(id) {
+		status(w, http.StatusNoContent)
+		return
+	}
 	if wait := d.take(&d.accepted, now, d.ing.Limits.PerMinute); wait > 0 {
 		tooMany(w, wait)
 		return
@@ -433,6 +447,82 @@ func (d *Driver) take(list *[]time.Time, now time.Time, ceiling int) time.Durati
 	}
 	*list = append(*list, now)
 	return 0
+}
+
+// maxNetworks bounds the networks the listener ceiling remembers; past it, the networks
+// without a refusal in the last minute are forgotten, and then all others share one count.
+const maxNetworks = 4096
+
+// network is the network of a remote address for the listener ceiling: a /24 for IPv4 and a
+// /48 for IPv6, so that one sender cannot dodge the ceiling by changing the last bits.
+func network(remote string) netip.Prefix {
+	host, _, err := net.SplitHostPort(remote)
+	if err != nil {
+		host = remote
+	}
+	a, err := netip.ParseAddr(host)
+	if err != nil {
+		return netip.Prefix{}
+	}
+	a = a.Unmap()
+	bits := 48
+	if a.Is4() {
+		bits = 24
+	}
+	p, _ := a.Prefix(bits)
+	return p
+}
+
+// refusedWait says how long a network waits once its refused requests reached the ceiling.
+func (d *Driver) refusedWait(n netip.Prefix, now time.Time) time.Duration {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	list := recent(d.refused[n], now)
+	if len(list) == 0 {
+		delete(d.refused, n)
+		return 0
+	}
+	d.refused[n] = list
+	if len(list) >= d.cfg.ListenerPerMinute {
+		return list[0].Add(time.Minute).Sub(now)
+	}
+	return 0
+}
+
+// refuse counts a refused request of a network.
+func (d *Driver) refuse(n netip.Prefix, now time.Time) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if _, ok := d.refused[n]; !ok && len(d.refused) >= maxNetworks {
+		for k, v := range d.refused {
+			if len(recent(v, now)) == 0 {
+				delete(d.refused, k)
+			}
+		}
+		if len(d.refused) >= maxNetworks {
+			n = netip.Prefix{}
+		}
+	}
+	d.refused[n] = append(recent(d.refused[n], now), now)
+}
+
+// recent keeps the times of the last minute.
+func recent(list []time.Time, now time.Time) []time.Time {
+	from := now.Add(-time.Minute)
+	kept := list[:0]
+	for _, t := range list {
+		if t.After(from) {
+			kept = append(kept, t)
+		}
+	}
+	return kept
+}
+
+// isDone says whether the core already took a delivery id.
+func (d *Driver) isDone(id string) bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.done[id]
 }
 
 const (
