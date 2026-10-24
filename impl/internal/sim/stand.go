@@ -131,9 +131,9 @@ type Stand struct {
 	// maxOut their output limit (the worst call of the plan).
 	profiles map[string]int
 	maxOut   map[string]float64
-	// oneAttempt are the task types of the applied set with a single attempt: F-1 leaves their
-	// tasks alone, since a task that loses its only attempt cannot complete after it (M-5).
-	oneAttempt map[string]bool
+	// attempts are the attempt limits of the task types of the applied set: F-1 leaves a task on
+	// its last attempt alone, since it cannot complete after losing it (M-5).
+	attempts map[string]int
 	// limit holds the model calls to the limits of the run before P4 (nil: none); maxReq is
 	// the largest model request the front saw, in bytes (the worst call of the plan).
 	limit  *limiter
@@ -1450,15 +1450,17 @@ func (s *Stand) noteProfiles(ms []map[string]any) {
 	}
 	maps.Copy(s.profiles, ranks)
 	maps.Copy(s.maxOut, maxOut)
-	if s.oneAttempt == nil {
-		s.oneAttempt = map[string]bool{}
+	if s.attempts == nil {
+		s.attempts = map[string]int{}
 	}
 	for _, m := range ms {
 		if m["kind"] == "TaskType" {
 			name, _ := mapOf(m["metadata"])["name"].(string)
 			// An unset limit is two attempts in the core.
-			n, set := mapOf(mapOf(m["spec"])["retry"])["max_attempts"]
-			s.oneAttempt[name] = set && num(n) <= 1
+			s.attempts[name] = max(int(num(mapOf(mapOf(m["spec"])["retry"])["max_attempts"])), 0)
+			if s.attempts[name] == 0 {
+				s.attempts[name] = 2
+			}
 		}
 	}
 	s.mu.Unlock()

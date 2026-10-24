@@ -416,7 +416,7 @@ and prints the counts by code. The codes are those of the load test brief:
 | `R-06` | `alice` asks `/geo` about a raster and a layer | `geo-reader` |
 | `R-08` | `bob` asks `/pipeline` why the last run failed | `pipeline-reader` |
 | `R-17` | the data disk fills to 3% free: the incident `disk_full` (capped by `manager_tasks_per_hour`) | a db machine |
-| `R-19` | the analysis schedule of `ops-reader` runs for one turn, one tenant at a time (capped by `analyses_per_hour` and `proposals_per_run`); besides its rate, each tenant with a manager gets one 10 minutes into the run, so that every run can reach M-10 | `ops-reader` |
+| `R-19` | the analysis schedule of `ops-reader` runs for one turn, one tenant at a time (capped by `analyses_per_hour` and `proposals_per_run`); besides its rate, a tenant with a manager that has had none by 10 minutes into the run gets one then, so that every run can reach M-10 | `ops-reader` |
 
 An analysis turn switches its tenant's schedule `ops-insight` on until the first new analysis is in the store, at
 most 75 seconds, and off again; each switch is a commit of
@@ -430,7 +430,7 @@ analyses then have a weak spot to find, and the path of improvement (`M-10`) som
 A profile can also put farm faults on (below) at their times; `every` repeats one, and `tenant` names its tenant
 (the home tenant when empty). `F-1` waits past its time, up to 10 minutes, for a replica of its tenant that
 holds an attempt lease and whose role runs another replica there, so that it stops one in the middle of a task
-that another replica can take over (`M-5` measures that task); with none by then it stops an idle replica and says
+that another replica can take over (`M-5` measures that task; a task on its last attempt is left alone, as it would simply fail); with none by then it stops an idle replica and says
 so. Without a task asked for, `F-1` (also from the console) only takes such a lease holder. `load.json` then counts them by code and tenant (`faults`) with what the provider
 front and the monitor counted (`fault_counts`):
 
