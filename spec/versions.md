@@ -44,11 +44,11 @@ Only the sheets of the contract boundaries with foreign code carry a version (C1
 
 | Sheet | Sheet version |
 |---|---|
-| `p1-worker-protocol.md` | 0.3.0 |
+| `p1-worker-protocol.md` | 0.3.1 |
 | `p3-tool-gateway.md` | 0.3.0 |
 | `p4-model-gateway.md` | 0.3.0 |
 | `e1-channel.md` | 0.3.0 |
 | `e3-tool-host.md` | 0.3.0 |
 | `e5-monitor.md` | 0.3.0 |
 
-The sheets and `spec/VERSION` carry 0.3.0, the release of skeleton v0.3 that the reference implementation claims; its changes are in the section "0.3.0" of the changelog, and the changes after it go into "Unreleased" until the next release. An installation builds on a release in its own repository: it pins this repository at the tag `v0.3.0` and keeps its tenants' manifests, settings and keys there (D-92, [README.md](../README.md)). The machine map of the operations and their schemas lives in `spec/ports/operations.yaml`, and every row there has a `since` field.
+`spec/VERSION` carries 0.3.1, the current release of skeleton v0.3 that the reference implementation claims, and each sheet the release in which it last changed; the changes of a release are in its section of the changelog, and the changes after it go into "Unreleased" until the next release. An installation builds on a release in its own repository: it pins this repository at the tag of that release, now `v0.3.1`, and keeps its tenants' manifests, settings and keys there (D-92, [README.md](../README.md)). The machine map of the operations and their schemas lives in `spec/ports/operations.yaml`, and every row there has a `since` field.
