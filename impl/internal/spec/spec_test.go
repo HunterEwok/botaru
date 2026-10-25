@@ -30,6 +30,23 @@ func load(t *testing.T) *Spec {
 	return s
 }
 
+func TestRelease(t *testing.T) {
+	root, err := FindRoot("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(root, "spec", "VERSION"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(string(b)); got != Release {
+		t.Fatalf("spec/VERSION is %q, spec.Release is %q", got, Release)
+	}
+	if !strings.HasPrefix("v"+Release, Version+".") {
+		t.Fatalf("release %s is not of the claimed skeleton %s", Release, Version)
+	}
+}
+
 func TestCompileAll(t *testing.T) {
 	if err := load(t).CompileAll(); err != nil {
 		t.Fatal(err)

@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/HunterEwok/botaru/impl/internal/ids"
+	"github.com/HunterEwok/botaru/impl/internal/spec"
 )
 
 // validOut checks an answer against its response schema.
@@ -152,7 +153,7 @@ func TestStatusDoctor(t *testing.T) {
 		t.Fatal(err)
 	}
 	validOut(t, b, "p2-status-response", st)
-	if st.Commit != strings.Repeat("0", 40) || st.ConformsTo.Skeleton != "0.3.0" || !slices.Equal(st.FarmManagerDisabled, []string{"demo"}) ||
+	if st.Commit != strings.Repeat("0", 40) || st.ConformsTo.Skeleton != spec.Release || !slices.Equal(st.FarmManagerDisabled, []string{"demo"}) ||
 		!slices.Contains(st.ConformsTo.Profiles, "knowledge") || !slices.Contains(st.ConformsTo.Profiles, "ingress") || slices.Contains(st.ConformsTo.Profiles, "sandbox") {
 		t.Fatalf("status %+v", st)
 	}

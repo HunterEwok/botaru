@@ -26,6 +26,10 @@ import (
 // Version is the skeleton version this implementation claims (MAN-8).
 const Version = "v0.3"
 
+// Release is the release number of the repository, the content of spec/VERSION; P2 status shows it
+// as conforms_to.skeleton.
+const Release = "0.3.1"
+
 // EnvRoot names the environment variable with the path of the skeleton root.
 const EnvRoot = "BOTARU_SPEC_ROOT"
 

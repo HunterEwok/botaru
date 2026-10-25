@@ -1,6 +1,6 @@
 # P1 WorkerProtocol
 
-Sheet version: 0.3.0.
+Sheet version: 0.3.1.
 
 ## In short
 
@@ -69,6 +69,7 @@ Messages between bots (`msg.*`), observations (`obs.query`), seat tasks, campaig
 | Operation | Who calls | What it does | Refusals (reason codes) | Version | Rules |
 |---|---|---|---|---|---|
 | `card.feedback` | channel on behalf of the person who pressed | The buttons "Useful" and "Not needed" on a farm manager notice `manager_attention` and an analysis report `postmortem_report`, and from v0.3 the optional card `task_answer` under a bot's answer; the answer goes only into the share of useful notices in the holder report, or for an answer into the useful share an analysis reads, and changes nothing else | `forbidden`, `not_found` | v0.3 | MGR-52, MGR-50, INS-7 |
+| `session.load` (field `last`) | E4 adapter | The optional `last` returns the latest entries, at most 100 and oldest first, and goes without `after` and `limit`; the entries of an attempt whose result the core did not accept are left out | as for `session.load` | v0.3 | MEM-11 |
 | `decide` (new kinds) | channel on behalf of the verified person | The subject `attribution` for the candidates of kinds `rejected_proposal` (card `rejection_link_card`) and `script_run` (card `script_link_card`) with "Yes" only after `card.details`; the subject `proposal` for "Send to decide" on the digest item `replay_item` | as for `decide`; `details_not_opened` | v0.3 | GOV-40, TRN-7, DIG-9 |
 
 ## Guarantees

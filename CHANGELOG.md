@@ -8,8 +8,15 @@ Entries are grouped by area; within a group the newest entry comes first.
 
 ## Unreleased
 
+## 0.3.1 - 2026-10-25
+
 ### Skeleton & Contracts
 
+- Release 0.3.1: this block, until now "Unreleased", is the release 0.3.1 of skeleton v0.3. Everything in it is an
+  addition to v0.3 or a fix, so the skeleton version and the minor number stay (`spec/versions.md`); a profile or
+  tenant without the new fields keeps the behaviour of 0.3.0. `spec/VERSION` carries 0.3.1, and of the contract
+  sheets only `p1-worker-protocol.md`, which gained the card `task_answer` of `card.feedback` and the optional field
+  `last` of `session.load` (MEM-11), moves to 0.3.1.
 - A short wait the provider names (D-127, addition to v0.3): GW-20 lets the runtime wait out a `retry_after_s` of at
   most 30 seconds on a `provider_rate_limited` refusal and send the same call again, at most twice per attempt and
   only while 90 seconds stay before the attempt deadline; GW-12 holds for everything else, `provider_unavailable`
@@ -54,6 +61,8 @@ Entries are grouped by area; within a group the newest entry comes first.
 
 ### Reference Implementation (impl/)
 
+- P2 `status` shows the release number `spec.Release` (0.3.1) as `conforms_to.skeleton`, as the documents say,
+  instead of the claimed skeleton version with ".0"; a test keeps `spec.Release` equal to `spec/VERSION`.
 - `botaru-agent` waits out a short wait a rate-limited call names and sends the same call again (GW-20), so after a
   `429` the model calls and tool calls before it are not made and paid again.
 - CI runs the Go tests in four parallel jobs (the simulator, the core, the conformance runner, the rest) with the

@@ -1,6 +1,6 @@
 # Running the first bot
 
-This guide brings up a farm of the implementation on one Linux server; the core claims skeleton 0.3 (release 0.3.0, tag `v0.3.0`; README.md): the core, one agent of role `hello`, the Telegram channel and the hello-bot example. It runs as a **test bench** (`test_bench: true`): every tenant has `kind: test`, and the model can be the mock provider or a real Anthropic key. A production farm follows once the remaining parts are built (README.md, "Not in this version").
+This guide brings up a farm of the implementation on one Linux server; the core claims skeleton 0.3 (release 0.3.1, tag `v0.3.1`; README.md): the core, one agent of role `hello`, the Telegram channel and the hello-bot example. It runs as a **test bench** (`test_bench: true`): every tenant has `kind: test`, and the model can be the mock provider or a real Anthropic key. A production farm follows once the remaining parts are built (README.md, "Not in this version").
 
 Paths below are examples; the installation files (settings, secrets, your own manifests) stay on the server and never go into this repository.
 
@@ -17,7 +17,7 @@ Paths below are examples; the installation files (settings, secrets, your own ma
 
 ```sh
 git clone <the address of this repository> /opt/botaru/src
-git -C /opt/botaru/src checkout --detach v0.3.0
+git -C /opt/botaru/src checkout --detach v0.3.1
 cd /opt/botaru/src/impl
 CGO_ENABLED=0 go build -o /opt/botaru/bin/ ./cmd/...
 /opt/botaru/bin/botaru-core -version
@@ -458,7 +458,7 @@ A farm built from the first version of this guide keeps its store, settings, sec
 3. Update the checkout and build again. The first version may have been checked out from a branch or a commit, so fetch and check out the commit you want rather than `git pull`:
 
    ```sh
-   cd /opt/botaru/src && git fetch origin --tags && git checkout --detach v0.3.0   # or the release tag you move to
+   cd /opt/botaru/src && git fetch origin --tags && git checkout --detach v0.3.1   # or the release tag you move to
    cd impl && CGO_ENABLED=0 go build -o /opt/botaru/bin/ ./cmd/...
    ```
 
